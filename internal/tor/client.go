@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/moltbunker/moltbunker/internal/util"
 	"golang.org/x/net/proxy"
 )
 
@@ -43,10 +44,10 @@ func (tc *TorClient) DialContext(ctx context.Context, network, address string) (
 	}
 	resultChan := make(chan result, 1)
 
-	go func() {
+	util.SafeGoWithName("tor-dial", func() {
 		conn, err := tc.Dial(network, address)
 		resultChan <- result{conn: conn, err: err}
-	}()
+	})
 
 	select {
 	case <-ctx.Done():

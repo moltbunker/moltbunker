@@ -12,7 +12,20 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moltbunker/moltbunker/internal/logging"
+	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
+)
+
+const (
+	// DefaultMaxPeers is the default maximum number of peers allowed
+	DefaultMaxPeers = 50
+
+	// DefaultConnectionTimeout is the default timeout for idle connections
+	DefaultConnectionTimeout = 5 * time.Minute
+
+	// DefaultCleanupInterval is how often to run the cleanup routine
+	DefaultCleanupInterval = 1 * time.Minute
 )
 
 // Router handles message routing and peer discovery
@@ -23,6 +36,15 @@ type Router struct {
 	peersMu   sync.RWMutex
 	handlers  map[types.MessageType]MessageHandler
 	localNode *types.Node
+
+	// Connection pool limits
+	maxPeers          int           // Maximum number of peers allowed
+	connectionTimeout time.Duration // Timeout for idle connections
+	cleanupInterval   time.Duration // How often to run cleanup
+
+	// Cleanup goroutine control
+	cleanupCtx    context.Context
+	cleanupCancel context.CancelFunc
 }
 
 // PeerConnection represents a connection to a peer
@@ -39,10 +61,22 @@ type MessageHandler func(ctx context.Context, msg *types.Message, from *types.No
 
 // NewRouter creates a new router
 func NewRouter(dht *DHT) *Router {
+	return NewRouterWithConfig(dht, DefaultMaxPeers, DefaultConnectionTimeout)
+}
+
+// NewRouterWithConfig creates a new router with custom configuration
+func NewRouterWithConfig(dht *DHT, maxPeers int, connectionTimeout time.Duration) *Router {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	r := &Router{
-		dht:      dht,
-		peers:    make(map[types.NodeID]*PeerConnection),
-		handlers: make(map[types.MessageType]MessageHandler),
+		dht:               dht,
+		peers:             make(map[types.NodeID]*PeerConnection),
+		handlers:          make(map[types.MessageType]MessageHandler),
+		maxPeers:          maxPeers,
+		connectionTimeout: connectionTimeout,
+		cleanupInterval:   DefaultCleanupInterval,
+		cleanupCtx:        ctx,
+		cleanupCancel:     cancel,
 	}
 
 	if dht != nil {
@@ -57,7 +91,56 @@ func NewRouter(dht *DHT) *Router {
 		})
 	}
 
+	// Start the idle connection cleanup routine
+	r.startCleanupRoutine()
+
 	return r
+}
+
+// startCleanupRoutine starts the background goroutine for cleaning up idle connections
+func (r *Router) startCleanupRoutine() {
+	util.SafeGoWithName("router-cleanup", func() {
+		ticker := time.NewTicker(r.cleanupInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-r.cleanupCtx.Done():
+				return
+			case <-ticker.C:
+				r.cleanupIdleConnections()
+			}
+		}
+	})
+}
+
+// cleanupIdleConnections removes connections that have been idle too long
+func (r *Router) cleanupIdleConnections() {
+	r.peersMu.Lock()
+	defer r.peersMu.Unlock()
+
+	now := time.Now()
+	for nodeID, peer := range r.peers {
+		peer.mu.RLock()
+		lastSeen := peer.LastSeen
+		connected := peer.Connected
+		peer.mu.RUnlock()
+
+		// Only cleanup idle connected peers
+		if connected && now.Sub(lastSeen) > r.connectionTimeout {
+			peer.mu.Lock()
+			if peer.Conn != nil {
+				logging.Debug("closing idle connection",
+					logging.NodeID(nodeID.String()[:16]),
+					"idle_time", now.Sub(lastSeen).String(),
+					logging.Component("router"))
+				peer.Conn.Close()
+				peer.Conn = nil
+				peer.Connected = false
+			}
+			peer.mu.Unlock()
+		}
+	}
 }
 
 // SetTransport sets the transport layer for the router
@@ -380,15 +463,80 @@ func (r *Router) GetPeersByRegion(region string) []*types.Node {
 }
 
 // AddPeer adds a peer to the routing table
-func (r *Router) AddPeer(node *types.Node) {
+// Returns true if the peer was added, false if at capacity
+func (r *Router) AddPeer(node *types.Node) bool {
 	r.peersMu.Lock()
 	defer r.peersMu.Unlock()
+
+	// Check if peer already exists
+	if existing, exists := r.peers[node.ID]; exists {
+		// Update existing peer's last seen time
+		existing.mu.Lock()
+		existing.LastSeen = time.Now()
+		existing.mu.Unlock()
+		return true
+	}
+
+	// Check if we're at capacity
+	if len(r.peers) >= r.maxPeers {
+		// Try to evict the oldest idle peer
+		if !r.evictOldestIdlePeerLocked() {
+			logging.Warn("peer limit reached, rejecting new peer",
+				logging.NodeID(node.ID.String()[:16]),
+				"max_peers", r.maxPeers,
+				"current_peers", len(r.peers),
+				logging.Component("router"))
+			return false
+		}
+	}
 
 	r.peers[node.ID] = &PeerConnection{
 		Node:      node,
 		Connected: false,
 		LastSeen:  time.Now(),
 	}
+	return true
+}
+
+// evictOldestIdlePeerLocked evicts the oldest idle (disconnected) peer
+// Must be called with peersMu held
+func (r *Router) evictOldestIdlePeerLocked() bool {
+	var oldestID types.NodeID
+	var oldestTime time.Time
+	found := false
+
+	for nodeID, peer := range r.peers {
+		peer.mu.RLock()
+		connected := peer.Connected
+		lastSeen := peer.LastSeen
+		peer.mu.RUnlock()
+
+		// Only consider disconnected peers for eviction
+		if !connected {
+			if !found || lastSeen.Before(oldestTime) {
+				oldestID = nodeID
+				oldestTime = lastSeen
+				found = true
+			}
+		}
+	}
+
+	if found {
+		if peer, exists := r.peers[oldestID]; exists {
+			peer.mu.Lock()
+			if peer.Conn != nil {
+				peer.Conn.Close()
+			}
+			peer.mu.Unlock()
+		}
+		delete(r.peers, oldestID)
+		logging.Debug("evicted oldest idle peer",
+			logging.NodeID(oldestID.String()[:16]),
+			logging.Component("router"))
+		return true
+	}
+
+	return false
 }
 
 // RemovePeer removes a peer from the routing table
@@ -431,17 +579,44 @@ func (r *Router) CleanupStaleConnections(maxAge time.Duration) {
 	}
 }
 
-// Close closes all peer connections
+// Close closes all peer connections and stops the cleanup routine
 func (r *Router) Close() error {
+	// Stop the cleanup routine
+	if r.cleanupCancel != nil {
+		r.cleanupCancel()
+	}
+
 	r.peersMu.Lock()
 	defer r.peersMu.Unlock()
 
 	for _, peer := range r.peers {
+		peer.mu.Lock()
 		if peer.Conn != nil {
 			peer.Conn.Close()
 		}
+		peer.mu.Unlock()
 	}
 	r.peers = make(map[types.NodeID]*PeerConnection)
 
 	return nil
+}
+
+// MaxPeers returns the maximum number of peers allowed
+func (r *Router) MaxPeers() int {
+	return r.maxPeers
+}
+
+// SetMaxPeers sets the maximum number of peers allowed
+func (r *Router) SetMaxPeers(maxPeers int) {
+	r.maxPeers = maxPeers
+}
+
+// ConnectionTimeout returns the idle connection timeout
+func (r *Router) ConnectionTimeout() time.Duration {
+	return r.connectionTimeout
+}
+
+// SetConnectionTimeout sets the idle connection timeout
+func (r *Router) SetConnectionTimeout(timeout time.Duration) {
+	r.connectionTimeout = timeout
 }

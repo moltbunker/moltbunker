@@ -75,10 +75,9 @@ func (ts *TorService) Stop() error {
 	}
 
 	// Close all onion services
-	for port, service := range ts.onionServices {
-		if err := service.Close(); err != nil {
-			fmt.Printf("Warning: failed to close onion service on port %d: %v\n", port, err)
-		}
+	for _, service := range ts.onionServices {
+		// Silently close onion services - errors are non-fatal during shutdown
+		service.Close()
 	}
 	ts.onionServices = make(map[int]*tor.OnionService)
 

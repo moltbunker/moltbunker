@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/moltbunker/moltbunker/internal/util"
 )
 
 // PaymentContract interacts with Base network payment contract
@@ -125,7 +126,7 @@ func (pc *PaymentContract) ListenReservationEvents(ctx context.Context, ch chan<
 		return fmt.Errorf("failed to subscribe to logs: %w", err)
 	}
 
-	go func() {
+	util.SafeGoWithName("reservation-event-listener", func() {
 		for {
 			select {
 			case <-ctx.Done():
@@ -143,7 +144,7 @@ func (pc *PaymentContract) ListenReservationEvents(ctx context.Context, ch chan<
 				_ = err
 			}
 		}
-	}()
+	})
 
 	return nil
 }

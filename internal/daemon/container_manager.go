@@ -15,6 +15,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/redundancy"
 	"github.com/moltbunker/moltbunker/internal/runtime"
 	"github.com/moltbunker/moltbunker/internal/tor"
+	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -33,8 +34,32 @@ type ContainerManager struct {
 	deployments     map[string]*Deployment
 	mu              sync.RWMutex
 
+	// pendingDeployments tracks deployments waiting for replica acknowledgments
+	pendingDeployments map[string]*pendingDeployment
+	pendingMu          sync.RWMutex
+
 	dataDir         string
 	containerdSocket string
+}
+
+// pendingDeployment tracks replica acknowledgments for a deployment
+type pendingDeployment struct {
+	containerID   string
+	ackChan       chan replicaAck
+	ackCount      int
+	successCount  int
+	acks          []replicaAck
+	mu            sync.Mutex
+	created       time.Time
+	closed        bool // tracks if ackChan has been closed
+}
+
+// replicaAck represents an acknowledgment from a replica node
+type replicaAck struct {
+	NodeID  string
+	Region  string
+	Success bool
+	Error   string
 }
 
 // Deployment represents a deployed container with its metadata
@@ -111,18 +136,19 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 	}
 
 	cm := &ContainerManager{
-		containerd:       containerd,
-		encryption:       encryption,
-		replicator:       replicator,
-		healthMonitor:    healthMonitor,
-		consensus:        consensus,
-		router:           node.Router(),
-		geoRouter:        geoRouter,
-		torService:       torService,
-		node:             node,
-		deployments:      make(map[string]*Deployment),
-		dataDir:          config.DataDir,
-		containerdSocket: config.ContainerdSocket,
+		containerd:         containerd,
+		encryption:         encryption,
+		replicator:         replicator,
+		healthMonitor:      healthMonitor,
+		consensus:          consensus,
+		router:             node.Router(),
+		geoRouter:          geoRouter,
+		torService:         torService,
+		node:               node,
+		deployments:        make(map[string]*Deployment),
+		pendingDeployments: make(map[string]*pendingDeployment),
+		dataDir:            config.DataDir,
+		containerdSocket:   config.ContainerdSocket,
 	}
 
 	// Set up health probe function if containerd is available
@@ -137,7 +163,9 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 	}
 
 	// Start health monitoring
-	go healthMonitor.Start(ctx)
+	util.SafeGoWithName("health-monitor", func() {
+		healthMonitor.Start(ctx)
+	})
 
 	// Register P2P message handlers for container operations
 	cm.registerMessageHandlers()
@@ -170,10 +198,15 @@ func (cm *ContainerManager) registerMessageHandlers() {
 	cm.router.RegisterHandler(types.MessageTypeReplicaSync, cm.handleReplicaSync)
 }
 
+// DeployResult contains the result of a deployment including replica count
+type DeployResult struct {
+	Deployment   *Deployment
+	ReplicaCount int
+}
+
 // Deploy deploys a new container with 3-copy redundancy
-func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*Deployment, error) {
+func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*DeployResult, error) {
 	cm.mu.Lock()
-	defer cm.mu.Unlock()
 
 	// Generate deployment ID
 	deploymentID := fmt.Sprintf("dep-%d", time.Now().UnixNano())
@@ -204,6 +237,7 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 	// Create replica set
 	replicaSet, err := cm.replicator.CreateReplicaSet(deploymentID, regions)
 	if err != nil {
+		cm.mu.Unlock()
 		return nil, fmt.Errorf("failed to create replica set: %w", err)
 	}
 	deployment.ReplicaSet = replicaSet
@@ -231,7 +265,11 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 			}
 			encryptedVolume, err = cm.encryption.SetupEncryptedVolume(deploymentID, diskGB)
 			if err != nil {
-				// Continue without encryption
+				// Log warning and continue without encryption
+				logging.Warn("failed to create encrypted volume, continuing without encryption",
+					logging.ContainerID(deploymentID),
+					"disk_gb", diskGB,
+					logging.Err(err))
 				encryptedVolume = nil
 			} else {
 				deployment.EncryptedVolume = encryptedVolume.MountPath
@@ -245,6 +283,7 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 			if cm.encryption != nil && encryptedVolume != nil {
 				cm.encryption.DeleteEncryptedVolume(deploymentID)
 			}
+			cm.mu.Unlock()
 			return nil, fmt.Errorf("failed to create container: %w", err)
 		}
 
@@ -254,6 +293,7 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 			if cm.encryption != nil && encryptedVolume != nil {
 				cm.encryption.DeleteEncryptedVolume(deploymentID)
 			}
+			cm.mu.Unlock()
 			return nil, fmt.Errorf("failed to start container: %w", err)
 		}
 
@@ -298,17 +338,87 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 	// Persist state to disk
 	cm.saveStateAsync()
 
+	// Create pending deployment tracker if waiting for replicas
+	var pending *pendingDeployment
+	if req.WaitForReplicas {
+		pending = &pendingDeployment{
+			containerID: deploymentID,
+			ackChan:     make(chan replicaAck, 10), // Buffer for multiple acks
+			created:     time.Now(),
+			acks:        make([]replicaAck, 0),
+		}
+		cm.pendingMu.Lock()
+		cm.pendingDeployments[deploymentID] = pending
+		cm.pendingMu.Unlock()
+	}
+
+	cm.mu.Unlock()
+
 	// Broadcast deployment to network for redundancy
-	// Run async but log errors
-	go func() {
+	var broadcastErr error
+	broadcastDone := make(chan struct{})
+	util.SafeGoWithName("broadcast-deployment", func() {
+		defer close(broadcastDone)
 		if err := cm.broadcastDeployment(ctx, deployment); err != nil {
+			broadcastErr = err
 			logging.Warn("replication failed",
 				logging.ContainerID(deployment.ID),
 				logging.Err(err))
 		}
-	}()
+	})
 
-	return deployment, nil
+	result := &DeployResult{
+		Deployment:   deployment,
+		ReplicaCount: 0,
+	}
+
+	// If waiting for replicas, wait for acknowledgments
+	if req.WaitForReplicas && pending != nil {
+		// Wait for broadcast to complete first with timeout
+		broadcastTimeout := time.NewTimer(60 * time.Second)
+		select {
+		case <-broadcastDone:
+			broadcastTimeout.Stop()
+		case <-broadcastTimeout.C:
+			logging.Warn("broadcast timed out after 60 seconds",
+				logging.ContainerID(deploymentID))
+		case <-ctx.Done():
+			broadcastTimeout.Stop()
+			logging.Warn("context cancelled while waiting for broadcast",
+				logging.ContainerID(deploymentID))
+		}
+
+		// If broadcast failed completely, still try to wait for any acks that might come
+		if broadcastErr != nil {
+			logging.Warn("broadcast had errors, waiting for any replica acks",
+				logging.ContainerID(deploymentID),
+				logging.Err(broadcastErr))
+		}
+
+		// Wait for at least 1 replica ack with timeout
+		replicaCount, err := cm.WaitForReplicas(deploymentID, 30*time.Second)
+		if err != nil {
+			logging.Warn("failed to verify replicas",
+				logging.ContainerID(deploymentID),
+				logging.Err(err))
+		}
+		result.ReplicaCount = replicaCount
+
+		// Cleanup pending deployment tracker - close channel first to prevent races
+		cm.pendingMu.Lock()
+		if pending, exists := cm.pendingDeployments[deploymentID]; exists {
+			pending.mu.Lock()
+			if !pending.closed {
+				close(pending.ackChan)
+				pending.closed = true
+			}
+			pending.mu.Unlock()
+			delete(cm.pendingDeployments, deploymentID)
+		}
+		cm.pendingMu.Unlock()
+	}
+
+	return result, nil
 }
 
 // broadcastDeployment broadcasts deployment to network for redundancy
@@ -396,6 +506,10 @@ func (cm *ContainerManager) handleDeployRequest(ctx context.Context, msg *types.
 	// Copy regions for use after unlock (avoid race on slice access)
 	regions := make([]string, len(deployment.Regions))
 	copy(regions, deployment.Regions)
+
+	// Make a copy of the deployment BEFORE releasing the lock for use in goroutine
+	deploymentCopy := deployment
+	originatorID := msg.From
 	cm.mu.Unlock()
 
 	// If we have containerd and this is for our region, deploy locally
@@ -404,16 +518,13 @@ func (cm *ContainerManager) handleDeployRequest(ctx context.Context, msg *types.
 		for _, region := range regions {
 			if region == myRegion {
 				// We're a target for this deployment - run async but log errors
-				// Pass a copy of the deployment to the goroutine
-				deploymentCopy := deployment
-				originatorID := msg.From
-				go func(d *Deployment, originator types.NodeID) {
-					if err := cm.deployReplica(ctx, d, originator); err != nil {
+				util.SafeGoWithName("deploy-replica", func() {
+					if err := cm.deployReplica(ctx, &deploymentCopy, originatorID); err != nil {
 						logging.Warn("failed to deploy replica",
-							logging.ContainerID(d.ID),
+							logging.ContainerID(deploymentCopy.ID),
 							logging.Err(err))
 					}
-				}(&deploymentCopy, originatorID)
+				})
 				break
 			}
 		}
@@ -547,10 +658,16 @@ func (cm *ContainerManager) handleDeployAck(ctx context.Context, msg *types.Mess
 		return err
 	}
 
+	// Truncate NodeID for logging (handle short IDs gracefully)
+	nodeIDForLog := ack.NodeID
+	if len(nodeIDForLog) > 16 {
+		nodeIDForLog = nodeIDForLog[:16]
+	}
+
 	if ack.Success {
 		logging.Info("replica confirmed",
 			logging.ContainerID(ack.ContainerID),
-			logging.NodeID(ack.NodeID[:16]),
+			logging.NodeID(nodeIDForLog),
 			logging.Region(ack.Region))
 
 		// Update health status for this replica
@@ -561,7 +678,7 @@ func (cm *ContainerManager) handleDeployAck(ctx context.Context, msg *types.Mess
 	} else {
 		logging.Error("replica deployment failed",
 			logging.ContainerID(ack.ContainerID),
-			logging.NodeID(ack.NodeID[:16]),
+			logging.NodeID(nodeIDForLog),
 			"reason", ack.Error)
 
 		// Mark replica as unhealthy
@@ -571,7 +688,113 @@ func (cm *ContainerManager) handleDeployAck(ctx context.Context, msg *types.Mess
 		})
 	}
 
+	// Notify pending deployment tracker if exists
+	cm.pendingMu.RLock()
+	pending, exists := cm.pendingDeployments[ack.ContainerID]
+	cm.pendingMu.RUnlock()
+
+	if exists && pending != nil {
+		replicaAckData := replicaAck{
+			NodeID:  ack.NodeID,
+			Region:  ack.Region,
+			Success: ack.Success,
+			Error:   ack.Error,
+		}
+
+		// Update pending deployment state and send to channel under lock
+		pending.mu.Lock()
+		pending.ackCount++
+		if ack.Success {
+			pending.successCount++
+		}
+		pending.acks = append(pending.acks, replicaAckData)
+
+		// Non-blocking send to ack channel only if not closed
+		if !pending.closed {
+			select {
+			case pending.ackChan <- replicaAckData:
+			default:
+				// Channel full, ack is still recorded in the slice
+			}
+		}
+		pending.mu.Unlock()
+	}
+
 	return nil
+}
+
+// WaitForReplicas waits for replica acknowledgments with the given timeout.
+// Returns the number of successful replica acks received.
+func (cm *ContainerManager) WaitForReplicas(containerID string, timeout time.Duration) (int, error) {
+	cm.pendingMu.RLock()
+	pending, exists := cm.pendingDeployments[containerID]
+	cm.pendingMu.RUnlock()
+
+	if !exists || pending == nil {
+		return 0, fmt.Errorf("no pending deployment found for container: %s", containerID)
+	}
+
+	// Check if we already have successful acks
+	pending.mu.Lock()
+	if pending.successCount > 0 {
+		count := pending.successCount
+		pending.mu.Unlock()
+		return count, nil
+	}
+	pending.mu.Unlock()
+
+	// Wait for acks with timeout
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+
+	for {
+		select {
+		case ack := <-pending.ackChan:
+			if ack.Success {
+				// Got at least one successful ack
+				pending.mu.Lock()
+				count := pending.successCount
+				pending.mu.Unlock()
+
+				logging.Info("replica verification completed",
+					logging.ContainerID(containerID),
+					"successful_replicas", count)
+				return count, nil
+			}
+			// Continue waiting for more acks
+		case <-timer.C:
+			// Timeout reached, return current count
+			pending.mu.Lock()
+			count := pending.successCount
+			totalAcks := pending.ackCount
+			pending.mu.Unlock()
+
+			if count == 0 {
+				logging.Warn("no replica acknowledgments received within timeout",
+					logging.ContainerID(containerID),
+					"timeout", timeout.String(),
+					"total_acks", totalAcks)
+				return 0, fmt.Errorf("timeout waiting for replica acks: received %d acks, %d successful", totalAcks, count)
+			}
+
+			return count, nil
+		}
+	}
+}
+
+// GetReplicaStatus returns the current replica status for a deployment
+func (cm *ContainerManager) GetReplicaStatus(containerID string) (ackCount int, successCount int, exists bool) {
+	cm.pendingMu.RLock()
+	pending, exists := cm.pendingDeployments[containerID]
+	cm.pendingMu.RUnlock()
+
+	if !exists || pending == nil {
+		return 0, 0, false
+	}
+
+	pending.mu.Lock()
+	defer pending.mu.Unlock()
+	return pending.ackCount, pending.successCount, true
 }
 
 // handleReplicaSync handles replica synchronization messages
@@ -678,7 +901,7 @@ func (cm *ContainerManager) GetLogs(ctx context.Context, containerID string, fol
 }
 
 // GetHealth returns health status for a deployment
-func (cm *ContainerManager) GetHealth(containerID string) (*types.HealthStatus, error) {
+func (cm *ContainerManager) GetHealth(ctx context.Context, containerID string) (*types.HealthStatus, error) {
 	cm.mu.RLock()
 	_, exists := cm.deployments[containerID]
 	cm.mu.RUnlock()
@@ -696,7 +919,7 @@ func (cm *ContainerManager) GetHealth(containerID string) (*types.HealthStatus, 
 
 	// Get from containerd if available
 	if cm.containerd != nil {
-		return cm.containerd.GetHealthStatus(context.Background(), containerID)
+		return cm.containerd.GetHealthStatus(ctx, containerID)
 	}
 
 	return &types.HealthStatus{
@@ -752,6 +975,19 @@ func (cm *ContainerManager) RotateTorCircuit(ctx context.Context) error {
 	return cm.torService.RotateCircuit(ctx)
 }
 
+// IsContainerdConnected checks if containerd is available and connected
+func (cm *ContainerManager) IsContainerdConnected() bool {
+	if cm.containerd == nil {
+		return false
+	}
+	// Try to ping containerd by checking if we can list containers
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	_, err := cm.containerd.Client().Containers(cm.containerd.WithNamespace(ctx))
+	return err == nil
+}
+
 // Close closes the container manager and all managed resources
 func (cm *ContainerManager) Close() error {
 	// Save state before closing
@@ -764,8 +1000,9 @@ func (cm *ContainerManager) Close() error {
 		cm.healthMonitor.Stop()
 	}
 
-	// Stop all containers
-	ctx := context.Background()
+	// Stop all containers with a timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 	cm.mu.RLock()
 	containerIDs := make([]string, 0, len(cm.deployments))
 	for containerID := range cm.deployments {
@@ -893,9 +1130,9 @@ func (cm *ContainerManager) loadState() error {
 
 // saveStateAsync saves state asynchronously (debounced)
 func (cm *ContainerManager) saveStateAsync() {
-	go func() {
+	util.SafeGoWithName("save-state", func() {
 		if err := cm.saveState(); err != nil {
 			logging.Error("failed to save state", logging.Err(err))
 		}
-	}()
+	})
 }

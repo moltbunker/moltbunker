@@ -52,11 +52,12 @@ type StatusResponse struct {
 
 // DeployRequest contains deployment parameters
 type DeployRequest struct {
-	Image        string               `json:"image"`
-	Resources    types.ResourceLimits `json:"resources,omitempty"`
-	TorOnly      bool                 `json:"tor_only"`
-	OnionService bool                 `json:"onion_service"`
-	OnionPort    int                  `json:"onion_port,omitempty"` // Port to expose via Tor (default: 80)
+	Image           string               `json:"image"`
+	Resources       types.ResourceLimits `json:"resources,omitempty"`
+	TorOnly         bool                 `json:"tor_only"`
+	OnionService    bool                 `json:"onion_service"`
+	OnionPort       int                  `json:"onion_port,omitempty"`       // Port to expose via Tor (default: 80)
+	WaitForReplicas bool                 `json:"wait_for_replicas,omitempty"` // If true, wait for at least 1 replica ack before returning
 }
 
 // DeployResponse contains deployment result
@@ -66,6 +67,7 @@ type DeployResponse struct {
 	Status          string   `json:"status"`
 	EncryptedVolume string   `json:"encrypted_volume,omitempty"`
 	Regions         []string `json:"regions"`
+	ReplicaCount    int      `json:"replica_count"` // Number of successful replica acks received
 }
 
 // ContainerInfo contains container information

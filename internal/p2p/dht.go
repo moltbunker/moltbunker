@@ -20,6 +20,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/moltbunker/moltbunker/internal/identity"
+	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -166,8 +167,9 @@ func NewDHT(ctx context.Context, config *DHTConfig, keyManager *identity.KeyMana
 
 	// Bootstrap
 	if err := d.Bootstrap(ctx); err != nil {
-		// Log but don't fail - we might still get peers via mDNS
-		fmt.Printf("Warning: Bootstrap failed: %v\n", err)
+		// Bootstrap failure is non-fatal - we might still get peers via mDNS
+		// Error is ignored as this is expected in some network configurations
+		_ = err
 	}
 
 	return d, nil
@@ -234,22 +236,23 @@ func (d *DHT) Bootstrap(ctx context.Context) error {
 		}
 
 		wg.Add(1)
-		go func(pi peer.AddrInfo) {
+		pi := *peerInfo
+		util.SafeGoWithName("dht-bootstrap-connect", func() {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()
 
 			d.host.Peerstore().AddAddrs(pi.ID, pi.Addrs, peerstore.PermanentAddrTTL)
 
-			if err := d.host.Connect(ctx, pi); err != nil {
+			if err := d.host.Connect(connectCtx, pi); err != nil {
 				return
 			}
 
 			mu.Lock()
 			connectedCount++
 			mu.Unlock()
-		}(*peerInfo)
+		})
 	}
 
 	wg.Wait()

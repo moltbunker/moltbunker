@@ -109,7 +109,7 @@ nfpms:
     package_name: moltbunker
     vendor: Moltbunker
     homepage: https://github.com/moltbunker/moltbunker
-    maintainer: Moltbunker Team <team@moltbunker.io>
+    maintainer: Moltbunker Team <team@moltbunker.com>
     description: Permissionless, fully encrypted P2P network for containerized compute
     license: MIT
     formats:

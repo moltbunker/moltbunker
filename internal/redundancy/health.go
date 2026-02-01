@@ -114,45 +114,54 @@ func (hm *HealthMonitor) Reset() {
 
 // checkHealth checks health of all replicas
 func (hm *HealthMonitor) checkHealth(ctx context.Context) {
+	// Snapshot replica data under lock
+	type replicaSnapshot struct {
+		containerID   string
+		idx           int
+		healthy       bool
+		lastHeartbeat time.Time
+	}
 	hm.mu.RLock()
-	replicasCopy := make(map[string]map[int]*ReplicaHealth)
+	var snapshots []replicaSnapshot
 	for containerID, replicas := range hm.replicas {
-		replicasCopy[containerID] = make(map[int]*ReplicaHealth)
 		for idx, health := range replicas {
-			replicasCopy[containerID][idx] = health
+			snapshots = append(snapshots, replicaSnapshot{
+				containerID:   containerID,
+				idx:           idx,
+				healthy:       health.Healthy,
+				lastHeartbeat: health.LastHeartbeat,
+			})
 		}
 	}
 	hm.mu.RUnlock()
 
-	for containerID, replicas := range replicasCopy {
-		for idx, health := range replicas {
-			healthy := health.Healthy
+	for _, snap := range snapshots {
+		healthy := snap.healthy
 
-			// Use probe function if available for local container (replica 0)
-			if hm.probeFunc != nil && idx == 0 {
-				probeHealthy, err := hm.probeFunc(ctx, containerID)
-				if err != nil {
-					// Probe failed - mark unhealthy
-					healthy = false
-				} else {
-					healthy = probeHealthy
-				}
+		// Use probe function if available for local container (replica 0)
+		if hm.probeFunc != nil && snap.idx == 0 {
+			probeHealthy, err := hm.probeFunc(ctx, snap.containerID)
+			if err != nil {
+				// Probe failed - mark unhealthy
+				healthy = false
 			} else {
-				// For remote replicas, use heartbeat timeout
-				if time.Since(health.LastHeartbeat) > hm.timeout {
-					healthy = false
-				}
+				healthy = probeHealthy
 			}
+		} else {
+			// For remote replicas, use heartbeat timeout
+			if time.Since(snap.lastHeartbeat) > hm.timeout {
+				healthy = false
+			}
+		}
 
-			// Update health status if changed
-			if healthy != health.Healthy {
-				hm.mu.Lock()
-				if hm.replicas[containerID] != nil && hm.replicas[containerID][idx] != nil {
-					hm.replicas[containerID][idx].Healthy = healthy
-					hm.replicas[containerID][idx].LastHeartbeat = time.Now()
-				}
-				hm.mu.Unlock()
+		// Update health status if changed
+		if healthy != snap.healthy {
+			hm.mu.Lock()
+			if hm.replicas[snap.containerID] != nil && hm.replicas[snap.containerID][snap.idx] != nil {
+				hm.replicas[snap.containerID][snap.idx].Healthy = healthy
+				hm.replicas[snap.containerID][snap.idx].LastHeartbeat = time.Now()
 			}
+			hm.mu.Unlock()
 		}
 	}
 }

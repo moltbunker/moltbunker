@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/moltbunker/moltbunker/internal/util"
 )
 
 // LogManager manages container log files
@@ -34,7 +35,7 @@ type ContainerLog struct {
 
 // NewLogManager creates a new log manager
 func NewLogManager(logsDir string) (*LogManager, error) {
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
+	if err := os.MkdirAll(logsDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create logs directory: %w", err)
 	}
 
@@ -52,7 +53,7 @@ func (lm *LogManager) CreateLog(containerID string) (*ContainerLog, error) {
 	defer lm.mu.Unlock()
 
 	containerDir := filepath.Join(lm.logsDir, containerID)
-	if err := os.MkdirAll(containerDir, 0755); err != nil {
+	if err := os.MkdirAll(containerDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create container log directory: %w", err)
 	}
 
@@ -191,7 +192,7 @@ func (lm *LogManager) ReadLogs(ctx context.Context, containerID string, follow b
 
 	pr, pw := io.Pipe()
 
-	go func() {
+	util.SafeGoWithName("read-logs", func() {
 		defer pw.Close()
 
 		// Read existing logs
@@ -204,7 +205,7 @@ func (lm *LogManager) ReadLogs(ctx context.Context, containerID string, follow b
 		if follow {
 			lm.followLogs(ctx, pw, stdoutPath, stderrPath)
 		}
-	}()
+	})
 
 	return pr, nil
 }

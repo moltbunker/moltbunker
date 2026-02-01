@@ -64,13 +64,13 @@ func (t *Transport) serverTLSConfig() *tls.Config {
 			tls.TLS_CHACHA20_POLY1305_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 		},
-		// Request client certificates for mutual TLS
-		ClientAuth: tls.RequestClientCert,
+		// Require client certificates for mutual TLS
+		ClientAuth: tls.RequireAnyClientCert,
 		// Custom verification for self-signed certificates
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			// If no client cert provided, allow connection (will be authenticated at app layer)
+			// Reject connections with no client certificate
 			if len(rawCerts) == 0 {
-				return nil
+				return fmt.Errorf("client certificate required")
 			}
 
 			// Parse and validate the client certificate
@@ -95,7 +95,7 @@ func (t *Transport) serverTLSConfig() *tls.Config {
 
 			// Check if we have a pin for this certificate
 			// If pinned, verify it matches; if not, this is TOFU (trust on first use)
-			if existingPin, exists := t.pinStore.GetPin(fmt.Sprintf("%x", certHash[:8])); exists {
+			if existingPin, exists := t.pinStore.GetPin(fmt.Sprintf("%x", certHash)); exists {
 				if len(existingPin) != len(certHash) {
 					return fmt.Errorf("certificate pin length mismatch")
 				}

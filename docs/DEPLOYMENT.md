@@ -210,7 +210,7 @@ docker exec moltbunker-daemon moltbunker status
 
 ```bash
 # Add Helm repository
-helm repo add moltbunker https://charts.moltbunker.io
+helm repo add moltbunker https://charts.moltbunker.com
 
 # Install
 helm install moltbunker moltbunker/moltbunker \
@@ -332,5 +332,5 @@ ipfs id
 ## Support
 
 - GitHub Issues: https://github.com/moltbunker/moltbunker/issues
-- Documentation: https://docs.moltbunker.io
+- Documentation: https://docs.moltbunker.com
 - Discord: https://discord.gg/moltbunker
