@@ -38,6 +38,7 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+bin/
 
 # Logs
 *.log
@@ -45,3 +46,5 @@ build/
 # Temporary files
 tmp/
 temp/
+plans/
+

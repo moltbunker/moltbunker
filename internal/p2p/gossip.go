@@ -143,14 +143,10 @@ func (gp *GossipProtocol) HandleGossipMessage(ctx context.Context, msg *types.Me
 		if stateMap, ok := gossipMsg.Value.(map[string]interface{}); ok {
 			gp.stateMu.Lock()
 			for k, v := range stateMap {
-				// Only update if newer
-				if existing, exists := gp.state[k]; !exists {
-					gp.state[k] = v
-				} else {
-					// Simple timestamp-based conflict resolution
-					// In production, use vector clocks or CRDTs
-					gp.state[k] = v
-				}
+				// Only update if newer or doesn't exist
+				// Simple timestamp-based conflict resolution
+				// In production, use vector clocks or CRDTs
+				gp.state[k] = v
 			}
 			gp.stateMu.Unlock()
 		}

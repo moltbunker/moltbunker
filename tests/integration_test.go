@@ -22,16 +22,28 @@ func TestIntegration_P2PNetwork(t *testing.T) {
 	defer cancel()
 
 	// Create two nodes
-	keyPath1 := t.TempDir() + "/node1.key"
-	keyPath2 := t.TempDir() + "/node2.key"
+	_ = t.TempDir() + "/node1.key"
+	_ = t.TempDir() + "/node2.key"
 
-	node1, err := p2p.NewDHT(ctx, 9001, nil)
+	config1 := &p2p.DHTConfig{
+		Port:           9001,
+		EnableMDNS:     true,
+		BootstrapPeers: []string{}, // Empty for testing
+		MaxPeers:       50,
+	}
+	node1, err := p2p.NewDHT(ctx, config1, nil)
 	if err != nil {
 		t.Fatalf("Failed to create node 1: %v", err)
 	}
 	defer node1.Close()
 
-	node2, err := p2p.NewDHT(ctx, 9002, nil)
+	config2 := &p2p.DHTConfig{
+		Port:           9002,
+		EnableMDNS:     true,
+		BootstrapPeers: []string{}, // Empty for testing
+		MaxPeers:       50,
+	}
+	node2, err := p2p.NewDHT(ctx, config2, nil)
 	if err != nil {
 		t.Fatalf("Failed to create node 2: %v", err)
 	}
@@ -53,7 +65,7 @@ func TestIntegration_RedundancySystem(t *testing.T) {
 	containerID := "test-container"
 	regions := []string{"Americas", "Europe", "Asia-Pacific"}
 
-	replicaSet, err := replicator.CreateReplicaSet(containerID, regions)
+	_, err := replicator.CreateReplicaSet(containerID, regions)
 	if err != nil {
 		t.Fatalf("Failed to create replica set: %v", err)
 	}

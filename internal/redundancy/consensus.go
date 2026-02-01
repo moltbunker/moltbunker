@@ -37,7 +37,7 @@ func (cm *ConsensusManager) UpdateState(containerID string, status types.Contain
 	if !exists {
 		state = &ContainerState{
 			ContainerID: containerID,
-			Version:     1,
+			Version:     0, // Start at 0 so first update becomes 1
 		}
 		cm.states[containerID] = state
 	}

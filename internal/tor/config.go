@@ -8,12 +8,14 @@ import (
 
 // TorConfig represents Tor configuration
 type TorConfig struct {
-	DataDir        string
-	ControlPort    int
-	SOCKS5Port     int
-	TorrcPath      string
+	DataDir         string
+	ControlPort     int
+	SOCKS5Port      int
+	TorrcPath       string
 	ExitNodeCountry string // Country code for exit node selection
-	StrictNodes    bool    // Only use specified exit nodes
+	StrictNodes     bool   // Only use specified exit nodes
+	EnableSocks     bool   // Enable SOCKS5 proxy
+	TorOnly         bool   // Only allow Tor connections
 }
 
 // DefaultTorConfig returns default Tor configuration

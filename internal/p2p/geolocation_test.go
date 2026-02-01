@@ -16,7 +16,7 @@ func TestGetRegionFromCountry(t *testing.T) {
 		{"CN", "Asia-Pacific"},
 		{"JP", "Asia-Pacific"},
 		{"ZA", "Africa"},
-		{"XX", "Unknown"},
+		{"XX", "Other"}, // Unknown 2-letter codes default to "Other"
 	}
 
 	for _, tt := range tests {

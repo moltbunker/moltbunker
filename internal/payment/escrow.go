@@ -69,13 +69,14 @@ func (em *EscrowManager) ReleasePayment(reservationID string, uptime time.Durati
 	escrow.mu.Lock()
 	defer escrow.mu.Unlock()
 
-	// Calculate payment based on uptime
-	elapsed := time.Since(escrow.StartTime)
+	// Use the provided uptime parameter for calculation
+	// Cap at the escrow duration
+	elapsed := uptime
 	if elapsed > escrow.Duration {
 		elapsed = escrow.Duration
 	}
 
-	// Calculate proportional payment
+	// Calculate proportional payment based on uptime / duration
 	proportion := new(big.Float).Quo(
 		new(big.Float).SetInt64(int64(elapsed)),
 		new(big.Float).SetInt64(int64(escrow.Duration)),

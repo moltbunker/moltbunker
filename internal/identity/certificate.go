@@ -143,12 +143,12 @@ func PEMDecode(certPEM, keyPEM []byte) (*CertificateManager, error) {
 	cm := &CertificateManager{}
 
 	// Decode certificate
-	block, _ := pem.Decode(certPEM)
-	if block == nil {
+	certBlock, _ := pem.Decode(certPEM)
+	if certBlock == nil {
 		return nil, fmt.Errorf("failed to decode certificate PEM")
 	}
 
-	cert, err := x509.ParseCertificate(block.Bytes)
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse certificate: %w", err)
 	}
@@ -159,19 +159,27 @@ func PEMDecode(certPEM, keyPEM []byte) (*CertificateManager, error) {
 		return nil, fmt.Errorf("failed to decode key PEM")
 	}
 
+	// Try to parse as PKCS8 first, then try raw Ed25519
+	var ed25519Key ed25519.PrivateKey
 	privateKey, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
-	}
-
-	ed25519Key, ok := privateKey.(ed25519.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("private key is not Ed25519")
+		// Try parsing as raw Ed25519 key (64 bytes)
+		if len(keyBlock.Bytes) == ed25519.PrivateKeySize {
+			ed25519Key = ed25519.PrivateKey(keyBlock.Bytes)
+		} else {
+			return nil, fmt.Errorf("failed to parse private key: %w", err)
+		}
+	} else {
+		var ok bool
+		ed25519Key, ok = privateKey.(ed25519.PrivateKey)
+		if !ok {
+			return nil, fmt.Errorf("private key is not Ed25519")
+		}
 	}
 
 	cm.cert = cert
 	cm.key = ed25519Key
-	cm.certDER = block.Bytes
+	cm.certDER = certBlock.Bytes
 	cm.keyDER = ed25519Key
 
 	return cm, nil

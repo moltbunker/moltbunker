@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  moltbunker-daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: moltbunker-daemon
+    restart: unless-stopped
+    ports:
+      - "9000:9000"  # P2P port
+      - "9050:9050"  # Tor SOCKS proxy (optional)
+    volumes:
+      - moltbunker-data:/var/lib/moltbunker
+    environment:
+      - MOLTBUNKER_PORT=9000
+      - MOLTBUNKER_TOR_ENABLED=true
+    networks:
+      - moltbunker-net
+    healthcheck:
+      test: ["CMD", "moltbunker", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  tor:
+    image: goldy/tor-hidden-service:latest
+    container_name: moltbunker-tor
+    restart: unless-stopped
+    environment:
+      - SERVICE_PORTS=9000
+    volumes:
+      - tor-keys:/var/lib/tor/hidden_service
+    networks:
+      - moltbunker-net
+    depends_on:
+      - moltbunker-daemon
+
+  ipfs:
+    image: ipfs/kubo:latest
+    container_name: moltbunker-ipfs
+    restart: unless-stopped
+    ports:
+      - "4001:4001"  # IPFS swarm
+      - "5001:5001"  # IPFS API (bind to localhost in production)
+      - "8080:8080"  # IPFS Gateway
+    volumes:
+      - ipfs-data:/data/ipfs
+    networks:
+      - moltbunker-net
+
+volumes:
+  moltbunker-data:
+    driver: local
+  tor-keys:
+    driver: local
+  ipfs-data:
+    driver: local
+
+networks:
+  moltbunker-net:
+    driver: bridge

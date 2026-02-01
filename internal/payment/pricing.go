@@ -59,14 +59,21 @@ func (pc *PricingCalculator) CalculatePrice(resources types.ResourceLimits, dura
 func (pc *PricingCalculator) CalculateBid(resources types.ResourceLimits, duration time.Duration, stake *big.Int) *big.Int {
 	basePrice := pc.CalculatePrice(resources, duration)
 
-	// Adjust based on stake (higher stake = lower price)
-	stakeMultiplier := new(big.Float).Quo(
-		new(big.Float).SetInt(big.NewInt(1000)),
-		new(big.Float).SetInt(stake),
-	)
+	// Normalize stake to BUNKER units (1 BUNKER = 10^18 wei)
+	// Higher stake = lower bid (discount for more committed providers)
+	// Formula: bid = basePrice * normalizer / (normalizer + stake)
+	// This gives a discount that approaches 50% as stake approaches normalizer
+	normalizer := new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil) // 1 BUNKER in wei
 
-	priceFloat := new(big.Float).SetInt(basePrice)
-	adjustedPrice, _ := new(big.Float).Mul(priceFloat, stakeMultiplier).Int(nil)
+	numerator := new(big.Int).Mul(basePrice, normalizer)
+	denominator := new(big.Int).Add(normalizer, stake)
+
+	adjustedPrice := new(big.Int).Div(numerator, denominator)
+
+	// Ensure bid is at least 1 (never zero for valid resources)
+	if adjustedPrice.Sign() <= 0 && basePrice.Sign() > 0 {
+		return big.NewInt(1)
+	}
 
 	return adjustedPrice
 }

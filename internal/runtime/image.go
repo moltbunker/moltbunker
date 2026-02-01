@@ -21,8 +21,8 @@ func NewImageManager(client *ContainerdClient) *ImageManager {
 }
 
 // PullImage pulls an image from a registry or IPFS
-func (im *ImageManager) PullImage(ctx context.Context, namespace, ref string) (containerd.Image, error) {
-	ctx = im.client.WithNamespace(ctx, namespace)
+func (im *ImageManager) PullImage(ctx context.Context, ref string) (containerd.Image, error) {
+	ctx = im.client.WithNamespace(ctx)
 
 	image, err := im.client.Client().Pull(ctx, ref, containerd.WithPullUnpack)
 	if err != nil {
@@ -33,8 +33,8 @@ func (im *ImageManager) PullImage(ctx context.Context, namespace, ref string) (c
 }
 
 // GetImage retrieves an image by reference
-func (im *ImageManager) GetImage(ctx context.Context, namespace, ref string) (containerd.Image, error) {
-	ctx = im.client.WithNamespace(ctx, namespace)
+func (im *ImageManager) GetImage(ctx context.Context, ref string) (containerd.Image, error) {
+	ctx = im.client.WithNamespace(ctx)
 
 	image, err := im.client.Client().GetImage(ctx, ref)
 	if err != nil {
@@ -44,9 +44,9 @@ func (im *ImageManager) GetImage(ctx context.Context, namespace, ref string) (co
 	return image, nil
 }
 
-// ListImages lists all images in a namespace
-func (im *ImageManager) ListImages(ctx context.Context, namespace string) ([]containerd.Image, error) {
-	ctx = im.client.WithNamespace(ctx, namespace)
+// ListImages lists all images
+func (im *ImageManager) ListImages(ctx context.Context) ([]containerd.Image, error) {
+	ctx = im.client.WithNamespace(ctx)
 
 	imageList, err := im.client.Client().ListImages(ctx)
 	if err != nil {
@@ -57,8 +57,8 @@ func (im *ImageManager) ListImages(ctx context.Context, namespace string) ([]con
 }
 
 // DeleteImage deletes an image
-func (im *ImageManager) DeleteImage(ctx context.Context, namespace, ref string) error {
-	ctx = im.client.WithNamespace(ctx, namespace)
+func (im *ImageManager) DeleteImage(ctx context.Context, ref string) error {
+	ctx = im.client.WithNamespace(ctx)
 
 	imageService := im.client.Client().ImageService()
 	if err := imageService.Delete(ctx, ref); err != nil {
@@ -69,10 +69,10 @@ func (im *ImageManager) DeleteImage(ctx context.Context, namespace, ref string) 
 }
 
 // VerifyImage verifies image integrity using content hash
-func (im *ImageManager) VerifyImage(ctx context.Context, namespace, ref, expectedCID string) error {
-	ctx = im.client.WithNamespace(ctx, namespace)
+func (im *ImageManager) VerifyImage(ctx context.Context, ref, expectedCID string) error {
+	ctx = im.client.WithNamespace(ctx)
 
-	image, err := im.GetImage(ctx, namespace, ref)
+	image, err := im.GetImage(ctx, ref)
 	if err != nil {
 		return err
 	}

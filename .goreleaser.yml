@@ -1,0 +1,164 @@
+project_name: moltbunker
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: daemon
+    binary: moltbunker-daemon
+    main: ./cmd/daemon
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: cli
+    binary: moltbunker
+    main: ./cmd/cli
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - README.md
+      - LICENSE
+      - docs/*
+
+checksum:
+  name_template: 'checksums.txt'
+  algorithm: sha256
+
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: moltbunker
+    name: moltbunker
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}}-v{{.Version}}"
+
+brews:
+  - name: moltbunker
+    repository:
+      owner: moltbunker
+      name: homebrew-tap
+    homepage: https://github.com/moltbunker/moltbunker
+    description: Permissionless, fully encrypted P2P network for containerized compute
+    license: MIT
+    install: |
+      bin.install "moltbunker"
+      bin.install "moltbunker-daemon"
+
+nfpms:
+  - id: packages
+    package_name: moltbunker
+    vendor: Moltbunker
+    homepage: https://github.com/moltbunker/moltbunker
+    maintainer: Moltbunker Team <team@moltbunker.io>
+    description: Permissionless, fully encrypted P2P network for containerized compute
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+    bindir: /usr/local/bin
+    contents:
+      - src: ./configs/daemon.yaml
+        dst: /etc/moltbunker/daemon.yaml
+        type: config
+
+dockers:
+  - id: daemon
+    goos: linux
+    goarch: amd64
+    image_templates:
+      - "moltbunker/moltbunker:{{ .Version }}-amd64"
+      - "ghcr.io/moltbunker/moltbunker:{{ .Version }}-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+
+  - id: daemon-arm64
+    goos: linux
+    goarch: arm64
+    image_templates:
+      - "moltbunker/moltbunker:{{ .Version }}-arm64"
+      - "ghcr.io/moltbunker/moltbunker:{{ .Version }}-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.title={{ .ProjectName }}"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+
+docker_manifests:
+  - name_template: "moltbunker/moltbunker:{{ .Version }}"
+    image_templates:
+      - "moltbunker/moltbunker:{{ .Version }}-amd64"
+      - "moltbunker/moltbunker:{{ .Version }}-arm64"
+  - name_template: "moltbunker/moltbunker:latest"
+    image_templates:
+      - "moltbunker/moltbunker:{{ .Version }}-amd64"
+      - "moltbunker/moltbunker:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/moltbunker/moltbunker:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/moltbunker/moltbunker:{{ .Version }}-amd64"
+      - "ghcr.io/moltbunker/moltbunker:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/moltbunker/moltbunker:latest"
+    image_templates:
+      - "ghcr.io/moltbunker/moltbunker:{{ .Version }}-amd64"
+      - "ghcr.io/moltbunker/moltbunker:{{ .Version }}-arm64"

@@ -32,18 +32,14 @@ func (cps *CertPinStore) PinCertificate(nodeID string, cert *x509.Certificate) {
 
 // VerifyCertificate verifies a certificate against pinned public key
 func (cps *CertPinStore) VerifyCertificate(nodeID string, cert *x509.Certificate) error {
+	// First check if we have a pin
 	cps.mu.RLock()
-	defer cps.mu.RUnlock()
-
 	pinnedHash, exists := cps.pins[nodeID]
+	cps.mu.RUnlock()
+
 	if !exists {
-		// First time seeing this node, pin it
-		hash := sha256.Sum256(cert.RawSubjectPublicKeyInfo)
-		cps.mu.RUnlock()
-		cps.mu.Lock()
-		cps.pins[nodeID] = hash[:]
-		cps.mu.Unlock()
-		cps.mu.RLock()
+		// First time seeing this node - use TOFU (Trust On First Use)
+		cps.PinCertificate(nodeID, cert)
 		return nil
 	}
 

@@ -42,7 +42,14 @@ func (sm *StakingManager) Stake(ctx context.Context, provider common.Address, am
 	}
 	sm.mu.Unlock()
 
-	// TODO: Call staking contract to lock tokens
+	// Mock implementation: Log the staking action
+	// TODO: Replace with actual Base network contract call
+	// Contract call would be:
+	//   tx, err := stakingContract.Transact(auth, "stake", amount)
+	//   if err != nil { return err }
+	//   _, err = bind.WaitMined(ctx, sm.client, tx)
+	fmt.Printf("[MOCK] Staked %s tokens for provider %s\n", amount.String(), provider.Hex())
+
 	return nil
 }
 
@@ -75,7 +82,14 @@ func (sm *StakingManager) Slash(ctx context.Context, provider common.Address, am
 
 	sm.stakes[provider] = new(big.Int).Sub(currentStake, amount)
 
-	// TODO: Call staking contract to slash tokens
+	// Mock implementation: Log the slashing action
+	// TODO: Replace with actual Base network contract call
+	// Contract call would be:
+	//   tx, err := stakingContract.Transact(auth, "slash", provider, amount)
+	//   if err != nil { return err }
+	//   _, err = bind.WaitMined(ctx, sm.client, tx)
+	fmt.Printf("[MOCK] Slashed %s tokens from provider %s\n", amount.String(), provider.Hex())
+
 	return nil
 }
 

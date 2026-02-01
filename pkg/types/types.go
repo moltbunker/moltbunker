@@ -51,10 +51,12 @@ type Container struct {
 type ContainerStatus string
 
 const (
-	ContainerStatusPending   ContainerStatus = "pending"
-	ContainerStatusRunning   ContainerStatus = "running"
-	ContainerStatusStopped   ContainerStatus = "stopped"
-	ContainerStatusFailed   ContainerStatus = "failed"
+	ContainerStatusPending     ContainerStatus = "pending"
+	ContainerStatusCreated     ContainerStatus = "created"
+	ContainerStatusRunning     ContainerStatus = "running"
+	ContainerStatusPaused      ContainerStatus = "paused"
+	ContainerStatusStopped     ContainerStatus = "stopped"
+	ContainerStatusFailed      ContainerStatus = "failed"
 	ContainerStatusReplicating ContainerStatus = "replicating"
 )
 
@@ -103,14 +105,20 @@ const (
 type MessageType string
 
 const (
-	MessageTypePing        MessageType = "ping"
-	MessageTypePong        MessageType = "pong"
-	MessageTypeFindNode    MessageType = "find_node"
-	MessageTypeNodes       MessageType = "nodes"
-	MessageTypeHealth      MessageType = "health"
-	MessageTypeDeploy      MessageType = "deploy"
-	MessageTypeBid         MessageType = "bid"
-	MessageTypeGossip      MessageType = "gossip"
+	MessageTypePing            MessageType = "ping"
+	MessageTypePong            MessageType = "pong"
+	MessageTypeFindNode        MessageType = "find_node"
+	MessageTypeNodes           MessageType = "nodes"
+	MessageTypeHealth          MessageType = "health"
+	MessageTypeDeploy          MessageType = "deploy"
+	MessageTypeDeployAck       MessageType = "deploy_ack"  // Acknowledgment of deployment
+	MessageTypeBid             MessageType = "bid"
+	MessageTypeGossip          MessageType = "gossip"
+	MessageTypeContainerStatus MessageType = "container_status"
+	MessageTypeReplicaSync     MessageType = "replica_sync"
+	MessageTypeLogs            MessageType = "logs"
+	MessageTypeStop            MessageType = "stop"
+	MessageTypeDelete          MessageType = "delete"
 )
 
 // Message represents a P2P message

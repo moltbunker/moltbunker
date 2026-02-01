@@ -66,7 +66,7 @@ func TestReplicator_AddReplica(t *testing.T) {
 	r.CreateReplicaSet(containerID, regions)
 
 	var nodeID types.NodeID
-	copy(nodeID[:], []byte("node1")[:32])
+	copy(nodeID[:], []byte("node1"))
 	container := createTestContainer("replica1", nodeID)
 
 	err := r.AddReplica(containerID, 0, container)

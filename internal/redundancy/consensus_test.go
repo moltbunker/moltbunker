@@ -9,7 +9,13 @@ import (
 
 func createTestContainerForConsensus(id string, status types.ContainerStatus) *types.Container {
 	var nodeID types.NodeID
-	copy(nodeID[:], []byte(id)[:32])
+	// Safely copy id bytes, padding with zeros if shorter than 32 bytes
+	idBytes := []byte(id)
+	if len(idBytes) > 32 {
+		copy(nodeID[:], idBytes[:32])
+	} else {
+		copy(nodeID[:], idBytes)
+	}
 	return &types.Container{
 		ID:        id,
 		NodeID:    nodeID,

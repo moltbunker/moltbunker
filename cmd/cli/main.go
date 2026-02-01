@@ -18,6 +18,7 @@ func main() {
 	// Register commands
 	rootCmd.AddCommand(commands.NewInstallCmd())
 	rootCmd.AddCommand(commands.NewStartCmd())
+	rootCmd.AddCommand(commands.NewStopCmd())
 	rootCmd.AddCommand(commands.NewStatusCmd())
 	rootCmd.AddCommand(commands.NewDeployCmd())
 	rootCmd.AddCommand(commands.NewLogsCmd())

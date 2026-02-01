@@ -23,8 +23,8 @@ func NewSandboxManager(client *ContainerdClient) *SandboxManager {
 }
 
 // CreateSandbox creates a new container sandbox with resource limits
-func (sm *SandboxManager) CreateSandbox(ctx context.Context, namespace string, containerID string, image containerd.Image, resources types.ResourceLimits) (containerd.Container, error) {
-	ctx = sm.client.WithNamespace(ctx, namespace)
+func (sm *SandboxManager) CreateSandbox(ctx context.Context, containerID string, image containerd.Image, resources types.ResourceLimits) (containerd.Container, error) {
+	ctx = sm.client.WithNamespace(ctx)
 
 	// Create container with resource limits
 	container, err := sm.client.Client().NewContainer(
@@ -47,8 +47,8 @@ func (sm *SandboxManager) CreateSandbox(ctx context.Context, namespace string, c
 }
 
 // StartSandbox starts a container sandbox
-func (sm *SandboxManager) StartSandbox(ctx context.Context, namespace string, container containerd.Container) (containerd.Task, error) {
-	ctx = sm.client.WithNamespace(ctx, namespace)
+func (sm *SandboxManager) StartSandbox(ctx context.Context, container containerd.Container) (containerd.Task, error) {
+	ctx = sm.client.WithNamespace(ctx)
 
 	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
 	if err != nil {
@@ -63,8 +63,8 @@ func (sm *SandboxManager) StartSandbox(ctx context.Context, namespace string, co
 }
 
 // StopSandbox stops a container sandbox
-func (sm *SandboxManager) StopSandbox(ctx context.Context, namespace string, task containerd.Task) error {
-	ctx = sm.client.WithNamespace(ctx, namespace)
+func (sm *SandboxManager) StopSandbox(ctx context.Context, task containerd.Task) error {
+	ctx = sm.client.WithNamespace(ctx)
 
 	if _, err := task.Delete(ctx); err != nil {
 		return fmt.Errorf("failed to delete task: %w", err)
@@ -74,8 +74,8 @@ func (sm *SandboxManager) StopSandbox(ctx context.Context, namespace string, tas
 }
 
 // DeleteSandbox deletes a container sandbox
-func (sm *SandboxManager) DeleteSandbox(ctx context.Context, namespace string, container containerd.Container) error {
-	ctx = sm.client.WithNamespace(ctx, namespace)
+func (sm *SandboxManager) DeleteSandbox(ctx context.Context, container containerd.Container) error {
+	ctx = sm.client.WithNamespace(ctx)
 
 	if err := container.Delete(ctx); err != nil {
 		return fmt.Errorf("failed to delete container: %w", err)
@@ -85,8 +85,8 @@ func (sm *SandboxManager) DeleteSandbox(ctx context.Context, namespace string, c
 }
 
 // GetSandbox retrieves a container sandbox
-func (sm *SandboxManager) GetSandbox(ctx context.Context, namespace, containerID string) (containerd.Container, error) {
-	ctx = sm.client.WithNamespace(ctx, namespace)
+func (sm *SandboxManager) GetSandbox(ctx context.Context, containerID string) (containerd.Container, error) {
+	ctx = sm.client.WithNamespace(ctx)
 
 	container, err := sm.client.Client().LoadContainer(ctx, containerID)
 	if err != nil {

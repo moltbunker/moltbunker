@@ -8,7 +8,12 @@ import (
 
 func createTestNode(id string, country string) *types.Node {
 	var nodeID types.NodeID
-	copy(nodeID[:], []byte(id)[:32])
+	idBytes := []byte(id)
+	if len(idBytes) > 32 {
+		copy(nodeID[:], idBytes[:32])
+	} else {
+		copy(nodeID[:], idBytes)
+	}
 	return &types.Node{
 		ID:      nodeID,
 		Country: country,
@@ -86,10 +91,11 @@ func TestGeographicRouter_FindReplacementNode(t *testing.T) {
 		createTestNode("node1", "US"),
 		createTestNode("node2", "GB"),
 		createTestNode("node3", "CN"),
+		createTestNode("node4", "CA"), // Another Americas node for replacement
 	}
 
 	var excludeID types.NodeID
-	copy(excludeID[:], []byte("node1")[:32])
+	copy(excludeID[:], []byte("node1"))
 
 	replacement, err := gr.FindReplacementNode("Americas", nodes, []types.NodeID{excludeID})
 	if err != nil {

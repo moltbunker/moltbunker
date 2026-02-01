@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  moltbunker-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: moltbunker-dev
+    ports:
+      - "9000:9000"
+      - "9050:9050"
+      - "9051:9051"
+    volumes:
+      - .:/app
+      - go-mod-cache:/go/pkg/mod
+      - moltbunker-dev-data:/var/lib/moltbunker
+    environment:
+      - MOLTBUNKER_PORT=9000
+      - MOLTBUNKER_LOG_LEVEL=debug
+    networks:
+      - moltbunker-dev-net
+
+  ipfs-dev:
+    image: ipfs/kubo:latest
+    container_name: moltbunker-ipfs-dev
+    ports:
+      - "4001:4001"
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs-dev-data:/data/ipfs
+    networks:
+      - moltbunker-dev-net
+
+volumes:
+  go-mod-cache:
+    driver: local
+  moltbunker-dev-data:
+    driver: local
+  ipfs-dev-data:
+    driver: local
+
+networks:
+  moltbunker-dev-net:
+    driver: bridge

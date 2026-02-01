@@ -8,12 +8,18 @@ import (
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
+// HealthProbeFunc is a function that performs actual health probe on a container
+type HealthProbeFunc func(ctx context.Context, containerID string) (bool, error)
+
 // HealthMonitor monitors health of container replicas
 type HealthMonitor struct {
 	replicas    map[string]map[int]*ReplicaHealth
 	mu          sync.RWMutex
 	interval    time.Duration
 	timeout     time.Duration
+	probeFunc   HealthProbeFunc // Optional probe function for local containers
+	running     bool
+	stopCh      chan struct{}
 }
 
 // ReplicaHealth tracks health of a single replica
@@ -31,22 +37,79 @@ func NewHealthMonitor() *HealthMonitor {
 		replicas: make(map[string]map[int]*ReplicaHealth),
 		interval: 10 * time.Second,
 		timeout:  30 * time.Second,
+		stopCh:   make(chan struct{}),
 	}
+}
+
+// SetProbeFunc sets the health probe function for local container checks
+func (hm *HealthMonitor) SetProbeFunc(fn HealthProbeFunc) {
+	hm.probeFunc = fn
+}
+
+// SetInterval sets the health check interval
+func (hm *HealthMonitor) SetInterval(interval time.Duration) {
+	hm.interval = interval
 }
 
 // Start starts health monitoring
 func (hm *HealthMonitor) Start(ctx context.Context) {
+	hm.mu.Lock()
+	if hm.running {
+		hm.mu.Unlock()
+		return
+	}
+	hm.running = true
+	hm.mu.Unlock()
+
 	ticker := time.NewTicker(hm.interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
+			hm.mu.Lock()
+			hm.running = false
+			hm.mu.Unlock()
+			return
+		case <-hm.stopCh:
+			hm.mu.Lock()
+			hm.running = false
+			hm.mu.Unlock()
 			return
 		case <-ticker.C:
 			hm.checkHealth(ctx)
 		}
 	}
+}
+
+// Stop stops the health monitor
+func (hm *HealthMonitor) Stop() {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+
+	if !hm.running {
+		return
+	}
+
+	// Signal stop
+	select {
+	case <-hm.stopCh:
+		// Already closed
+	default:
+		close(hm.stopCh)
+	}
+}
+
+// Reset resets the health monitor for reuse after Stop
+func (hm *HealthMonitor) Reset() {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+
+	if hm.running {
+		return
+	}
+
+	hm.stopCh = make(chan struct{})
 }
 
 // checkHealth checks health of all replicas
@@ -63,10 +126,31 @@ func (hm *HealthMonitor) checkHealth(ctx context.Context) {
 
 	for containerID, replicas := range replicasCopy {
 		for idx, health := range replicas {
-			if time.Since(health.LastHeartbeat) > hm.timeout {
-				// Replica is unhealthy
+			healthy := health.Healthy
+
+			// Use probe function if available for local container (replica 0)
+			if hm.probeFunc != nil && idx == 0 {
+				probeHealthy, err := hm.probeFunc(ctx, containerID)
+				if err != nil {
+					// Probe failed - mark unhealthy
+					healthy = false
+				} else {
+					healthy = probeHealthy
+				}
+			} else {
+				// For remote replicas, use heartbeat timeout
+				if time.Since(health.LastHeartbeat) > hm.timeout {
+					healthy = false
+				}
+			}
+
+			// Update health status if changed
+			if healthy != health.Healthy {
 				hm.mu.Lock()
-				hm.replicas[containerID][idx].Healthy = false
+				if hm.replicas[containerID] != nil && hm.replicas[containerID][idx] != nil {
+					hm.replicas[containerID][idx].Healthy = healthy
+					hm.replicas[containerID][idx].LastHeartbeat = time.Now()
+				}
 				hm.mu.Unlock()
 			}
 		}
@@ -82,12 +166,18 @@ func (hm *HealthMonitor) UpdateHealth(containerID string, replicaIndex int, heal
 		hm.replicas[containerID] = make(map[int]*ReplicaHealth)
 	}
 
+	// Use LastUpdate from health if provided, otherwise use current time
+	lastHeartbeat := health.LastUpdate
+	if lastHeartbeat.IsZero() {
+		lastHeartbeat = time.Now()
+	}
+
 	hm.replicas[containerID][replicaIndex] = &ReplicaHealth{
 		ContainerID:   containerID,
 		ReplicaIndex:  replicaIndex,
-		LastHeartbeat: time.Now(),
+		LastHeartbeat: lastHeartbeat,
 		Health:        health,
-		Healthy:      true,
+		Healthy:       health.Healthy,
 	}
 }
 

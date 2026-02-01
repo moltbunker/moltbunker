@@ -1,0 +1,60 @@
+# Air configuration for hot reload during development
+# https://github.com/air-verse/air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  # Build command
+  cmd = "go build -o ./tmp/moltbunker-daemon ./cmd/daemon"
+  # Binary file
+  bin = "./tmp/moltbunker-daemon"
+  # Arguments to pass to binary
+  args = ["--port=9000", "--data=/var/lib/moltbunker"]
+  # Watch these extensions
+  include_ext = ["go", "yaml", "yml", "json"]
+  # Exclude directories
+  exclude_dir = ["tmp", "vendor", "node_modules", ".git", "docs"]
+  # Exclude files
+  exclude_file = []
+  # Exclude patterns (regex)
+  exclude_regex = ["_test.go"]
+  # Exclude unchanged files
+  exclude_unchanged = false
+  # Follow symlinks
+  follow_symlink = false
+  # Log file
+  log = "build-errors.log"
+  # Poll changes (useful for Docker)
+  poll = false
+  # Poll interval (ms)
+  poll_interval = 0
+  # Delay after changes before rebuild (ms)
+  delay = 1000
+  # Stop old binary before running new
+  stop_on_error = true
+  # Send interrupt signal before killing
+  send_interrupt = false
+  # Delay before killing after interrupt (ms)
+  kill_delay = 500
+  # Rerun on binary change
+  rerun = false
+  # Rerun delay (ms)
+  rerun_delay = 500
+
+[log]
+  # Show timestamp
+  time = false
+  # Main log only
+  main_only = false
+
+[color]
+  # Customize colors
+  main = "magenta"
+  watcher = "cyan"
+  build = "yellow"
+  runner = "green"
+
+[misc]
+  # Clean tmp on exit
+  clean_on_exit = true
