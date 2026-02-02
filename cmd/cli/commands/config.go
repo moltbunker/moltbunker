@@ -42,7 +42,7 @@ func NewConfigGetCmd() *cobra.Command {
 			key := args[0]
 
 			// First try to get from running daemon
-			daemonClient := client.NewDaemonClient("")
+			daemonClient := client.NewDaemonClient(SocketPath)
 			if err := daemonClient.Connect(); err == nil {
 				defer daemonClient.Close()
 				value, err := daemonClient.ConfigGet(key)

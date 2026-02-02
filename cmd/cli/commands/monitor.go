@@ -37,7 +37,7 @@ Press Ctrl+C to exit.`,
 }
 
 func runMonitor(cmd *cobra.Command, args []string) error {
-	daemonClient := client.NewDaemonClient("")
+	daemonClient := client.NewDaemonClient(SocketPath)
 	if err := daemonClient.Connect(); err != nil {
 		return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
 	}

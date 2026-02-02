@@ -23,7 +23,7 @@ Type 'help' for available commands, 'exit' to quit.`,
 }
 
 func runInteractive(cmd *cobra.Command, args []string) error {
-	daemonClient := client.NewDaemonClient("")
+	daemonClient := client.NewDaemonClient(SocketPath)
 	connected := false
 
 	if err := daemonClient.Connect(); err == nil {

@@ -23,7 +23,7 @@ Shows information about:
 }
 
 func runStatus(cmd *cobra.Command, args []string) error {
-	daemonClient := client.NewDaemonClient("")
+	daemonClient := client.NewDaemonClient(SocketPath)
 
 	if err := daemonClient.Connect(); err != nil {
 		fmt.Println("Daemon status: NOT RUNNING")

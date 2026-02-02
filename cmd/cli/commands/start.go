@@ -36,7 +36,7 @@ By default, the daemon runs in the background. Use --foreground to run in the fo
 
 func runStart(cmd *cobra.Command, args []string) error {
 	// Check if daemon is already running
-	daemonClient := client.NewDaemonClient("")
+	daemonClient := client.NewDaemonClient(SocketPath)
 	if daemonClient.IsDaemonRunning() {
 		fmt.Println("Daemon is already running")
 		return nil
@@ -151,7 +151,7 @@ func startDaemonProcess(keyPath, keystoreDir, dataDir string) error {
 
 	// Wait a moment and check if daemon is running
 	time.Sleep(2 * time.Second)
-	daemonClient := client.NewDaemonClient("")
+	daemonClient := client.NewDaemonClient(SocketPath)
 	if daemonClient.IsDaemonRunning() {
 		fmt.Println("Daemon is running successfully")
 	} else {

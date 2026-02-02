@@ -7,7 +7,7 @@
 **A permissionless, fully encrypted P2P network for containerized compute resources**
 
 [![Launch](https://img.shields.io/badge/Launch-February_13,_2026-FF3366?style=for-the-badge&labelColor=1a1a2e)](https://moltbunker.com)
-[![Go Version](https://img.shields.io/badge/go-1.21+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
+[![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![Tor](https://img.shields.io/badge/Tor-enabled-7D4698?style=for-the-badge&logo=tor-project)](https://www.torproject.org/)
 [![Base Network](https://img.shields.io/badge/Base-Network-blue?style=for-the-badge)](https://base.org/)
@@ -53,10 +53,27 @@
 
 ### Prerequisites
 
-- **Go 1.21+**
-- **containerd** (for container runtime)
+- **Go 1.24+**
+- **Container Runtime**:
+  - **Linux**: containerd
+  - **macOS**: [Colima](https://github.com/abiosoft/colima) (recommended) or Docker Desktop
 - **Tor** (optional, for Tor mode)
 - **IPFS** (optional, for image distribution)
+
+#### macOS Setup with Colima
+
+On macOS, containerd runs inside a lightweight Linux VM. Colima is the recommended solution:
+
+```bash
+# Install Colima
+brew install colima
+
+# Start Colima (provides containerd)
+colima start
+
+# Verify it's running
+moltbunker doctor
+```
 
 ### Installation
 
@@ -117,6 +134,9 @@ moltbunker monitor
 
 # Interactive TUI mode
 moltbunker interactive
+
+# Check system health
+moltbunker doctor
 ```
 
 ### Tor Management
@@ -229,7 +249,11 @@ tor:
   exit_node_country: ""  # Empty for any country
 
 runtime:
-  containerd_socket: /run/containerd/containerd.sock
+  # Auto-detected based on platform:
+  # - macOS with Colima: ~/.colima/default/docker.sock
+  # - macOS with Docker Desktop: /var/run/docker.sock
+  # - Linux: /run/containerd/containerd.sock
+  containerd_socket: ""  # Leave empty for auto-detection
   namespace: moltbunker
   default_resources:
     cpu_quota: 1000000
@@ -260,12 +284,14 @@ payment:
 |---------|-------------|
 | `moltbunker install` | Install daemon as system service |
 | `moltbunker start` | Start daemon |
+| `moltbunker stop` | Stop daemon |
 | `moltbunker status` | Show daemon status and health |
 | `moltbunker deploy <image>` | Deploy container with 3-copy redundancy |
 | `moltbunker logs <container>` | View container logs |
 | `moltbunker monitor` | Real-time monitoring dashboard |
 | `moltbunker config` | Configuration management |
 | `moltbunker interactive` | Interactive TUI mode |
+| `moltbunker doctor` | Check system health and auto-fix issues |
 
 ### Tor Commands
 
@@ -275,6 +301,22 @@ payment:
 | `moltbunker tor status` | Show Tor status and connection info |
 | `moltbunker tor onion` | Display your .onion address |
 | `moltbunker tor rotate` | Rotate Tor circuit for enhanced privacy |
+
+### System Health Commands
+
+| Command | Description |
+|---------|-------------|
+| `moltbunker doctor` | Check system health and dependencies |
+| `moltbunker doctor --fix` | Auto-fix missing dependencies |
+| `moltbunker doctor --json` | Output health check as JSON |
+
+### Colima Commands (macOS)
+
+| Command | Description |
+|---------|-------------|
+| `moltbunker colima start` | Start Colima VM |
+| `moltbunker colima stop` | Stop Colima VM |
+| `moltbunker colima status` | Check Colima status |
 
 ### Deployment Options
 
@@ -378,8 +420,14 @@ go test ./...
 # Run tests with coverage
 go test -cover ./...
 
-# Run integration tests (requires external services)
-go test -short=false ./tests/...
+# Run E2E tests (with mocks)
+go test -tags=e2e ./tests/e2e/...
+
+# Run production E2E tests (requires real dependencies)
+./scripts/e2e-production-test.sh
+
+# Run production E2E tests and install missing dependencies
+./scripts/e2e-production-test.sh --install-deps
 
 # Run specific package tests
 go test ./internal/security/...
@@ -410,9 +458,11 @@ moltbunker/
 │   ├── redundancy/      # 3-copy redundancy system
 │   ├── payment/         # Payment and staking
 │   ├── identity/        # Identity and authentication
-│   ├── distribution/   # Container image distribution
+│   ├── distribution/    # Container image distribution
 │   ├── security/        # Security utilities
-│   └── daemon/         # Daemon core logic
+│   ├── doctor/          # System health checks
+│   ├── config/          # Configuration management
+│   └── daemon/          # Daemon core logic
 ├── contracts/          # Solidity smart contracts
 │   ├── PaymentContract.sol
 │   └── StakingContract.sol
@@ -471,6 +521,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [libp2p](https://libp2p.io/) - P2P networking library
 - [containerd](https://containerd.io/) - Container runtime
+- [Colima](https://github.com/abiosoft/colima) - Container runtime for macOS
 - [Tor Project](https://www.torproject.org/) - Anonymity network
 - [Base Network](https://base.org/) - Layer 2 blockchain
 - [IPFS](https://ipfs.io/) - Distributed file system

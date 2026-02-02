@@ -4,19 +4,25 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
+	"github.com/moltbunker/moltbunker/pkg/types"
 	"gopkg.in/yaml.v3"
 )
 
 // Config represents the complete daemon configuration
 type Config struct {
-	Daemon     DaemonConfig     `yaml:"daemon"`
-	P2P        P2PConfig        `yaml:"p2p"`
-	Tor        TorConfig        `yaml:"tor"`
-	Runtime    RuntimeConfig    `yaml:"runtime"`
-	Redundancy RedundancyConfig `yaml:"redundancy"`
-	Payment    PaymentConfig    `yaml:"payment"`
+	Daemon      DaemonConfig      `yaml:"daemon"`
+	API         APIConfig         `yaml:"api"`
+	Node        NodeConfig        `yaml:"node"`
+	P2P         P2PConfig         `yaml:"p2p"`
+	Tor         TorConfig         `yaml:"tor"`
+	Runtime     RuntimeConfig     `yaml:"runtime"`
+	Security    SecurityConfig    `yaml:"security"`
+	Redundancy  RedundancyConfig  `yaml:"redundancy"`
+	Economics   EconomicsConfig   `yaml:"economics"`
+	Encryption  EncryptionConfig  `yaml:"encryption"`
 }
 
 // DaemonConfig contains daemon settings
@@ -27,17 +33,126 @@ type DaemonConfig struct {
 	KeystoreDir string `yaml:"keystore_dir"`
 	SocketPath  string `yaml:"socket_path"`
 	LogLevel    string `yaml:"log_level"`
+	LogFormat   string `yaml:"log_format"` // "json" or "text"
+}
+
+// APIConfig contains API server settings
+type APIConfig struct {
+	// Rate limiting
+	RateLimitRequests   int `yaml:"rate_limit_requests"`    // Max requests per window (default: 100)
+	RateLimitWindowSecs int `yaml:"rate_limit_window_secs"` // Window duration in seconds (default: 60)
+
+	// Connection limits
+	MaxConcurrentConns int `yaml:"max_concurrent_conns"` // Max concurrent connections (default: 100)
+	MaxRequestSize     int `yaml:"max_request_size"`     // Max request body size in bytes (default: 10MB)
+
+	// Timeouts
+	ReadTimeoutSecs  int `yaml:"read_timeout_secs"`  // Read timeout (default: 30)
+	WriteTimeoutSecs int `yaml:"write_timeout_secs"` // Write timeout (default: 30)
+	IdleTimeoutSecs  int `yaml:"idle_timeout_secs"`  // Idle connection timeout (default: 120)
+}
+
+// DefaultAPIConfig returns the default API configuration
+func DefaultAPIConfig() APIConfig {
+	return APIConfig{
+		RateLimitRequests:   100,
+		RateLimitWindowSecs: 60,
+		MaxConcurrentConns:  100,
+		MaxRequestSize:      10 * 1024 * 1024, // 10MB
+		ReadTimeoutSecs:     30,
+		WriteTimeoutSecs:    30,
+		IdleTimeoutSecs:     120,
+	}
+}
+
+// NodeConfig contains node role and identity settings
+type NodeConfig struct {
+	Role            types.NodeRole `yaml:"role"`              // provider, requester, hybrid
+	WalletAddress   string         `yaml:"wallet_address"`    // Ethereum wallet address
+	WalletKeyFile   string         `yaml:"wallet_key_file"`   // Path to encrypted keystore file
+	AutoRegister    bool           `yaml:"auto_register"`     // Auto-register on startup (provider)
+
+	// Provider-specific settings
+	Provider ProviderNodeConfig `yaml:"provider,omitempty"`
+
+	// Requester-specific settings
+	Requester RequesterNodeConfig `yaml:"requester,omitempty"`
+}
+
+// ProviderNodeConfig contains provider-specific configuration
+type ProviderNodeConfig struct {
+	// Declared resources
+	DeclaredCPU       int    `yaml:"declared_cpu"`        // Number of CPU cores
+	DeclaredMemoryGB  int    `yaml:"declared_memory_gb"`  // Memory in GB
+	DeclaredStorageGB int    `yaml:"declared_storage_gb"` // Storage in GB
+	DeclaredBandwidth int    `yaml:"declared_bandwidth_mbps"` // Network bandwidth in Mbps
+
+	// GPU (optional)
+	GPUEnabled    bool   `yaml:"gpu_enabled"`
+	GPUModel      string `yaml:"gpu_model,omitempty"`
+	GPUCount      int    `yaml:"gpu_count,omitempty"`
+	GPUMemoryGB   int    `yaml:"gpu_memory_gb,omitempty"`
+
+	// Staking
+	TargetTier    types.StakingTier `yaml:"target_tier"` // Desired staking tier
+	AutoStake     bool              `yaml:"auto_stake"`  // Auto-stake on startup
+
+	// Job acceptance
+	AcceptServices  bool `yaml:"accept_services"`   // Accept long-running services
+	AcceptJobs      bool `yaml:"accept_jobs"`       // Accept batch jobs
+	AcceptScheduled bool `yaml:"accept_scheduled"`  // Accept scheduled jobs
+	AcceptFunctions bool `yaml:"accept_functions"`  // Accept serverless functions
+
+	// Availability
+	MaintenanceMode bool `yaml:"maintenance_mode"` // Don't accept new jobs
+}
+
+// RequesterNodeConfig contains requester-specific configuration
+type RequesterNodeConfig struct {
+	DefaultNetworkMode    types.NetworkMode `yaml:"default_network_mode"`    // Default network mode for deployments
+	DefaultOnionService   bool              `yaml:"default_onion_service"`   // Default to creating onion services
+	DefaultEncryption     bool              `yaml:"default_encryption"`      // Default to encrypted volumes
+	MaxConcurrentDeploys  int               `yaml:"max_concurrent_deploys"`  // Max concurrent deployments
+	MaxMonthlyBudget      string            `yaml:"max_monthly_budget"`      // Max BUNKER spend per month (0 = unlimited)
+	PreferredRegions      []string          `yaml:"preferred_regions"`       // Preferred regions for deployments
+	ExcludedRegions       []string          `yaml:"excluded_regions"`        // Excluded regions for compliance
 }
 
 // P2PConfig contains P2P network settings
 type P2PConfig struct {
-	BootstrapNodes []string `yaml:"bootstrap_nodes"`
-	NetworkMode    string   `yaml:"network_mode"` // clearnet, tor_only, hybrid
-	MaxPeers       int      `yaml:"max_peers"`
-	DialTimeout    int      `yaml:"dial_timeout_seconds"`
-	EnableMDNS     bool     `yaml:"enable_mdns"` // Local network discovery
-	ExternalIP     string   `yaml:"external_ip"` // Public IP if behind NAT
-	AnnounceAddrs  []string `yaml:"announce_addrs"`
+	BootstrapNodes    []string `yaml:"bootstrap_nodes"`
+	NetworkMode       string   `yaml:"network_mode"` // clearnet, tor_only, hybrid
+	MaxPeers          int      `yaml:"max_peers"`
+	DialTimeoutSecs   int      `yaml:"dial_timeout_seconds"`
+	DialTimeout       int      `yaml:"dial_timeout"` // Alias for DialTimeoutSecs
+	EnableMDNS        bool     `yaml:"enable_mdns"`
+	ExternalIP        string   `yaml:"external_ip"`
+	AnnounceAddrs     []string `yaml:"announce_addrs"`
+	ConnectionTimeout int      `yaml:"connection_timeout_seconds"`
+	IdleTimeout       int      `yaml:"idle_timeout_seconds"`
+
+	// Circuit breaker settings
+	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
+}
+
+// CircuitBreakerConfig contains circuit breaker settings for P2P connections
+type CircuitBreakerConfig struct {
+	Enabled             bool `yaml:"enabled"`               // Enable circuit breaker (default: true)
+	FailureThreshold    int  `yaml:"failure_threshold"`     // Failures before opening (default: 5)
+	SuccessThreshold    int  `yaml:"success_threshold"`     // Successes to close (default: 2)
+	TimeoutSecs         int  `yaml:"timeout_secs"`          // Open duration before half-open (default: 30)
+	HalfOpenMaxRequests int  `yaml:"half_open_max_requests"` // Max requests in half-open (default: 3)
+}
+
+// DefaultCircuitBreakerConfig returns the default circuit breaker configuration
+func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
+	return CircuitBreakerConfig{
+		Enabled:             true,
+		FailureThreshold:    5,
+		SuccessThreshold:    2,
+		TimeoutSecs:         30,
+		HalfOpenMaxRequests: 3,
+	}
 }
 
 // TorConfig contains Tor settings
@@ -48,40 +163,90 @@ type TorConfig struct {
 	ControlPort     int    `yaml:"control_port"`
 	ExitNodeCountry string `yaml:"exit_node_country"`
 	StrictNodes     bool   `yaml:"strict_nodes"`
+	CircuitTimeout  int    `yaml:"circuit_timeout_seconds"`
+	RotateInterval  int    `yaml:"rotate_interval_seconds"`
 }
 
 // RuntimeConfig contains container runtime settings
 type RuntimeConfig struct {
-	ContainerdSocket string          `yaml:"containerd_socket"`
-	Namespace        string          `yaml:"namespace"`
-	DefaultResources ResourceLimits  `yaml:"default_resources"`
-	EnableEncryption bool            `yaml:"enable_encryption"`
+	ContainerdSocket string                `yaml:"containerd_socket"`
+	Namespace        string                `yaml:"namespace"`
+	DefaultResources types.ResourceLimits  `yaml:"default_resources"`
+	MaxResources     types.ResourceLimits  `yaml:"max_resources"`  // Maximum allocatable
+	LogsDir          string                `yaml:"logs_dir"`
+	VolumesDir       string                `yaml:"volumes_dir"`
 }
 
-// ResourceLimits defines default resource limits
-type ResourceLimits struct {
-	CPUQuota    int64 `yaml:"cpu_quota"`
-	CPUPeriod   int64 `yaml:"cpu_period"`
-	MemoryLimit int64 `yaml:"memory_limit"`
-	DiskLimit   int64 `yaml:"disk_limit"`
-	NetworkBW   int64 `yaml:"network_bw"`
-	PIDLimit    int   `yaml:"pid_limit"`
+// SecurityConfig contains security and container opacity settings
+type SecurityConfig struct {
+	// Container security profile
+	ContainerProfile types.ContainerSecurityProfile `yaml:"container_profile"`
+
+	// Verification
+	Verification types.VerificationConfig `yaml:"verification"`
+
+	// TLS settings
+	TLSMinVersion    string   `yaml:"tls_min_version"`    // "1.2" or "1.3"
+	TLSCipherSuites  []string `yaml:"tls_cipher_suites"`  // Allowed cipher suites
+	CertPinning      bool     `yaml:"cert_pinning"`       // Enable certificate pinning
+	MutualTLS        bool     `yaml:"mutual_tls"`         // Require client certificates
 }
 
 // RedundancyConfig contains redundancy settings
 type RedundancyConfig struct {
-	ReplicaCount        int `yaml:"replica_count"`
-	HealthCheckInterval int `yaml:"health_check_interval_seconds"`
-	HealthTimeout       int `yaml:"health_timeout_seconds"`
-	FailoverDelay       int `yaml:"failover_delay_seconds"`
+	ReplicaCount         int                  `yaml:"replica_count"`           // Always 3 for production
+	HealthCheckInterval  int                  `yaml:"health_check_interval_seconds"`
+	HealthTimeout        int                  `yaml:"health_timeout_seconds"`
+	FailoverDelay        int                  `yaml:"failover_delay_seconds"`
+	RegionConfig         types.RegionConfig   `yaml:"region_config"`
 }
 
-// PaymentConfig contains payment settings (mocked for now)
-type PaymentConfig struct {
-	Enabled         bool   `yaml:"enabled"`
-	ContractAddress string `yaml:"contract_address"`
-	MinStake        string `yaml:"min_stake"`
-	BasePricePerHour string `yaml:"base_price_per_hour"`
+// EconomicsConfig contains all economic parameters
+type EconomicsConfig struct {
+	// Token settings
+	TokenAddress     string `yaml:"token_address"`      // BUNKER token contract address
+	TokenDecimals    int    `yaml:"token_decimals"`     // Token decimals (18)
+
+	// Contract addresses
+	RegistryAddress  string `yaml:"registry_address"`   // Provider registry contract
+	EscrowAddress    string `yaml:"escrow_address"`     // Payment escrow contract
+	SlashingAddress  string `yaml:"slashing_address"`   // Slashing contract
+	PricingAddress   string `yaml:"pricing_address"`    // Pricing oracle contract
+	GovernanceAddress string `yaml:"governance_address"` // Governance contract
+
+	// Configuration (loaded from contracts or overridden locally)
+	StakingTiers   map[types.StakingTier]*types.StakingTierConfig `yaml:"staking_tiers"`
+	Pricing        *types.PricingConfig                            `yaml:"pricing"`
+	Slashing       *types.SlashingConfig                           `yaml:"slashing"`
+	Reputation     *types.ReputationConfig                         `yaml:"reputation"`
+	Fairness       *types.FairnessConfig                           `yaml:"fairness"`
+	ProtocolFees   *types.ProtocolFees                             `yaml:"protocol_fees"`
+	Unstaking      *types.UnstakingConfig                          `yaml:"unstaking"`
+
+	// Chain settings
+	ChainID          int64  `yaml:"chain_id"`            // Base chain ID
+	RPCURL           string `yaml:"rpc_url"`             // RPC endpoint
+	WSEndpoint       string `yaml:"ws_endpoint"`         // WebSocket endpoint
+	BlockConfirmations int  `yaml:"block_confirmations"` // Required confirmations
+}
+
+// EncryptionConfig contains encryption settings
+type EncryptionConfig struct {
+	// Volume encryption
+	VolumeEncryptionEnabled bool   `yaml:"volume_encryption_enabled"`
+	VolumeEncryptionCipher  string `yaml:"volume_encryption_cipher"`
+	VolumeKeySize           int    `yaml:"volume_key_size"`
+
+	// Data encryption
+	DataEncryptionAlgorithm string `yaml:"data_encryption_algorithm"`
+	KeyDerivationFunction   string `yaml:"key_derivation_function"`
+
+	// Key exchange
+	KeyExchangeAlgorithm string `yaml:"key_exchange_algorithm"`
+
+	// Key storage
+	KeyStorePath    string `yaml:"key_store_path"`
+	KeyStoreEncrypt bool   `yaml:"key_store_encrypt"`
 }
 
 // DefaultConfig returns the default configuration
@@ -97,18 +262,50 @@ func DefaultConfig() *Config {
 			KeystoreDir: filepath.Join(dataDir, "keystore"),
 			SocketPath:  filepath.Join(dataDir, "daemon.sock"),
 			LogLevel:    "info",
+			LogFormat:   "text",
+		},
+		API: DefaultAPIConfig(),
+		Node: NodeConfig{
+			Role:          types.NodeRoleHybrid, // Default to hybrid for development
+			WalletAddress: "",
+			WalletKeyFile: filepath.Join(dataDir, "keystore", "wallet.json"),
+			AutoRegister:  false,
+			Provider: ProviderNodeConfig{
+				DeclaredCPU:       4,
+				DeclaredMemoryGB:  8,
+				DeclaredStorageGB: 100,
+				DeclaredBandwidth: 100,
+				GPUEnabled:        false,
+				TargetTier:        types.StakingTierStarter,
+				AutoStake:         false,
+				AcceptServices:    true,
+				AcceptJobs:        true,
+				AcceptScheduled:   true,
+				AcceptFunctions:   false, // Disabled by default
+				MaintenanceMode:   false,
+			},
+			Requester: RequesterNodeConfig{
+				DefaultNetworkMode:   types.NetworkModeHybrid,
+				DefaultOnionService:  false,
+				DefaultEncryption:    true,
+				MaxConcurrentDeploys: 10,
+				MaxMonthlyBudget:     "0", // Unlimited
+				PreferredRegions:     []string{},
+				ExcludedRegions:      []string{},
+			},
 		},
 		P2P: P2PConfig{
-			BootstrapNodes: []string{
-				// Default bootstrap nodes - these would be operated by the project
-				// For now, empty - users must configure their own or use mDNS
-			},
-			NetworkMode:   "hybrid",
-			MaxPeers:      50,
-			DialTimeout:   30,
-			EnableMDNS:    true, // Enable local network discovery by default
-			ExternalIP:    "",
-			AnnounceAddrs: []string{},
+			BootstrapNodes:    []string{},
+			NetworkMode:       "hybrid",
+			MaxPeers:          50,
+			DialTimeoutSecs:   30,
+			DialTimeout:       30,
+			EnableMDNS:        true,
+			ExternalIP:        "",
+			AnnounceAddrs:     []string{},
+			ConnectionTimeout: 60,
+			IdleTimeout:       300,
+			CircuitBreaker:    DefaultCircuitBreakerConfig(),
 		},
 		Tor: TorConfig{
 			Enabled:         false,
@@ -117,62 +314,109 @@ func DefaultConfig() *Config {
 			ControlPort:     9051,
 			ExitNodeCountry: "",
 			StrictNodes:     false,
+			CircuitTimeout:  30,
+			RotateInterval:  600,
 		},
 		Runtime: RuntimeConfig{
-			ContainerdSocket: "/run/containerd/containerd.sock",
+			ContainerdSocket: DetectContainerdSocket(),
 			Namespace:        "moltbunker",
-			DefaultResources: ResourceLimits{
+			DefaultResources: types.ResourceLimits{
 				CPUQuota:    100000,
 				CPUPeriod:   100000,
-				MemoryLimit: 1024 * 1024 * 1024, // 1GB
+				MemoryLimit: 1024 * 1024 * 1024,      // 1GB
 				DiskLimit:   10 * 1024 * 1024 * 1024, // 10GB
-				NetworkBW:   10 * 1024 * 1024, // 10MB/s
+				NetworkBW:   10 * 1024 * 1024,        // 10MB/s
 				PIDLimit:    100,
 			},
-			EnableEncryption: true,
+			MaxResources: types.ResourceLimits{
+				CPUQuota:    1600000,                     // 16 cores max
+				CPUPeriod:   100000,
+				MemoryLimit: 64 * 1024 * 1024 * 1024,     // 64GB
+				DiskLimit:   1000 * 1024 * 1024 * 1024,   // 1TB
+				NetworkBW:   1000 * 1024 * 1024,          // 1GB/s
+				PIDLimit:    10000,
+			},
+			LogsDir:    filepath.Join(dataDir, "logs"),
+			VolumesDir: filepath.Join(dataDir, "volumes"),
+		},
+		Security: SecurityConfig{
+			ContainerProfile: *types.DefaultContainerSecurityProfile(),
+			Verification:     *types.DefaultVerificationConfig(),
+			TLSMinVersion:    "1.3",
+			TLSCipherSuites: []string{
+				"TLS_AES_256_GCM_SHA384",
+				"TLS_CHACHA20_POLY1305_SHA256",
+				"TLS_AES_128_GCM_SHA256",
+			},
+			CertPinning: true,
+			MutualTLS:   true,
 		},
 		Redundancy: RedundancyConfig{
 			ReplicaCount:        3,
 			HealthCheckInterval: 10,
 			HealthTimeout:       30,
 			FailoverDelay:       60,
+			RegionConfig:        *types.DefaultRegionConfig(),
 		},
-		Payment: PaymentConfig{
-			Enabled:          false, // Disabled by default - smart contracts not implemented
-			ContractAddress:  "",
-			MinStake:         "1000000000000000000", // 1 token
-			BasePricePerHour: "1000000000000000",    // 0.001 token
+		Economics: EconomicsConfig{
+			TokenAddress:       "", // Set after deployment
+			TokenDecimals:      18,
+			RegistryAddress:    "",
+			EscrowAddress:      "",
+			SlashingAddress:    "",
+			PricingAddress:     "",
+			GovernanceAddress:  "",
+			StakingTiers:       types.DefaultStakingTiers(),
+			Pricing:            types.DefaultPricingConfig(),
+			Slashing:           types.DefaultSlashingConfig(),
+			Reputation:         types.DefaultReputationConfig(),
+			Fairness:           types.DefaultFairnessConfig(),
+			ProtocolFees:       types.DefaultProtocolFees(),
+			Unstaking:          types.DefaultUnstakingConfig(),
+			ChainID:            8453,  // Base mainnet
+			RPCURL:             "https://mainnet.base.org",
+			WSEndpoint:         "wss://mainnet.base.org",
+			BlockConfirmations: 12,
+		},
+		Encryption: EncryptionConfig{
+			VolumeEncryptionEnabled: true,
+			VolumeEncryptionCipher:  "aes-xts-plain64",
+			VolumeKeySize:           256,
+			DataEncryptionAlgorithm: "AES-256-GCM",
+			KeyDerivationFunction:   "HKDF-SHA256",
+			KeyExchangeAlgorithm:    "X25519",
+			KeyStorePath:            filepath.Join(dataDir, "keys", "deployments"),
+			KeyStoreEncrypt:         true,
 		},
 	}
 }
 
 // Load loads configuration from file
 func Load(path string) (*Config, error) {
-	// Start with defaults
 	cfg := DefaultConfig()
-
-	// Expand path
 	path = expandPath(path)
 
-	// Read file
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			// Return defaults if file doesn't exist
 			return cfg, nil
 		}
 		return nil, fmt.Errorf("failed to read config file: %w", err)
 	}
 
-	// Parse YAML
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse config file: %w", err)
 	}
 
-	// Expand paths in config
 	cfg.expandPaths()
 
-	// Validate
+	// Parse staking tier min stakes
+	for _, tier := range cfg.Economics.StakingTiers {
+		if err := tier.ParseMinStake(); err != nil {
+			return nil, fmt.Errorf("invalid staking tier config: %w", err)
+		}
+	}
+
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
@@ -184,18 +428,15 @@ func Load(path string) (*Config, error) {
 func (c *Config) Save(path string) error {
 	path = expandPath(path)
 
-	// Ensure directory exists
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Marshal to YAML
 	data, err := yaml.Marshal(c)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	// Write file with secure permissions (owner read/write only)
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -205,20 +446,37 @@ func (c *Config) Save(path string) error {
 
 // Validate validates the configuration
 func (c *Config) Validate() error {
+	// Daemon validation
 	if c.Daemon.Port < 1 || c.Daemon.Port > 65535 {
 		return fmt.Errorf("invalid port: %d", c.Daemon.Port)
 	}
 
+	// Node role validation
+	if !c.Node.Role.IsValid() {
+		return fmt.Errorf("invalid node role: %s", c.Node.Role)
+	}
+
+	// P2P validation
 	if c.P2P.MaxPeers < 1 {
 		return fmt.Errorf("max_peers must be at least 1")
 	}
-
 	if c.P2P.NetworkMode != "clearnet" && c.P2P.NetworkMode != "tor_only" && c.P2P.NetworkMode != "hybrid" {
 		return fmt.Errorf("invalid network_mode: %s", c.P2P.NetworkMode)
 	}
 
+	// Redundancy validation
 	if c.Redundancy.ReplicaCount < 1 || c.Redundancy.ReplicaCount > 10 {
 		return fmt.Errorf("replica_count must be between 1 and 10")
+	}
+
+	// Economics validation
+	if c.Economics.TokenDecimals < 0 || c.Economics.TokenDecimals > 18 {
+		return fmt.Errorf("invalid token_decimals: %d", c.Economics.TokenDecimals)
+	}
+
+	// Security validation
+	if c.Security.TLSMinVersion != "1.2" && c.Security.TLSMinVersion != "1.3" {
+		return fmt.Errorf("invalid tls_min_version: %s", c.Security.TLSMinVersion)
 	}
 
 	return nil
@@ -231,6 +489,10 @@ func (c *Config) expandPaths() {
 	c.Daemon.KeystoreDir = expandPath(c.Daemon.KeystoreDir)
 	c.Daemon.SocketPath = expandPath(c.Daemon.SocketPath)
 	c.Tor.DataDir = expandPath(c.Tor.DataDir)
+	c.Runtime.LogsDir = expandPath(c.Runtime.LogsDir)
+	c.Runtime.VolumesDir = expandPath(c.Runtime.VolumesDir)
+	c.Encryption.KeyStorePath = expandPath(c.Encryption.KeyStorePath)
+	c.Node.WalletKeyFile = expandPath(c.Node.WalletKeyFile)
 }
 
 // expandPath expands ~ to home directory
@@ -251,6 +513,34 @@ func DefaultConfigPath() string {
 	return filepath.Join(homeDir, ".moltbunker", "config.yaml")
 }
 
+// DetectContainerdSocket returns the best containerd socket path for the current platform
+func DetectContainerdSocket() string {
+	if runtime.GOOS == "darwin" {
+		// Check for Colima socket (preferred on macOS)
+		homeDir, _ := os.UserHomeDir()
+
+		// Check for Colima docker socket (most common)
+		colimaDockerSocket := filepath.Join(homeDir, ".colima", "default", "docker.sock")
+		if _, err := os.Stat(colimaDockerSocket); err == nil {
+			return colimaDockerSocket
+		}
+
+		// Alternative: Colima containerd socket path
+		colimaContainerdSocket := filepath.Join(homeDir, ".colima", "default", "containerd.sock")
+		if _, err := os.Stat(colimaContainerdSocket); err == nil {
+			return colimaContainerdSocket
+		}
+
+		// Fallback: Docker Desktop socket on macOS
+		if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+			return "/var/run/docker.sock"
+		}
+	}
+
+	// Default Linux socket
+	return "/run/containerd/containerd.sock"
+}
+
 // EnsureDirectories creates all necessary directories
 func (c *Config) EnsureDirectories() error {
 	dirs := []string{
@@ -259,16 +549,37 @@ func (c *Config) EnsureDirectories() error {
 		c.Daemon.KeystoreDir,
 		filepath.Dir(c.Daemon.SocketPath),
 		c.Tor.DataDir,
+		c.Runtime.LogsDir,
+		c.Runtime.VolumesDir,
+		c.Encryption.KeyStorePath,
 		filepath.Join(c.Daemon.DataDir, "containers"),
-		filepath.Join(c.Daemon.DataDir, "volumes"),
-		filepath.Join(c.Daemon.DataDir, "logs"),
+		filepath.Join(c.Daemon.DataDir, "state"),
 	}
 
 	for _, dir := range dirs {
+		if dir == "" {
+			continue
+		}
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
 
 	return nil
+}
+
+// IsProvider returns true if the node can act as a provider
+func (c *Config) IsProvider() bool {
+	return c.Node.Role == types.NodeRoleProvider || c.Node.Role == types.NodeRoleHybrid
+}
+
+// IsRequester returns true if the node can act as a requester
+func (c *Config) IsRequester() bool {
+	return c.Node.Role == types.NodeRoleRequester || c.Node.Role == types.NodeRoleHybrid
+}
+
+// GetTierConfig returns the staking tier configuration for a given tier
+func (c *Config) GetTierConfig(tier types.StakingTier) (*types.StakingTierConfig, bool) {
+	config, exists := c.Economics.StakingTiers[tier]
+	return config, exists
 }

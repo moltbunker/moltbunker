@@ -41,7 +41,7 @@ This will:
 - Create onion service for inbound connections
 - Configure SOCKS5 proxy for outbound traffic`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient("")
+			daemonClient := client.NewDaemonClient(SocketPath)
 			if err := daemonClient.Connect(); err != nil {
 				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
 			}
@@ -83,7 +83,7 @@ func NewTorStatusCmd() *cobra.Command {
 		Short: "Show Tor status",
 		Long:  "Display the current status of the Tor service.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient("")
+			daemonClient := client.NewDaemonClient(SocketPath)
 			if err := daemonClient.Connect(); err != nil {
 				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
 			}
@@ -124,7 +124,7 @@ func NewTorOnionCmd() *cobra.Command {
 		Short: "Show .onion address",
 		Long:  "Display the node's .onion address for inbound Tor connections.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient("")
+			daemonClient := client.NewDaemonClient(SocketPath)
 			if err := daemonClient.Connect(); err != nil {
 				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
 			}
@@ -171,7 +171,7 @@ This creates new paths through the Tor network, giving you:
 - New exit IP address
 - Fresh circuit for improved anonymity`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient("")
+			daemonClient := client.NewDaemonClient(SocketPath)
 			if err := daemonClient.Connect(); err != nil {
 				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
 			}

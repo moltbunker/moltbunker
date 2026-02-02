@@ -22,13 +22,11 @@ import (
 )
 
 const (
-	// TODO: Make MaxConcurrentConnections configurable via config file
-	// MaxConcurrentConnections is the maximum number of concurrent connections allowed
-	MaxConcurrentConnections = 100
+	// defaultMaxConcurrentConnections is the default max connections if not configured
+	defaultMaxConcurrentConnections = 100
 
-	// TODO: Make connection timeout configurable via config file
-	// connectionReadTimeout is the timeout for reading from a connection
-	connectionReadTimeout = 5 * time.Minute
+	// defaultConnectionReadTimeout is the default timeout for reading from a connection
+	defaultConnectionReadTimeout = 5 * time.Minute
 )
 
 // Node represents a P2P node in the network
@@ -44,9 +42,11 @@ type Node struct {
 	mu            sync.RWMutex
 	running       bool
 
-	// Connection limiting
-	connSemaphore chan struct{} // Semaphore for limiting concurrent connections
-	activeConns   int64         // Atomic counter for active connections
+	// Connection limiting (configurable)
+	connSemaphore      chan struct{}  // Semaphore for limiting concurrent connections
+	activeConns        int64          // Atomic counter for active connections
+	maxConcurrentConns int            // Maximum concurrent connections (from config)
+	connReadTimeout    time.Duration  // Connection read timeout (from config)
 }
 
 // NewNode creates a new P2P node
@@ -111,14 +111,16 @@ func NewNode(ctx context.Context, keyPath string, keystoreDir string, port int) 
 	router.SetTransport(transport)
 
 	return &Node{
-		keyManager:    keyManager,
-		walletManager: walletManager,
-		dht:           dht,
-		router:        router,
-		transport:     transport,
-		geolocator:    geolocator,
-		nodeInfo:      nodeInfo,
-		connSemaphore: make(chan struct{}, MaxConcurrentConnections),
+		keyManager:         keyManager,
+		walletManager:      walletManager,
+		dht:                dht,
+		router:             router,
+		transport:          transport,
+		geolocator:         geolocator,
+		nodeInfo:           nodeInfo,
+		connSemaphore:      make(chan struct{}, defaultMaxConcurrentConnections),
+		maxConcurrentConns: defaultMaxConcurrentConnections,
+		connReadTimeout:    defaultConnectionReadTimeout,
 	}, nil
 }
 
@@ -197,15 +199,28 @@ func NewNodeWithConfig(ctx context.Context, cfg *config.Config) (*Node, error) {
 	// Set transport on router
 	router.SetTransport(transport)
 
+	// Get connection limits from config (use defaults if not set)
+	maxConns := cfg.API.MaxConcurrentConns
+	if maxConns <= 0 {
+		maxConns = defaultMaxConcurrentConnections
+	}
+
+	connTimeout := defaultConnectionReadTimeout
+	if cfg.API.IdleTimeoutSecs > 0 {
+		connTimeout = time.Duration(cfg.API.IdleTimeoutSecs) * time.Second
+	}
+
 	return &Node{
-		keyManager:    keyManager,
-		walletManager: walletManager,
-		dht:           dht,
-		router:        router,
-		transport:     transport,
-		geolocator:    geolocator,
-		nodeInfo:      nodeInfo,
-		connSemaphore: make(chan struct{}, MaxConcurrentConnections),
+		keyManager:         keyManager,
+		walletManager:      walletManager,
+		dht:                dht,
+		router:             router,
+		transport:          transport,
+		geolocator:         geolocator,
+		nodeInfo:           nodeInfo,
+		connSemaphore:      make(chan struct{}, maxConns),
+		maxConcurrentConns: maxConns,
+		connReadTimeout:    connTimeout,
 	}, nil
 }
 
@@ -217,8 +232,9 @@ func (n *Node) Start(ctx context.Context) error {
 		return fmt.Errorf("node already running")
 	}
 
-	// Start listening
-	listener, err := n.transport.Listen(fmt.Sprintf(":%d", n.nodeInfo.Port))
+	// Start TLS listener on port+1 (libp2p DHT uses the base port)
+	tlsPort := n.nodeInfo.Port + 1
+	listener, err := n.transport.Listen(fmt.Sprintf(":%d", tlsPort))
 	if err != nil {
 		n.mu.Unlock()
 		return fmt.Errorf("failed to start listener: %w", err)
@@ -333,7 +349,7 @@ func (n *Node) handleConnections(ctx context.Context, listener net.Listener) {
 				// At connection limit, reject the connection
 				logging.Warn("connection limit reached, rejecting connection",
 					"active_connections", atomic.LoadInt64(&n.activeConns),
-					"max_connections", MaxConcurrentConnections,
+					"max_connections", n.maxConcurrentConns,
 					"remote_addr", conn.RemoteAddr().String(),
 					logging.Component("node"))
 				conn.Close()
@@ -393,7 +409,7 @@ func (n *Node) handleConnection(ctx context.Context, conn net.Conn) {
 			return
 		default:
 			// Set read deadline before reading
-			if err := conn.SetReadDeadline(time.Now().Add(connectionReadTimeout)); err != nil {
+			if err := conn.SetReadDeadline(time.Now().Add(n.connReadTimeout)); err != nil {
 				logging.Warn("failed to set read deadline",
 					"remote_addr", conn.RemoteAddr().String(),
 					logging.Err(err),

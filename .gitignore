@@ -11,12 +11,15 @@ bin/
 
 # Output of the go coverage tool
 *.out
+coverage.html
+coverage.txt
 
 # Dependency directories
 vendor/
 
 # Go workspace file
 go.work
+go.work.sum
 
 # IDE
 .idea/
@@ -29,22 +32,121 @@ go.work
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
 
-# Moltbunker data
-.moltbunker/
+# ===================
+# SENSITIVE FILES
+# ===================
+
+# Environment files (NEVER commit .env with secrets)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+# .env.example is OK to commit
+
+# Private keys and certificates
 *.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.priv
+*_rsa
+*_dsa
+*_ecdsa
+*_ed25519
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+
+# Secrets and credentials
+*.secret
+*.secrets
+*credentials*
+*secret*
+!*.secret.example
+secrets/
+.secrets/
+
+# Wallet and blockchain keys
+*.wallet
+keystore/
+wallets/
+*.json.enc
+
+# Tor hidden service keys
+hostname
+hs_ed25519_secret_key
+hs_ed25519_public_key
+
+# ===================
+# MOLTBUNKER DATA
+# ===================
+
+# Local data directory
+.moltbunker/
+data/
 *.vol
+
+# Runtime files
+*.pid
+*.sock
+*.socket
+daemon.pid
+
+# Logs
+*.log
+logs/
+
+# State files
+*.state
+state/
+
+# ===================
+# BUILD & TEST
+# ===================
 
 # Build artifacts
 dist/
 build/
-bin/
 
-# Logs
-*.log
+# Test data
+.e2e-test-data/
+test-data/
+*.test.json
+coverage/
 
 # Temporary files
 tmp/
 temp/
-plans/
+*.tmp
+*.temp
+*.bak
+*.backup
 
+# ===================
+# MISC
+# ===================
+
+# Plans and notes (local only)
+plans/
+notes/
+TODO.local.md
+
+# Debug
+debug/
+*.debug
+
+# Profiling
+*.prof
+*.pprof
+cpu.out
+mem.out
+
+plans/

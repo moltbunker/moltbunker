@@ -78,7 +78,7 @@ func main() {
 	}
 
 	// Create and start API server for CLI communication
-	apiServer := daemon.NewAPIServer(node, cfg.Daemon.SocketPath, cfg.Daemon.DataDir)
+	apiServer := daemon.NewAPIServerWithFullConfig(node, cfg)
 	if err := apiServer.Start(ctx); err != nil {
 		log.Fatalf("Failed to start API server: %v", err)
 	}

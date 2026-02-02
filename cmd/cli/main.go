@@ -14,6 +14,11 @@ var rootCmd = &cobra.Command{
 	Long:  "A permissionless, fully encrypted P2P network for containerized compute resources",
 }
 
+func init() {
+	// Add global persistent flags
+	rootCmd.PersistentFlags().StringVar(&commands.SocketPath, "socket", "", "Path to daemon socket (default: auto-detect)")
+}
+
 func main() {
 	// Register commands
 	rootCmd.AddCommand(commands.NewInstallCmd())
@@ -26,6 +31,11 @@ func main() {
 	rootCmd.AddCommand(commands.NewConfigCmd())
 	rootCmd.AddCommand(commands.NewInteractiveCmd())
 	rootCmd.AddCommand(commands.NewTorCmd())
+	rootCmd.AddCommand(commands.NewDoctorCmd())
+	rootCmd.AddCommand(commands.NewProviderCmd())
+	rootCmd.AddCommand(commands.NewRequesterCmd())
+	rootCmd.AddCommand(commands.NewColimaCmd())
+	rootCmd.AddCommand(commands.NewVersionCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

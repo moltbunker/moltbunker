@@ -1,0 +1,39 @@
+# Test configuration for E2E tests
+daemon:
+  port: 0  # Use random available port
+  data_dir: /tmp/moltbunker-test
+  socket_path: /tmp/moltbunker-test/daemon.sock
+  log_level: debug
+
+p2p:
+  network_mode: clearnet
+  max_peers: 10
+  dial_timeout_seconds: 5
+  enable_mdns: false
+  bootstrap_nodes: []
+
+tor:
+  enabled: false
+  data_dir: /tmp/moltbunker-test/tor
+  socks5_port: 9050
+  control_port: 9051
+
+runtime:
+  containerd_socket: /run/containerd/containerd.sock
+  namespace: moltbunker-test
+  enable_encryption: false
+  default_resources:
+    cpu_quota: 100000
+    cpu_period: 100000
+    memory_limit: 268435456  # 256MB
+    disk_limit: 1073741824   # 1GB
+    pid_limit: 100
+
+redundancy:
+  replica_count: 1
+  health_check_interval_seconds: 10
+  health_timeout_seconds: 5
+  failover_delay_seconds: 30
+
+payment:
+  enabled: false
