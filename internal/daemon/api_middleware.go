@@ -149,6 +149,65 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 		response = s.handleConfigGet(ctx, req)
 	case "config_set":
 		response = s.handleConfigSet(ctx, req)
+	// Provider handlers
+	case "provider_register":
+		response = s.handleProviderRegister(ctx, req)
+	case "provider_status":
+		response = s.handleProviderStatus(ctx, req)
+	case "provider_stake_add":
+		response = s.handleProviderStakeAdd(ctx, req)
+	case "provider_stake_withdraw":
+		response = s.handleProviderStakeWithdraw(ctx, req)
+	case "provider_earnings":
+		response = s.handleProviderEarnings(ctx, req)
+	case "provider_jobs":
+		response = s.handleProviderJobs(ctx, req)
+	case "provider_maintenance":
+		response = s.handleProviderMaintenance(ctx, req)
+	// Requester handlers
+	case "requester_jobs":
+		response = s.handleRequesterJobs(ctx, req)
+	case "requester_outputs":
+		response = s.handleRequesterOutputs(ctx, req)
+	case "requester_balance":
+		response = s.handleRequesterBalance(ctx, req)
+	case "requester_deposit":
+		response = s.handleRequesterDeposit(ctx, req)
+	case "requester_withdraw":
+		response = s.handleRequesterWithdraw(ctx, req)
+	case "requester_estimate":
+		response = s.handleRequesterEstimate(ctx, req)
+	// Threat detection handlers
+	case "threat_level":
+		response = s.handleThreatLevel(ctx, req)
+	case "threat_signal":
+		response = s.handleThreatSignal(ctx, req)
+	case "threat_clear":
+		response = s.handleThreatClear(ctx, req)
+	// Cloning handlers
+	case "clone":
+		response = s.handleClone(ctx, req)
+	case "clone_status":
+		response = s.handleCloneStatus(ctx, req)
+	case "clone_list":
+		response = s.handleCloneList(ctx, req)
+	case "clone_cancel":
+		response = s.handleCloneCancel(ctx, req)
+	case "clone_stats":
+		response = s.handleCloneStats(ctx, req)
+	// Snapshot handlers
+	case "snapshot_create":
+		response = s.handleSnapshotCreate(ctx, req)
+	case "snapshot_get":
+		response = s.handleSnapshotGet(ctx, req)
+	case "snapshot_list":
+		response = s.handleSnapshotList(ctx, req)
+	case "snapshot_delete":
+		response = s.handleSnapshotDelete(ctx, req)
+	case "snapshot_restore":
+		response = s.handleSnapshotRestore(ctx, req)
+	case "snapshot_stats":
+		response = s.handleSnapshotStats(ctx, req)
 	default:
 		response = &APIResponse{
 			Error: fmt.Sprintf("unknown method: %s", req.Method),

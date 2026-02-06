@@ -25,6 +25,7 @@ type ContainerManager struct {
 	consensus     *redundancy.ConsensusManager
 	router        *p2p.Router
 	geoRouter     *p2p.GeographicRouter
+	gossip        *p2p.GossipProtocol
 	torService    *tor.TorService
 	node          *Node
 
@@ -85,6 +86,9 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		}
 	}
 
+	// Initialize gossip protocol for state synchronization
+	gossipProto := p2p.NewGossipProtocol(node.Router())
+
 	cm := &ContainerManager{
 		containerd:         containerd,
 		encryption:         encryption,
@@ -93,6 +97,7 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		consensus:          consensus,
 		router:             node.Router(),
 		geoRouter:          geoRouter,
+		gossip:             gossipProto,
 		torService:         torService,
 		node:               node,
 		deployments:        make(map[string]*Deployment),
@@ -115,6 +120,11 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 	// Start health monitoring
 	util.SafeGoWithName("health-monitor", func() {
 		healthMonitor.Start(ctx)
+	})
+
+	// Start gossip protocol for state synchronization
+	util.SafeGoWithName("gossip-protocol", func() {
+		gossipProto.Start(ctx)
 	})
 
 	// Register P2P message handlers for container operations

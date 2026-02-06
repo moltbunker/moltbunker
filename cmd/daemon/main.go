@@ -7,11 +7,15 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
+	"github.com/moltbunker/moltbunker/internal/cloning"
 	"github.com/moltbunker/moltbunker/internal/config"
 	"github.com/moltbunker/moltbunker/internal/daemon"
+	"github.com/moltbunker/moltbunker/internal/snapshot"
+	"github.com/moltbunker/moltbunker/internal/threat"
 )
 
 var (
@@ -83,6 +87,41 @@ func main() {
 		log.Fatalf("Failed to start API server: %v", err)
 	}
 
+	// Initialize threat detection system
+	threatDetector := threat.NewDetector(threat.DefaultDetectorConfig())
+	if err := threatDetector.Start(ctx); err != nil {
+		log.Printf("Warning: Failed to start threat detector: %v", err)
+	}
+
+	// Initialize snapshot manager
+	snapshotCfg := snapshot.DefaultSnapshotConfig()
+	snapshotCfg.StoragePath = filepath.Join(cfg.Daemon.DataDir, "snapshots")
+	snapshotMgr, err := snapshot.NewManager(snapshotCfg)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize snapshot manager: %v", err)
+	}
+
+	// Initialize checkpoint system
+	var checkpointer *snapshot.Checkpointer
+	if snapshotMgr != nil {
+		checkpointer = snapshot.NewCheckpointer(snapshotMgr, snapshot.DefaultCheckpointConfig())
+		if err := checkpointer.Start(ctx); err != nil {
+			log.Printf("Warning: Failed to start checkpointer: %v", err)
+		}
+	}
+
+	// Initialize cloning manager
+	cloningCfg := cloning.DefaultCloneConfig()
+	cloningMgr := cloning.NewManager(cloningCfg, snapshotMgr, nil, nil)
+	if err := cloningMgr.Start(ctx); err != nil {
+		log.Printf("Warning: Failed to start cloning manager: %v", err)
+	}
+
+	// Wire up threat-triggered cloning
+	threatResponder := threat.NewResponder(threatDetector, threat.DefaultResponseConfig())
+	cloningMgr.SetThreatDetector(threatDetector, threatResponder)
+	threatResponder.Start(ctx)
+
 	fmt.Printf("Moltbunker daemon started\n")
 	fmt.Printf("  P2P Port:    %d\n", cfg.Daemon.Port)
 	fmt.Printf("  Node ID:     %s\n", node.NodeInfo().ID.String())
@@ -104,6 +143,14 @@ func main() {
 	// Create shutdown context with timeout
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
+
+	// Stop new systems first
+	threatResponder.Stop()
+	threatDetector.Stop()
+	cloningMgr.Stop()
+	if checkpointer != nil {
+		checkpointer.Stop()
+	}
 
 	// Stop API server
 	if err := apiServer.Stop(); err != nil {

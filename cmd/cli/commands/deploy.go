@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/moltbunker/moltbunker/internal/client"
-	"github.com/moltbunker/moltbunker/pkg/types"
 	"github.com/spf13/cobra"
 )
 
@@ -66,10 +65,10 @@ func runDeploy(cmd *cobra.Command, args []string) error {
 	// Build deployment request
 	req := &client.DeployRequest{
 		Image: image,
-		Resources: types.ResourceLimits{
-			CPUQuota:    deployCPU,
-			MemoryLimit: deployMemory,
-			DiskLimit:   deployDisk,
+		Resources: &client.ResourceLimits{
+			CPUShares: deployCPU,
+			MemoryMB:  deployMemory / (1024 * 1024), // Convert bytes to MB
+			StorageMB: deployDisk / (1024 * 1024),   // Convert bytes to MB
 		},
 		TorOnly:      deployTorOnly,
 		OnionService: deployOnionService,

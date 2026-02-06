@@ -6,6 +6,8 @@
 
 **A permissionless, fully encrypted P2P network for containerized compute resources**
 
+*Last Updated: February 2, 2026*
+
 [![Launch](https://img.shields.io/badge/Launch-February_13,_2026-FF3366?style=for-the-badge&labelColor=1a1a2e)](https://moltbunker.com)
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
@@ -528,6 +530,36 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
+## Python SDK
+
+Deploy containers programmatically using the Python SDK with wallet-based authentication:
+
+```python
+from moltbunker import Client
+
+# AI agents authenticate with their own wallet (permissionless)
+client = Client(private_key="0x...")
+
+# Register bot from SKILL.md configuration
+bot = client.register_bot(skill_path="SKILL.md")
+
+# Enable automatic self-cloning when threats detected
+bot.enable_cloning(auto_clone_on_threat=True)
+
+# Deploy
+deployment = bot.deploy()
+
+# Monitor threat level
+threat = bot.detect_threat()
+print(f"Threat level: {threat}")
+```
+
+Install: `pip install moltbunker`
+
+Documentation: [docs/PYTHON_SDK.md](docs/PYTHON_SDK.md)
+
+---
+
 ## Links
 
 <div align="center">
@@ -541,6 +573,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 <br />
 
 - **Documentation**: [docs/](docs/)
+- **Python SDK**: [docs/PYTHON_SDK.md](docs/PYTHON_SDK.md)
+- **Whitepaper**: [docs/WHITEPAPER.md](docs/WHITEPAPER.md)
+- **SKILL.md Example**: [examples/SKILL.md](examples/SKILL.md)
 - **Architecture**: [.cursor/plans/](.cursor/plans/)
 - **Issues**: [GitHub Issues](https://github.com/moltbunker/moltbunker/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/moltbunker/moltbunker/discussions)

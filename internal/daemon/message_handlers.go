@@ -3,6 +3,8 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/logging"
@@ -22,6 +24,20 @@ func (cm *ContainerManager) registerMessageHandlers() {
 
 	// Handler for replica sync
 	cm.router.RegisterHandler(types.MessageTypeReplicaSync, cm.handleReplicaSync)
+
+	// Handler for remote container stop
+	cm.router.RegisterHandler(types.MessageTypeStop, cm.handleRemoteStop)
+
+	// Handler for remote container delete
+	cm.router.RegisterHandler(types.MessageTypeDelete, cm.handleRemoteDelete)
+
+	// Handler for remote log requests
+	cm.router.RegisterHandler(types.MessageTypeLogs, cm.handleRemoteLogs)
+
+	// Handler for gossip messages
+	if cm.gossip != nil {
+		cm.router.RegisterHandler(types.MessageTypeGossip, cm.gossip.HandleGossipMessage)
+	}
 }
 
 // handleStatusRequest handles container status queries
@@ -160,4 +176,94 @@ func (cm *ContainerManager) handleReplicaSync(ctx context.Context, msg *types.Me
 	cm.consensus.UpdateState(syncData.ContainerID, syncData.Status, [3]*types.Container{})
 
 	return nil
+}
+
+// handleRemoteStop handles remote container stop requests from peer nodes
+func (cm *ContainerManager) handleRemoteStop(ctx context.Context, msg *types.Message, from *types.Node) error {
+	containerID := string(msg.Payload)
+
+	logging.Info("received remote stop request",
+		logging.ContainerID(containerID),
+		logging.NodeID(from.ID.String()[:16]),
+		logging.Component("message_handlers"))
+
+	if err := cm.Stop(ctx, containerID); err != nil {
+		logging.Warn("remote stop failed",
+			logging.ContainerID(containerID),
+			logging.Err(err),
+			logging.Component("message_handlers"))
+		return err
+	}
+
+	return nil
+}
+
+// handleRemoteDelete handles remote container delete requests from peer nodes
+func (cm *ContainerManager) handleRemoteDelete(ctx context.Context, msg *types.Message, from *types.Node) error {
+	containerID := string(msg.Payload)
+
+	logging.Info("received remote delete request",
+		logging.ContainerID(containerID),
+		logging.NodeID(from.ID.String()[:16]),
+		logging.Component("message_handlers"))
+
+	if err := cm.Delete(ctx, containerID); err != nil {
+		logging.Warn("remote delete failed",
+			logging.ContainerID(containerID),
+			logging.Err(err),
+			logging.Component("message_handlers"))
+		return err
+	}
+
+	return nil
+}
+
+// handleRemoteLogs handles remote log requests from peer nodes
+func (cm *ContainerManager) handleRemoteLogs(ctx context.Context, msg *types.Message, from *types.Node) error {
+	var req struct {
+		ContainerID string `json:"container_id"`
+		Lines       int    `json:"lines"`
+	}
+
+	if err := json.Unmarshal(msg.Payload, &req); err != nil {
+		return err
+	}
+
+	if req.Lines == 0 {
+		req.Lines = 100
+	}
+
+	// Get logs from containerd
+	var logs string
+	if cm.containerd != nil {
+		reader, err := cm.containerd.GetContainerLogs(ctx, req.ContainerID, false, req.Lines)
+		if err != nil {
+			logs = fmt.Sprintf("error retrieving logs: %v", err)
+		} else {
+			defer reader.Close()
+			data, err := io.ReadAll(reader)
+			if err != nil {
+				logs = fmt.Sprintf("error reading logs: %v", err)
+			} else {
+				logs = string(data)
+			}
+		}
+	} else {
+		logs = "containerd not available"
+	}
+
+	// Send logs response
+	response := map[string]string{
+		"container_id": req.ContainerID,
+		"logs":         logs,
+	}
+	responseData, _ := json.Marshal(response)
+
+	return cm.router.SendMessage(ctx, from.ID, &types.Message{
+		Type:      types.MessageTypeLogs,
+		From:      cm.node.nodeInfo.ID,
+		To:        from.ID,
+		Payload:   responseData,
+		Timestamp: time.Now(),
+	})
 }

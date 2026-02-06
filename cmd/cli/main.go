@@ -37,6 +37,11 @@ func main() {
 	rootCmd.AddCommand(commands.NewColimaCmd())
 	rootCmd.AddCommand(commands.NewVersionCmd())
 
+	// New commands for threat, clone, and snapshot
+	rootCmd.AddCommand(commands.NewThreatCmd())
+	rootCmd.AddCommand(commands.NewCloneCmd())
+	rootCmd.AddCommand(commands.NewSnapshotCmd())
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

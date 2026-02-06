@@ -8,8 +8,6 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
 // DaemonClient provides communication with the moltbunker daemon
@@ -38,36 +36,47 @@ type APIResponse struct {
 
 // StatusResponse contains node status information
 type StatusResponse struct {
-	NodeID     string `json:"node_id"`
-	Running    bool   `json:"running"`
-	Port       int    `json:"port"`
-	PeerCount  int    `json:"peer_count"`
-	Uptime     string `json:"uptime"`
-	Version    string `json:"version"`
-	TorEnabled bool   `json:"tor_enabled"`
-	TorAddress string `json:"tor_address,omitempty"`
-	Containers int    `json:"containers"`
-	Region     string `json:"region"`
+	NodeID      string  `json:"node_id"`
+	Running     bool    `json:"running"`
+	Port        int     `json:"port"`
+	PeerCount   int     `json:"peer_count"`
+	Uptime      string  `json:"uptime"`
+	Version     string  `json:"version"`
+	TorEnabled  bool    `json:"tor_enabled"`
+	TorAddress  string  `json:"tor_address,omitempty"`
+	Containers  int     `json:"containers"`
+	Region      string  `json:"region"`
+	ThreatLevel float64 `json:"threat_level,omitempty"`
+}
+
+// ResourceLimits for deployment
+type ResourceLimits struct {
+	CPUShares   int64 `json:"cpu_shares,omitempty"`
+	MemoryMB    int64 `json:"memory_mb,omitempty"`
+	StorageMB   int64 `json:"storage_mb,omitempty"`
+	NetworkMbps int   `json:"network_mbps,omitempty"`
 }
 
 // DeployRequest contains deployment parameters
 type DeployRequest struct {
-	Image           string               `json:"image"`
-	Resources       types.ResourceLimits `json:"resources,omitempty"`
-	TorOnly         bool                 `json:"tor_only"`
-	OnionService    bool                 `json:"onion_service"`
-	OnionPort       int                  `json:"onion_port,omitempty"`       // Port to expose via Tor (default: 80)
-	WaitForReplicas bool                 `json:"wait_for_replicas,omitempty"` // If true, wait for at least 1 replica ack before returning
+	Image           string          `json:"image"`
+	CodeHash        string          `json:"code_hash,omitempty"`
+	Resources       *ResourceLimits `json:"resources,omitempty"`
+	TorOnly         bool            `json:"tor_only"`
+	OnionService    bool            `json:"onion_service"`
+	OnionPort       int             `json:"onion_port,omitempty"`        // Port to expose via Tor (default: 80)
+	WaitForReplicas bool            `json:"wait_for_replicas,omitempty"` // If true, wait for at least 1 replica ack before returning
 }
 
 // DeployResponse contains deployment result
 type DeployResponse struct {
-	ContainerID     string   `json:"container_id"`
-	OnionAddress    string   `json:"onion_address,omitempty"`
-	Status          string   `json:"status"`
-	EncryptedVolume string   `json:"encrypted_volume,omitempty"`
-	Regions         []string `json:"regions"`
-	ReplicaCount    int      `json:"replica_count"` // Number of successful replica acks received
+	ContainerID     string    `json:"container_id"`
+	OnionAddress    string    `json:"onion_address,omitempty"`
+	Status          string    `json:"status"`
+	EncryptedVolume string    `json:"encrypted_volume,omitempty"`
+	Regions         []string  `json:"regions"`
+	ReplicaCount    int       `json:"replica_count"` // Number of successful replica acks received
+	CreatedAt       time.Time `json:"created_at,omitempty"`
 }
 
 // ContainerInfo contains container information

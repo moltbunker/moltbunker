@@ -1,5 +1,7 @@
 # Moltbunker Deployment Guide
 
+*Last Updated: February 2, 2026*
+
 This guide covers deploying Moltbunker in various environments.
 
 ## Table of Contents

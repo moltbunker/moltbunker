@@ -1,5 +1,7 @@
 # Binaries
 bin/
+api
+sdk/
 *.exe
 *.exe~
 *.dll
@@ -150,3 +152,4 @@ cpu.out
 mem.out
 
 plans/
+CLAUDE.md
