@@ -33,6 +33,21 @@ func (r *Router) sendLengthPrefixed(conn *tls.Conn, data []byte) error {
 	return nil
 }
 
+// WriteLengthPrefixed writes data with a 4-byte length prefix to any writer.
+// This is the public counterpart of Router.sendLengthPrefixed.
+func WriteLengthPrefixed(conn io.Writer, data []byte) error {
+	lengthBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lengthBuf, uint32(len(data)))
+
+	if _, err := conn.Write(lengthBuf); err != nil {
+		return err
+	}
+	if _, err := conn.Write(data); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ReadLengthPrefixed reads data with a 4-byte length prefix
 func ReadLengthPrefixed(conn io.Reader) ([]byte, error) {
 	// Read length prefix

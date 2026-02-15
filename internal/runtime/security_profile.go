@@ -1,14 +1,18 @@
 package runtime
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	goruntime "runtime"
+	"os"
 	"strings"
 
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/oci"
 	"github.com/opencontainers/runtime-spec/specs-go"
 
+	"github.com/moltbunker/moltbunker/internal/security"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -109,8 +113,8 @@ func (se *SecurityEnforcer) BuildOCISpecOpts() []oci.SpecOpts {
 		opts = append(opts, WithSeccompProfile(se.profile.SeccompProfile, se.profile.BlockedSyscalls, se.profile.AllowedSyscalls))
 	}
 
-	// AppArmor profile
-	if se.profile.AppArmorProfile != "" {
+	// AppArmor profile — only apply if running on Linux and profile is loaded
+	if se.profile.AppArmorProfile != "" && isAppArmorProfileLoaded(se.profile.AppArmorProfile) {
 		opts = append(opts, WithAppArmorProfile(se.profile.AppArmorProfile))
 	}
 
@@ -171,23 +175,26 @@ func WithSeccompProfile(profile string, blockedSyscalls, allowedSyscalls []strin
 		}
 
 		// Build seccomp configuration based on profile type
-		seccomp := &specs.LinuxSeccomp{
-			DefaultAction: specs.ActAllow,
-		}
+		var seccomp *specs.LinuxSeccomp
 
 		switch profile {
 		case "strict":
-			// In strict mode, default to ERRNO and only allow specific syscalls
-			if len(allowedSyscalls) > 0 {
-				seccomp.DefaultAction = specs.ActErrno
-				for _, syscall := range allowedSyscalls {
-					seccomp.Syscalls = append(seccomp.Syscalls, specs.LinuxSyscall{
-						Names:  []string{syscall},
-						Action: specs.ActAllow,
-					})
-				}
+			// Strict mode: deny by default, only allow specific syscalls
+			seccomp = &specs.LinuxSeccomp{
+				DefaultAction: specs.ActErrno,
 			}
-			// Always block dangerous syscalls
+			// Use provided allowlist, or fall back to essential syscalls
+			allowed := allowedSyscalls
+			if len(allowed) == 0 {
+				allowed = security.GetEssentialSyscalls()
+			}
+			for _, syscall := range allowed {
+				seccomp.Syscalls = append(seccomp.Syscalls, specs.LinuxSyscall{
+					Names:  []string{syscall},
+					Action: specs.ActAllow,
+				})
+			}
+			// Always block dangerous syscalls (overrides any allow)
 			for _, syscall := range blockedSyscalls {
 				seccomp.Syscalls = append(seccomp.Syscalls, specs.LinuxSyscall{
 					Names:  []string{syscall},
@@ -195,14 +202,18 @@ func WithSeccompProfile(profile string, blockedSyscalls, allowedSyscalls []strin
 				})
 			}
 		case "default":
-			// In default mode, allow most and block specific syscalls
-			seccomp.DefaultAction = specs.ActAllow
+			// Default mode: allow by default, block specific syscalls
+			seccomp = &specs.LinuxSeccomp{
+				DefaultAction: specs.ActAllow,
+			}
 			for _, syscall := range blockedSyscalls {
 				seccomp.Syscalls = append(seccomp.Syscalls, specs.LinuxSyscall{
 					Names:  []string{syscall},
 					Action: specs.ActErrno,
 				})
 			}
+		default:
+			return nil
 		}
 
 		s.Linux.Seccomp = seccomp
@@ -344,4 +355,26 @@ var (
 func IsSecurityError(err error) bool {
 	_, ok := err.(*SecurityProfileError)
 	return ok
+}
+
+// isAppArmorProfileLoaded checks if an AppArmor profile is loaded in the kernel.
+// Returns false on non-Linux platforms or if the profiles file cannot be read.
+func isAppArmorProfileLoaded(profile string) bool {
+	if goruntime.GOOS != "linux" {
+		return false
+	}
+	f, err := os.Open("/sys/kernel/security/apparmor/profiles")
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		// Lines look like: "profile_name (enforce)" or "profile_name (complain)"
+		line := scanner.Text()
+		if strings.HasPrefix(line, profile+" ") || line == profile {
+			return true
+		}
+	}
+	return false
 }

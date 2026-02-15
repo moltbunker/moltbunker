@@ -24,6 +24,7 @@ func (r *Router) startCleanupRoutine() {
 				return
 			case <-ticker.C:
 				r.cleanupIdleConnections()
+				r.CleanupStaleLimiters()
 			}
 		}
 	})
@@ -60,6 +61,11 @@ func (r *Router) cleanupIdleConnections() {
 
 // ensureConnection ensures we have an active connection to the peer
 func (r *Router) ensureConnection(ctx context.Context, peerConn *PeerConnection) error {
+	// Check ban status before attempting to dial
+	if r.banList != nil && r.banList.IsBanned(peerConn.Node.ID) {
+		return fmt.Errorf("peer is banned: %s", peerConn.Node.ID.String()[:16])
+	}
+
 	peerConn.mu.Lock()
 	defer peerConn.mu.Unlock()
 

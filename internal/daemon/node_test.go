@@ -72,7 +72,7 @@ func TestStatusResponse_Structure(t *testing.T) {
 		NodeID:     "test-node-id",
 		Running:    true,
 		Port:       9000,
-		PeerCount:  5,
+		NetworkNodes: 5,
 		Version:    "0.1.0",
 		TorEnabled: true,
 		TorAddress: "test.onion",
@@ -90,8 +90,8 @@ func TestStatusResponse_Structure(t *testing.T) {
 		t.Error("Port not set correctly")
 	}
 
-	if status.PeerCount != 5 {
-		t.Error("PeerCount not set correctly")
+	if status.NetworkNodes != 5 {
+		t.Error("NetworkNodes not set correctly")
 	}
 
 	if status.Version != "0.1.0" {

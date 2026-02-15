@@ -22,23 +22,32 @@ var (
 func NewDoctorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Check system health and dependencies",
-		Long: `Run diagnostic checks to verify system requirements and dependencies.
+		Short: "System health check (role-aware)",
+		Long: `Run diagnostic checks to verify system requirements.
 
-The doctor command checks for:
-- Runtime dependencies (Go, containerd)
-- Service availability (Tor, IPFS)
-- System requirements (disk space, memory)
-- Configuration files
-- Socket permissions
+Auto-detects your role from config and only checks relevant dependencies.
+
+Checks for ALL roles:
+  - Config file (~/.moltbunker/config.yaml)
+  - Node keys (Ed25519 keypair for TLS and P2P identity)
+  - Wallet (Ethereum keystore for signing transactions/API requests)
+  - Disk space and memory
+
+Additional checks for providers:
+  - Colima (macOS) or native containerd (Linux)
+  - IPFS for container image distribution
+  - Socket permissions for daemon operation
 
 Examples:
-  moltbunker doctor              # Run all checks
+  moltbunker doctor              # Auto-detect role, run checks
+  moltbunker doctor provider     # Check provider requirements
+  moltbunker doctor requester    # Check requester requirements
   moltbunker doctor --fix        # Auto-install missing dependencies
-  moltbunker doctor --dry-run    # Preview what would be installed
-  moltbunker doctor --json       # Output results as JSON
-  moltbunker doctor --category runtime  # Only check runtime dependencies`,
-		RunE: runDoctor,
+  moltbunker doctor --category config  # Only check configuration`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			role := string(GetNodeRole())
+			return runDoctorWithRole(role)
+		},
 	}
 
 	cmd.Flags().BoolVar(&doctorFix, "fix", false, "Automatically install missing dependencies")
@@ -47,15 +56,44 @@ Examples:
 	cmd.Flags().StringVar(&doctorCategory, "category", "", "Filter checks by category (runtime, services, system, config, permissions)")
 	cmd.Flags().BoolVarP(&doctorVerbose, "verbose", "v", false, "Enable verbose output")
 
+	// Subcommands for explicit role checking
+	cmd.AddCommand(&cobra.Command{
+		Use:   "provider",
+		Short: "Check provider requirements",
+		Long: `Run all checks needed to operate as a provider node.
+
+Checks: config, node keys, wallet, Go, Colima/containerd, IPFS,
+disk space, memory, file descriptors, socket permissions, Tor.
+
+Use this before 'moltbunker provider enable' to verify your system
+has everything needed to host containers and earn BUNKER tokens.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDoctorWithRole("provider")
+		},
+	})
+
+	cmd.AddCommand(&cobra.Command{
+		Use:   "requester",
+		Short: "Check requester requirements",
+		Long: `Run checks needed to operate as a requester.
+
+Checks: config, node keys, wallet, disk space, memory.
+Skips provider-only checks (containerd, IPFS, socket permissions).
+
+A valid wallet is required — the CLI uses it to sign API requests
+for deploying containers and managing payments.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runDoctorWithRole("requester")
+		},
+	})
+
 	return cmd
 }
 
-func runDoctor(cmd *cobra.Command, args []string) error {
-	// Create context with signal handling
+func runDoctorWithRole(role string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle interrupt signals
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -63,7 +101,6 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		cancel()
 	}()
 
-	// Validate category if provided
 	var category doctor.Category
 	if doctorCategory != "" {
 		switch doctorCategory {
@@ -82,11 +119,21 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if !doctorJSON {
+		label := fmt.Sprintf("role: %s", role)
+		fmt.Println()
+		fmt.Println(StatusBox(Logo()+" Doctor", [][2]string{
+			{"Checking", label},
+		}))
+		fmt.Println()
+	}
+
 	opts := doctor.DoctorOptions{
 		Fix:      doctorFix,
 		DryRun:   doctorDryRun,
 		JSON:     doctorJSON,
 		Category: category,
+		Role:     role,
 		Verbose:  doctorVerbose,
 	}
 
@@ -96,8 +143,24 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("doctor check failed: %w", err)
 	}
 
-	// Exit with error code if checks failed (for CI/CD usage)
 	if !report.Summary.IsHealthy() && !doctorJSON {
+		fmt.Println()
+		// Show targeted hints based on what failed
+		for _, check := range report.Checks {
+			if check.Status == doctor.StatusError {
+				switch check.Name {
+				case "Wallet":
+					fmt.Println(Hint("Create a wallet: moltbunker wallet create"))
+				case "Node keys":
+					fmt.Println(Hint("Generate keys: moltbunker init"))
+				case "Config file":
+					fmt.Println(Hint("Set up config: moltbunker init"))
+				}
+			}
+		}
+		if role == "requester" || role == "" {
+			fmt.Println(Hint("To become a provider: moltbunker provider enable"))
+		}
 		os.Exit(1)
 	}
 

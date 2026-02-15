@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"runtime"
 )
 
 // Doctor orchestrates health checks for the moltbunker system
@@ -27,13 +26,9 @@ func New(opts DoctorOptions) *Doctor {
 
 	d.output = NewOutput(os.Stdout, useColors)
 
-	// Initialize package manager based on platform
-	if runtime.GOOS == "darwin" {
-		d.packageManager = NewHomebrewManager()
-	}
-
-	// Register default checkers based on platform
-	d.registerDefaultCheckers()
+	// Initialize platform-specific package manager and checkers
+	d.initPackageManager()
+	d.registerPlatformCheckers()
 
 	return d
 }
@@ -45,44 +40,10 @@ func NewWithWriter(opts DoctorOptions, w io.Writer, useColors bool) *Doctor {
 		output:  NewOutput(w, useColors),
 	}
 
-	if runtime.GOOS == "darwin" {
-		d.packageManager = NewHomebrewManager()
-	}
-
-	d.registerDefaultCheckers()
+	d.initPackageManager()
+	d.registerPlatformCheckers()
 
 	return d
-}
-
-// registerDefaultCheckers adds all platform-specific checkers
-func (d *Doctor) registerDefaultCheckers() {
-	if runtime.GOOS == "darwin" {
-		d.registerDarwinCheckers()
-	}
-}
-
-// registerDarwinCheckers adds macOS-specific checkers
-func (d *Doctor) registerDarwinCheckers() {
-	d.checkers = []Checker{
-		// Runtime checks
-		NewGoVersionChecker(),
-		NewColimaChecker(), // Check Colima before containerd on macOS
-		NewContainerdChecker(),
-
-		// Services checks
-		NewTorChecker(),
-		NewIPFSChecker(),
-
-		// System checks
-		NewDiskSpaceChecker(),
-		NewMemoryChecker(),
-
-		// Config checks
-		NewConfigFileChecker(),
-
-		// Permission checks
-		NewSocketPermissionChecker(),
-	}
 }
 
 // AddChecker adds a custom checker
@@ -158,17 +119,36 @@ func (d *Doctor) Run(ctx context.Context) (*DoctorReport, error) {
 	return report, nil
 }
 
-// filterCheckers returns checkers filtered by category if specified
+// filterCheckers returns checkers filtered by category and role if specified
 func (d *Doctor) filterCheckers() []Checker {
-	if d.options.Category == "" {
+	if d.options.Category == "" && d.options.Role == "" {
 		return d.checkers
 	}
 
 	filtered := make([]Checker, 0)
 	for _, c := range d.checkers {
-		if c.Category() == d.options.Category {
-			filtered = append(filtered, c)
+		// Filter by category
+		if d.options.Category != "" && c.Category() != d.options.Category {
+			continue
 		}
+		// Filter by role (if checker implements RoleAware)
+		if d.options.Role != "" {
+			if ra, ok := c.(RoleAware); ok {
+				roles := ra.Roles()
+				found := false
+				for _, r := range roles {
+					if r == d.options.Role {
+						found = true
+						break
+					}
+				}
+				if !found {
+					continue
+				}
+			}
+			// Checkers without RoleAware always pass the role filter
+		}
+		filtered = append(filtered, c)
 	}
 	return filtered
 }
@@ -186,6 +166,9 @@ func (d *Doctor) updateSummary(summary *Summary, result CheckResult) {
 		}
 	case StatusWarning:
 		summary.Warned++
+		if result.Fixable {
+			summary.Fixable++
+		}
 	case StatusSkipped:
 		summary.Skipped++
 	}

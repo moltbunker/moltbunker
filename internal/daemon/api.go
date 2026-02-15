@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/config"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
+	"github.com/moltbunker/moltbunker/internal/runtime"
 	"github.com/moltbunker/moltbunker/internal/util"
 )
 
@@ -19,6 +23,7 @@ import (
 type APIServer struct {
 	node             *Node
 	containerManager *ContainerManager
+	profileManager   *NodeProfileManager
 	socketPath       string
 	dataDir          string
 	config           *config.Config // Full configuration
@@ -33,6 +38,20 @@ type APIServer struct {
 	rateLimitRequests   int           // Max requests per connection per window
 	rateLimitWindow     time.Duration // Rate limit window duration
 	maxRequestSize      int64         // Maximum request body size
+
+	// Admin badge getter — set by external API server to merge badges into status
+	adminBadgeGetter AdminBadgeGetter
+}
+
+// AdminBadgeGetter returns admin-assigned badges/blocked status for a node
+type AdminBadgeGetter interface {
+	Get(nodeID string) *AdminNodeMeta
+}
+
+// AdminNodeMeta is a minimal struct for badge merging (avoids import cycle)
+type AdminNodeMeta struct {
+	Badges  []string
+	Blocked bool
 }
 
 // NewAPIServer creates a new API server with default rate limiting
@@ -114,6 +133,11 @@ func NewAPIServerWithConfig(node *Node, socketPath string, dataDir string, rateL
 	}
 }
 
+// GetContainerManager returns the container manager for direct API access (e.g., exec relay)
+func (s *APIServer) GetContainerManager() *ContainerManager {
+	return s.containerManager
+}
+
 // DefaultSocketPath returns the default socket path
 func DefaultSocketPath() string {
 	// Try XDG_RUNTIME_DIR first (secure, user-specific)
@@ -148,10 +172,10 @@ func (s *APIServer) Start(ctx context.Context) error {
 	// Remove existing socket
 	os.Remove(s.socketPath)
 
-	// Set restrictive umask before creating socket to avoid TOCTOU race condition.
-	// This ensures the socket is created with secure permissions from the start,
-	// rather than creating it and then chmod'ing (which leaves a window of vulnerability).
-	oldUmask := syscall.Umask(0077)
+	// Set umask before creating socket to avoid TOCTOU race condition.
+	// Use 0007 to allow group access (the API service runs as the moltbunker group
+	// and needs to connect when the daemon runs as root).
+	oldUmask := syscall.Umask(0007)
 
 	// Create Unix socket listener
 	listener, err := net.Listen("unix", s.socketPath)
@@ -164,16 +188,45 @@ func (s *APIServer) Start(ctx context.Context) error {
 		return fmt.Errorf("failed to create unix socket: %w", err)
 	}
 
+	// If running as root, set socket group to "moltbunker" so the API service can connect
+	if os.Getuid() == 0 {
+		if grp, err := user.LookupGroup("moltbunker"); err == nil {
+			if gid, err := strconv.Atoi(grp.Gid); err == nil {
+				os.Chown(s.socketPath, 0, gid)
+			}
+		}
+	}
+
 	// Initialize container manager
 	containerdSocket := "/run/containerd/containerd.sock"
 	if s.config != nil && s.config.Runtime.ContainerdSocket != "" {
 		containerdSocket = s.config.Runtime.ContainerdSocket
 	}
+	runtimeName := "auto"
+	if s.config != nil && s.config.Runtime.RuntimeName != "" {
+		runtimeName = s.config.Runtime.RuntimeName
+	}
+	// Map config.Runtime.Kata → runtime.KataConfig for Kata hypervisor annotations
+	var kataConfig *runtime.KataConfig
+	if s.config != nil {
+		kata := s.config.Runtime.Kata
+		if kata.VMMemoryMB > 0 || kata.VMCPUs > 0 || kata.KernelPath != "" || kata.ImagePath != "" {
+			kataConfig = &runtime.KataConfig{
+				VMMemoryMB: kata.VMMemoryMB,
+				VMCPUs:     kata.VMCPUs,
+				KernelPath: kata.KernelPath,
+				ImagePath:  kata.ImagePath,
+			}
+		}
+	}
 	cmConfig := ContainerManagerConfig{
 		DataDir:          s.dataDir,
 		ContainerdSocket: containerdSocket,
+		RuntimeName:      runtimeName,
+		KataConfig:       kataConfig,
 		TorDataDir:       filepath.Join(s.dataDir, "tor"),
 		EnableEncryption: true,
+		PaymentService:   s.node.PaymentService(),
 	}
 	containerManager, err := NewContainerManager(ctx, cmConfig, s.node)
 	if err != nil {
@@ -184,6 +237,18 @@ func (s *APIServer) Start(ctx context.Context) error {
 
 	s.listener = listener
 	s.containerManager = containerManager
+
+	// Initialize node profile manager for dashboard/status data
+	if s.config != nil {
+		nodesDir := filepath.Join(s.dataDir, "nodes")
+		pm, err := NewNodeProfileManager(nodesDir, s.config, s.node, containerManager)
+		if err != nil {
+			logging.Warn("failed to create node profile manager", "error", err.Error())
+		} else {
+			s.profileManager = pm
+		}
+	}
+
 	s.running = true
 	s.startTime = time.Now()
 	s.mu.Unlock()
@@ -207,12 +272,15 @@ func (s *APIServer) Stop() error {
 
 	s.running = false
 
-	// Close container manager
+	// Close container manager (stops health monitoring, containers, containerd)
 	if s.containerManager != nil {
+		logging.Info("closing container manager", logging.Component("api"))
 		s.containerManager.Close()
 	}
 
+	// Close listener to stop accepting new connections
 	if s.listener != nil {
+		logging.Info("closing API socket listener", logging.Component("api"))
 		s.listener.Close()
 	}
 
@@ -220,6 +288,11 @@ func (s *APIServer) Stop() error {
 	os.Remove(s.socketPath)
 
 	return nil
+}
+
+// SetAdminBadgeGetter sets the admin badge getter for merging into status responses
+func (s *APIServer) SetAdminBadgeGetter(getter AdminBadgeGetter) {
+	s.adminBadgeGetter = getter
 }
 
 // SocketPath returns the socket path

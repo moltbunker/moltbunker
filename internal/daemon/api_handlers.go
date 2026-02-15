@@ -7,6 +7,8 @@ import (
 	"io"
 	goruntime "runtime"
 	"time"
+
+	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
 // handleStatus handles status requests
@@ -16,19 +18,97 @@ func (s *APIServer) handleStatus(ctx context.Context, req *APIRequest) *APIRespo
 
 	torRunning, torAddress := s.containerManager.GetTorStatus()
 
-	containerCount := len(s.containerManager.ListDeployments())
+	deployments := s.containerManager.ListDeployments()
+	containerCount := len(deployments)
 
+	// Count encrypted containers
+	encryptedCount := 0
+	for _, d := range deployments {
+		if d.Encrypted {
+			encryptedCount++
+		}
+	}
+
+	peerCount := len(peers)
+
+	// SEV-SNP from auto-detected hardware profile (config layer)
+	sevSupported := false
+	sevActive := false
+	if s.config != nil {
+		sevSupported = s.config.Node.Provider.Hardware.SEVSNPSupported
+		sevActive = s.config.Node.Provider.Hardware.SEVSNPLevel == "snp"
+	}
+	sec := &SecurityStatus{
+		TLSVersion:          "1.3",
+		EncryptionAlgo:      "AES-256-GCM",
+		SEVSNPSupported:     sevSupported,
+		SEVSNPActive:        sevActive,
+		SeccompEnabled:      true,
+		TorEnabled:          torRunning,
+		CertPinnedPeers:     peerCount,
+		EncryptedContainers: encryptedCount,
+		TotalContainers:     containerCount,
+	}
+
+	// Use profile manager for capacity, tier, reputation, known nodes
+	var capacity *AggregatedCapacity
+	var knownNodes []NodeProfile
+	nodeTier := "starter"
+	nodeRole := "hybrid"
+	reputation := 0
+
+	if s.profileManager != nil {
+		s.profileManager.RefreshSelf()
+		s.profileManager.RefreshPeers()
+		capacity = s.profileManager.GetAggregatedCapacity()
+		knownNodes = s.profileManager.GetAll()
+		if self := s.profileManager.GetSelf(); self != nil {
+			nodeTier = self.Tier
+			nodeRole = self.Role
+			reputation = self.ReputationScore
+		}
+	} else if s.config != nil {
+		// Fallback if profile manager not initialized
+		nodeTier = string(s.config.Node.Provider.TargetTier)
+		nodeRole = string(s.config.Node.Role)
+		capacity = &AggregatedCapacity{
+			CPUTotal:       s.config.Node.Provider.DeclaredCPU,
+			MemoryTotalGB:  s.config.Node.Provider.DeclaredMemoryGB,
+			StorageTotalGB: s.config.Node.Provider.DeclaredStorageGB,
+			OnlineNodes:    1,
+			TotalNodes:     1,
+		}
+	}
+
+	// Merge admin metadata (badges, blocked) into known nodes
+	if s.adminBadgeGetter != nil && knownNodes != nil {
+		for i := range knownNodes {
+			if meta := s.adminBadgeGetter.Get(knownNodes[i].NodeID); meta != nil {
+				knownNodes[i].Badges = meta.Badges
+				knownNodes[i].Blocked = meta.Blocked
+			}
+		}
+	}
+
+	loc := s.node.nodeInfo.Location
 	status := StatusResponse{
-		NodeID:     s.node.nodeInfo.ID.String(),
-		Running:    s.node.IsRunning(),
-		Port:       s.node.nodeInfo.Port,
-		PeerCount:  len(peers),
-		Uptime:     uptime.String(),
-		Version:    "0.1.0",
-		TorEnabled: torRunning,
-		TorAddress: torAddress,
-		Containers: containerCount,
-		Region:     s.node.nodeInfo.Region,
+		NodeID:          s.node.nodeInfo.ID.String(),
+		Running:         s.node.IsRunning(),
+		Port:            s.node.nodeInfo.Port,
+		NetworkNodes:    peerCount + 1,
+		Uptime:          uptime.String(),
+		Version:         "0.1.0",
+		TorEnabled:      torRunning,
+		TorAddress:      torAddress,
+		Containers:      containerCount,
+		Region:          s.node.nodeInfo.Region,
+		Location:        &loc,
+		NetworkCapacity: capacity,
+		Security:        sec,
+		NodeTier:        nodeTier,
+		NodeRole:        nodeRole,
+		ReputationScore: reputation,
+		KnownNodes:      knownNodes,
 	}
 
 	return &APIResponse{
@@ -70,6 +150,7 @@ func (s *APIServer) handleDeploy(ctx context.Context, req *APIRequest) *APIRespo
 		OnionAddress:    result.Deployment.OnionAddress,
 		EncryptedVolume: result.Deployment.EncryptedVolume,
 		Regions:         result.Deployment.Regions,
+		Locations:       result.Deployment.Locations,
 		ReplicaCount:    result.ReplicaCount,
 	}
 
@@ -109,6 +190,42 @@ func (s *APIServer) handleStop(ctx context.Context, req *APIRequest) *APIRespons
 	return &APIResponse{
 		Result: map[string]interface{}{
 			"status":       "stopped",
+			"container_id": params.ContainerID,
+		},
+		ID: req.ID,
+	}
+}
+
+// handleStart handles start requests (restart a stopped container)
+func (s *APIServer) handleStart(ctx context.Context, req *APIRequest) *APIResponse {
+	var params struct {
+		ContainerID string `json:"container_id"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{
+			Error: fmt.Sprintf("invalid params: %v", err),
+			ID:    req.ID,
+		}
+	}
+
+	// Validate container ID
+	if err := validateContainerID(params.ContainerID); err != nil {
+		return &APIResponse{
+			Error: fmt.Sprintf("validation failed: %v", err),
+			ID:    req.ID,
+		}
+	}
+
+	if err := s.containerManager.Start(ctx, params.ContainerID); err != nil {
+		return &APIResponse{
+			Error: fmt.Sprintf("failed to start container: %v", err),
+			ID:    req.ID,
+		}
+	}
+
+	return &APIResponse{
+		Result: map[string]interface{}{
+			"status":       "started",
 			"container_id": params.ContainerID,
 		},
 		ID: req.ID,
@@ -217,15 +334,24 @@ func (s *APIServer) handleList(ctx context.Context, req *APIRequest) *APIRespons
 
 	containers := make([]ContainerInfo, 0, len(deployments))
 	for _, d := range deployments {
+		hasVolume := d.EncryptedVolume != "" &&
+			(d.Status != types.ContainerStatusStopped ||
+				d.VolumeExpiresAt.IsZero() ||
+				time.Now().Before(d.VolumeExpiresAt))
 		containers = append(containers, ContainerInfo{
-			ID:           d.ID,
-			Image:        d.Image,
-			Status:       string(d.Status),
-			CreatedAt:    d.CreatedAt,
-			StartedAt:    d.StartedAt,
-			Encrypted:    d.Encrypted,
-			OnionAddress: d.OnionAddress,
-			Regions:      d.Regions,
+			ID:              d.ID,
+			Image:           d.Image,
+			Status:          string(d.Status),
+			CreatedAt:       d.CreatedAt,
+			StartedAt:       d.StartedAt,
+			Encrypted:       d.Encrypted,
+			OnionAddress:    d.OnionAddress,
+			Regions:         d.Regions,
+			Locations:       d.Locations,
+			Owner:           d.Owner,
+			StoppedAt:       d.StoppedAt,
+			VolumeExpiresAt: d.VolumeExpiresAt,
+			HasVolume:       hasVolume,
 		})
 	}
 
@@ -320,6 +446,7 @@ func (s *APIServer) handlePeers(ctx context.Context, req *APIRequest) *APIRespon
 			"address":   peer.Address,
 			"region":    peer.Region,
 			"country":   peer.Country,
+			"location":  peer.Location,
 			"last_seen": peer.LastSeen,
 		})
 	}
@@ -381,6 +508,7 @@ func (s *APIServer) handleConfigGet(ctx context.Context, req *APIRequest) *APIRe
 			"socket_path": s.socketPath,
 			"region":      s.node.nodeInfo.Region,
 			"country":     s.node.nodeInfo.Country,
+			"location":    s.node.nodeInfo.Location,
 		},
 		ID: req.ID,
 	}
@@ -478,6 +606,66 @@ func (s *APIServer) handleMetrics(ctx context.Context, req *APIRequest) *APIResp
 
 	return &APIResponse{
 		Result: metricsData,
+		ID:     req.ID,
+	}
+}
+
+// handleContainerDetail returns detailed container info including provider node location.
+func (s *APIServer) handleContainerDetail(ctx context.Context, req *APIRequest) *APIResponse {
+	var params struct {
+		ContainerID string `json:"container_id"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{
+			Error: fmt.Sprintf("invalid params: %v", err),
+			ID:    req.ID,
+		}
+	}
+
+	if err := validateContainerID(params.ContainerID); err != nil {
+		return &APIResponse{
+			Error: fmt.Sprintf("validation failed: %v", err),
+			ID:    req.ID,
+		}
+	}
+
+	deployment, exists := s.containerManager.GetDeployment(params.ContainerID)
+	if !exists {
+		return &APIResponse{
+			Error: fmt.Sprintf("container not found: %s", params.ContainerID),
+			ID:    req.ID,
+		}
+	}
+
+	// Resolve provider node address
+	providerNodeID := ""
+	providerAddr := ""
+	if peerID, ok := s.containerManager.GetContainerProviderNode(params.ContainerID); ok {
+		providerNodeID = peerID.String()
+		// Look up address from peer list
+		for _, peer := range s.node.router.GetPeers() {
+			if peer.ID == peerID {
+				providerAddr = peer.Address
+				break
+			}
+		}
+		// If provider is us, use our address
+		if peerID == s.node.nodeInfo.ID {
+			providerAddr = fmt.Sprintf("127.0.0.1:%d", s.node.nodeInfo.Port)
+		}
+	}
+
+	detail := map[string]interface{}{
+		"id":               deployment.ID,
+		"image":            deployment.Image,
+		"status":           string(deployment.Status),
+		"provider_node_id": providerNodeID,
+		"provider_address": providerAddr,
+		"owner":            deployment.Owner,
+	}
+
+	return &APIResponse{
+		Result: detail,
 		ID:     req.ID,
 	}
 }

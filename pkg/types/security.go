@@ -162,6 +162,154 @@ func DefaultContainerSecurityProfile() *ContainerSecurityProfile {
 	}
 }
 
+// DeploymentSecurityProfile returns a production-practical security profile
+// for containers deployed through the network. It follows Docker's default
+// security model: drop all capabilities then add back the safe default set,
+// use a blocklist seccomp profile (block dangerous syscalls, allow everything
+// else), mask sensitive /proc and /sys paths, and set practical ulimits.
+//
+// This profile is designed to work with real-world container images while
+// still providing meaningful security hardening over a completely unconfined
+// container.
+func DeploymentSecurityProfile() *ContainerSecurityProfile {
+	return &ContainerSecurityProfile{
+		// Allow interactive access — wallet auth + deployment ownership gates access
+		DisableExec:   false,
+		DisableAttach: false,
+		DisableShell:  false,
+
+		// Drop all capabilities, add back Docker's default safe set
+		DropAllCapabilities: true,
+		AddCapabilities: []string{
+			"CAP_CHOWN",
+			"CAP_DAC_OVERRIDE",
+			"CAP_FSETID",
+			"CAP_FOWNER",
+			"CAP_MKNOD",
+			"CAP_NET_RAW",
+			"CAP_SETGID",
+			"CAP_SETUID",
+			"CAP_SETFCAP",
+			"CAP_SETPCAP",
+			"CAP_NET_BIND_SERVICE",
+			"CAP_SYS_CHROOT",
+			"CAP_KILL",
+			"CAP_AUDIT_WRITE",
+		},
+
+		// No user namespace — UID 0→65534 mapping breaks most images
+		UserNamespace:    false,
+		PIDNamespace:     true,
+		NetworkNamespace: true,
+		IPCNamespace:     true,
+
+		// Filesystem — no read-only root (many images need writable root)
+		ReadOnlyRoot:    false,
+		NoNewPrivileges: true,
+		MaskPaths: []string{
+			"/proc/kcore",
+			"/proc/kmem",
+			"/proc/mem",
+			"/proc/acpi",
+			"/proc/scsi",
+			"/proc/keys",
+			"/proc/latency_stats",
+			"/proc/timer_list",
+			"/proc/timer_stats",
+			"/proc/sched_debug",
+			"/sys/firmware",
+			"/sys/fs/selinux",
+		},
+		ReadOnlyPaths: []string{
+			"/proc/bus",
+			"/proc/fs",
+			"/proc/irq",
+			"/proc/sys",
+			"/proc/sysrq-trigger",
+		},
+
+		// Blocklist seccomp — block dangerous syscalls, allow everything else
+		SeccompProfile: "default",
+		BlockedSyscalls: []string{
+			"ptrace",
+			"process_vm_readv",
+			"process_vm_writev",
+			"personality",
+			"mount",
+			"umount2",
+			"pivot_root",
+			"keyctl",
+			"request_key",
+			"add_key",
+			"kexec_load",
+			"kexec_file_load",
+			"init_module",
+			"finit_module",
+			"delete_module",
+			"acct",
+			"quotactl",
+			"reboot",
+			"swapon",
+			"swapoff",
+			"sethostname",
+			"setdomainname",
+			"iopl",
+			"ioperm",
+			"create_module",
+			"get_kernel_syms",
+			"query_module",
+			"uselib",
+			"nfsservctl",
+			"getpmsg",
+			"putpmsg",
+			"afs_syscall",
+			"tuxcall",
+			"security",
+			"lookup_dcookie",
+			"perf_event_open",
+			"bpf",
+			"userfaultfd",
+			"unshare",
+			"setns",
+			"clock_settime",
+			"clock_adjtime",
+			"settimeofday",
+			"syslog",
+			"vhangup",
+			"open_by_handle_at",
+			"move_pages",
+			"kcmp",
+			"clone3",
+			"move_mount",
+			"open_tree",
+			"fsopen",
+			"fspick",
+			"fsconfig",
+			"fsmount",
+		},
+		AllowedSyscalls: []string{}, // Unused in "default" mode
+
+		// No AppArmor by default — applied conditionally at runtime
+		AppArmorProfile: "",
+		SELinuxLabel:    "",
+
+		// Practical ulimits
+		Ulimits: UlimitConfig{
+			NoFile:  65536,
+			NProc:   4096,
+			MemLock: 0,       // No locked memory
+			Core:    0,       // No core dumps
+			Stack:   8388608, // 8MB stack
+		},
+
+		// Network (all allowed by default)
+		AllowedOutboundPorts: []int{},
+		AllowedInboundPorts:  []int{},
+		DNSPolicy:            "default",
+		CustomDNS:            []string{},
+	}
+}
+
 // VerificationConfig defines multi-party verification settings
 type VerificationConfig struct {
 	// Heartbeat settings

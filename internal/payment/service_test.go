@@ -108,26 +108,37 @@ func TestEscrowContract_MockOperations(t *testing.T) {
 	amount := parseWei("100")
 	duration := big.NewInt(3600) // 1 hour
 
-	// Create escrow
+	// Create escrow (puts it in Created state)
 	_, err := ec.CreateEscrow(ctx, jobID, provider, amount, duration)
 	if err != nil {
 		t.Fatalf("failed to create escrow: %v", err)
 	}
 
-	// Get escrow
+	// Get escrow — should be in Created state before provider selection
 	escrow, err := ec.GetEscrow(ctx, jobID)
 	if err != nil {
 		t.Fatalf("failed to get escrow: %v", err)
 	}
 
-	if escrow.Provider != provider {
-		t.Errorf("expected provider %s, got %s", provider.Hex(), escrow.Provider.Hex())
-	}
 	if escrow.Amount.Cmp(amount) != 0 {
 		t.Errorf("expected amount %s, got %s", amount.String(), escrow.Amount.String())
 	}
+	if escrow.State != EscrowStateCreated {
+		t.Errorf("expected state Created, got %v", escrow.State)
+	}
+
+	// Select providers to transition escrow to Active
+	providers := [3]common.Address{provider, {}, {}}
+	if _, err := ec.SelectProviders(ctx, jobID, providers); err != nil {
+		t.Fatalf("failed to select providers: %v", err)
+	}
+
+	escrow, err = ec.GetEscrow(ctx, jobID)
+	if err != nil {
+		t.Fatalf("failed to get escrow after provider selection: %v", err)
+	}
 	if escrow.State != EscrowStateActive {
-		t.Errorf("expected state Active, got %v", escrow.State)
+		t.Errorf("expected state Active after provider selection, got %v", escrow.State)
 	}
 
 	// Release partial payment
@@ -233,9 +244,10 @@ func TestSlashingContract_CalculateSlashAmount(t *testing.T) {
 	}{
 		{ViolationDowntime, 5},
 		{ViolationSLAViolation, 10},
+		{ViolationJobAbandonment, 15},
+		{ViolationSecurityViolation, 50},
+		{ViolationFraud, 100},
 		{ViolationDataLoss, 25},
-		{ViolationSecurityBreach, 50},
-		{ViolationMaliciousBehavior, 100},
 		{ViolationNone, 0},
 	}
 
@@ -359,10 +371,11 @@ func TestViolationReason_String(t *testing.T) {
 	}{
 		{ViolationNone, "none"},
 		{ViolationDowntime, "downtime"},
-		{ViolationDataLoss, "data_loss"},
-		{ViolationSecurityBreach, "security_breach"},
+		{ViolationJobAbandonment, "job_abandonment"},
+		{ViolationSecurityViolation, "security_violation"},
+		{ViolationFraud, "fraud"},
 		{ViolationSLAViolation, "sla_violation"},
-		{ViolationMaliciousBehavior, "malicious_behavior"},
+		{ViolationDataLoss, "data_loss"},
 		{ViolationReason(99), "unknown"},
 	}
 

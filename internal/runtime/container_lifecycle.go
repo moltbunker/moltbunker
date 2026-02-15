@@ -4,15 +4,88 @@ import (
 	"context"
 	"fmt"
 	"io"
+	goruntime "runtime"
+	"strconv"
 	"syscall"
 	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/oci"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
+
+// Note: runtime name is stored in ContainerdClient.runtimeName (set via NewContainerdClient).
+// Constants for runtime names are in runtime_detect.go.
+
+// baseSpecOpts returns the foundational OCI spec options for container creation.
+// On macOS (Colima), it generates a linux/arm64 default spec so the Linux section
+// exists. On Linux, it uses the host default. Image config is always overlaid.
+func (cc *ContainerdClient) baseSpecOpts(image containerd.Image) []oci.SpecOpts {
+	opts := []oci.SpecOpts{}
+	if goruntime.GOOS != "linux" {
+		opts = append(opts, oci.WithDefaultSpecForPlatform("linux/arm64"))
+	}
+	opts = append(opts, oci.WithImageConfig(image))
+	return opts
+}
+
+// baseContainerOpts returns the foundational container options (image, snapshot, runtime).
+// When the runtime is a Kata variant and KataConfig is set, OCI annotations for the
+// Kata hypervisor are injected into the spec.
+func (cc *ContainerdClient) baseContainerOpts(id string, image containerd.Image, specOpts []oci.SpecOpts) []containerd.NewContainerOpts {
+	// Inject Kata hypervisor annotations when running under a Kata runtime
+	if isKataRuntime(cc.runtimeName) && cc.kataConfig != nil {
+		if ann := cc.kataAnnotations(); ann != nil {
+			specOpts = append(specOpts, ann)
+		}
+	}
+
+	return []containerd.NewContainerOpts{
+		containerd.WithImage(image),
+		containerd.WithNewSnapshot(id+"-snapshot", image),
+		containerd.WithRuntime(cc.runtimeName, nil),
+		containerd.WithNewSpec(specOpts...),
+	}
+}
+
+// kataAnnotations returns an OCI spec option that sets Kata hypervisor annotations.
+// Only non-zero KataConfig fields are emitted; Kata's internal defaults apply otherwise.
+func (cc *ContainerdClient) kataAnnotations() oci.SpecOpts {
+	if cc.kataConfig == nil {
+		return nil
+	}
+
+	annotations := make(map[string]string)
+
+	if cc.kataConfig.VMMemoryMB > 0 {
+		annotations["io.katacontainers.config.hypervisor.default_memory"] = strconv.Itoa(cc.kataConfig.VMMemoryMB)
+	}
+	if cc.kataConfig.VMCPUs > 0 {
+		annotations["io.katacontainers.config.hypervisor.default_vcpus"] = strconv.Itoa(cc.kataConfig.VMCPUs)
+	}
+	if cc.kataConfig.KernelPath != "" {
+		annotations["io.katacontainers.config.hypervisor.kernel"] = cc.kataConfig.KernelPath
+	}
+	if cc.kataConfig.ImagePath != "" {
+		annotations["io.katacontainers.config.hypervisor.image"] = cc.kataConfig.ImagePath
+	}
+
+	if len(annotations) == 0 {
+		return nil
+	}
+
+	return oci.WithAnnotations(annotations)
+}
+
+// BindMount describes a host-to-container bind mount.
+type BindMount struct {
+	HostPath      string // Absolute path on host
+	ContainerPath string // Path inside container
+	ReadOnly      bool
+}
 
 // SecureContainerConfig holds configuration for creating a secure container
 type SecureContainerConfig struct {
@@ -25,6 +98,7 @@ type SecureContainerConfig struct {
 	Environment     map[string]string
 	Command         []string
 	Args            []string
+	BindMounts      []BindMount // Host paths bind-mounted into the container
 }
 
 // CreateContainer creates a new container
@@ -40,11 +114,10 @@ func (cc *ContainerdClient) CreateContainer(ctx context.Context, id string, imag
 		}
 	}
 
-	// Build container spec with resource limits
-	// Use the image's default entrypoint/cmd - don't override with sleep
-	opts := []oci.SpecOpts{
-		oci.WithImageConfig(image),
-	}
+	// Build container spec with resource limits.
+	// Start with a Linux default spec to ensure the Linux section exists
+	// (required when the client runs on macOS with Colima).
+	opts := cc.baseSpecOpts(image)
 
 	// Add resource limits
 	if resources.MemoryLimit > 0 {
@@ -58,13 +131,7 @@ func (cc *ContainerdClient) CreateContainer(ctx context.Context, id string, imag
 	}
 
 	// Create container
-	container, err := cc.client.NewContainer(
-		ctx,
-		id,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(id+"-snapshot", image),
-		containerd.WithNewSpec(opts...),
-	)
+	container, err := cc.client.NewContainer(ctx, id, cc.baseContainerOpts(id, image, opts)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
@@ -81,6 +148,12 @@ func (cc *ContainerdClient) CreateContainer(ctx context.Context, id string, imag
 	cc.mu.Lock()
 	cc.containers[id] = managed
 	cc.mu.Unlock()
+
+	// Apply XFS disk quota if configured
+	if err := cc.SetDiskQuota(ctx, id, resources.DiskLimit); err != nil {
+		// Non-fatal: disk_enforcer provides secondary enforcement
+		_ = err
+	}
 
 	return managed, nil
 }
@@ -98,10 +171,8 @@ func (cc *ContainerdClient) CreateContainerWithSpec(ctx context.Context, id stri
 		}
 	}
 
-	// Build container spec with resource limits
-	opts := []oci.SpecOpts{
-		oci.WithImageConfig(image),
-	}
+	// Build container spec with Linux defaults + resource limits
+	opts := cc.baseSpecOpts(image)
 
 	// Add resource limits
 	if resources.MemoryLimit > 0 {
@@ -118,13 +189,7 @@ func (cc *ContainerdClient) CreateContainerWithSpec(ctx context.Context, id stri
 	opts = append(opts, specOpts...)
 
 	// Create container
-	container, err := cc.client.NewContainer(
-		ctx,
-		id,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(id+"-snapshot", image),
-		containerd.WithNewSpec(opts...),
-	)
+	container, err := cc.client.NewContainer(ctx, id, cc.baseContainerOpts(id, image, opts)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
@@ -141,6 +206,11 @@ func (cc *ContainerdClient) CreateContainerWithSpec(ctx context.Context, id stri
 	cc.mu.Lock()
 	cc.containers[id] = managed
 	cc.mu.Unlock()
+
+	// Apply XFS disk quota if configured
+	if err := cc.SetDiskQuota(ctx, id, resources.DiskLimit); err != nil {
+		_ = err
+	}
 
 	return managed, nil
 }
@@ -162,10 +232,8 @@ func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config Se
 	// Create security enforcer
 	securityEnforcer := NewSecurityEnforcer(config.SecurityProfile)
 
-	// Build OCI spec options starting with image config
-	opts := []oci.SpecOpts{
-		oci.WithImageConfig(image),
-	}
+	// Build OCI spec options starting with Linux defaults + image config
+	opts := cc.baseSpecOpts(image)
 
 	// Add resource limits
 	if config.Resources.MemoryLimit > 0 {
@@ -190,19 +258,31 @@ func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config Se
 		opts = append(opts, oci.WithEnv(envList))
 	}
 
+	// Add bind mounts (e.g., exec-agent binary + exec_key secret)
+	if len(config.BindMounts) > 0 {
+		var mounts []specs.Mount
+		for _, bm := range config.BindMounts {
+			mountOpts := []string{"rbind"}
+			if bm.ReadOnly {
+				mountOpts = append(mountOpts, "ro")
+			}
+			mounts = append(mounts, specs.Mount{
+				Destination: bm.ContainerPath,
+				Source:      bm.HostPath,
+				Type:        "bind",
+				Options:     mountOpts,
+			})
+		}
+		opts = append(opts, oci.WithMounts(mounts))
+	}
+
 	// Add custom command if provided
 	if len(config.Command) > 0 {
 		opts = append(opts, oci.WithProcessArgs(append(config.Command, config.Args...)...))
 	}
 
 	// Create container
-	container, err := cc.client.NewContainer(
-		ctx,
-		config.ID,
-		containerd.WithImage(image),
-		containerd.WithNewSnapshot(config.ID+"-snapshot", image),
-		containerd.WithNewSpec(opts...),
-	)
+	container, err := cc.client.NewContainer(ctx, config.ID, cc.baseContainerOpts(config.ID, image, opts)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
 	}
@@ -222,6 +302,11 @@ func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config Se
 	cc.mu.Lock()
 	cc.containers[config.ID] = managed
 	cc.mu.Unlock()
+
+	// Apply XFS disk quota if configured
+	if err := cc.SetDiskQuota(ctx, config.ID, config.Resources.DiskLimit); err != nil {
+		_ = err
+	}
 
 	return managed, nil
 }
@@ -284,11 +369,21 @@ func (cc *ContainerdClient) StartContainer(ctx context.Context, id string) error
 		return fmt.Errorf("failed to create container logs: %w", err)
 	}
 
-	// Create task with log output
-	// Use FIFO-based I/O that writes to our log files
-	task, err := managed.Container.NewTask(ctx, cio.NewCreator(
-		cio.WithStreams(nil, containerLog.StdoutWriter(), containerLog.StderrWriter()),
-	))
+	// Create task with log output.
+	// On Linux, use FIFO-based I/O that pipes to our log writers.
+	// On macOS (Colima), FIFOs can't span the VM boundary, so use
+	// containerd's built-in file logger which writes inside the VM.
+	// With virtiofs, the log files are accessible from macOS too.
+	var taskCreator cio.Creator
+	if goruntime.GOOS == "linux" {
+		taskCreator = cio.NewCreator(
+			cio.WithStreams(nil, containerLog.StdoutWriter(), containerLog.StderrWriter()),
+		)
+	} else {
+		taskCreator = cio.LogFile(containerLog.StdoutPath)
+	}
+
+	task, err := managed.Container.NewTask(ctx, taskCreator)
 	if err != nil {
 		cc.logManager.CloseLog(id)
 		return fmt.Errorf("failed to create task: %w", err)
@@ -346,7 +441,12 @@ func (cc *ContainerdClient) StopContainer(ctx context.Context, id string, timeou
 		if err := managed.Task.Kill(ctx, syscall.SIGKILL); err != nil {
 			return fmt.Errorf("failed to send SIGKILL: %w", err)
 		}
-		<-exitCh
+		// Wait for exit with a bounded timeout to avoid hanging on unkillable processes
+		select {
+		case <-exitCh:
+		case <-time.After(5 * time.Second):
+			return fmt.Errorf("task %s did not exit after SIGKILL", id)
+		}
 	}
 
 	// Delete task
@@ -387,6 +487,9 @@ func (cc *ContainerdClient) DeleteContainer(ctx context.Context, id string) erro
 
 	// Close and delete logs
 	cc.logManager.DeleteLog(id)
+
+	// Remove disk quota before snapshot cleanup (best-effort)
+	cc.RemoveDiskQuota(ctx, id)
 
 	// Delete container
 	if err := managed.Container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {

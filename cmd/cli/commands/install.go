@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/moltbunker/moltbunker/internal/config"
 	"github.com/moltbunker/moltbunker/internal/identity"
 	"github.com/spf13/cobra"
 )
@@ -34,6 +35,8 @@ This command will:
 	defaultDataDir := filepath.Join(homeDir, ".moltbunker")
 
 	cmd.Flags().StringVar(&installDataDir, "data-dir", defaultDataDir, "Data directory for moltbunker")
+	cmd.Flags().Bool("systemd", false, "Install systemd service (Linux)")
+	cmd.Flags().Bool("launchd", false, "Install launchd service (macOS)")
 
 	return cmd
 }
@@ -105,6 +108,18 @@ func runInstall(cmd *cobra.Command, args []string) error {
 }
 
 func generateDefaultConfig(dataDir string) string {
+	// Detect containerd socket — only include runtime section if found
+	runtimeSection := ""
+	if socket := config.DetectContainerdSocket(); socket != "" {
+		runtimeSection = fmt.Sprintf(`
+# Runtime settings (only needed for provider nodes)
+runtime:
+  containerd_socket: %s
+  namespace: moltbunker
+  runtime_name: auto
+`, socket)
+	}
+
 	return fmt.Sprintf(`# Moltbunker Configuration
 
 # Daemon settings
@@ -112,6 +127,11 @@ daemon:
   port: 9000
   data_dir: %s
   log_level: info
+
+# Node role: requester (deploy jobs) or provider (host containers) or hybrid (both)
+# To become a provider, change to "provider" or "hybrid" and ensure containerd is running
+node:
+  role: requester
 
 # P2P settings
 p2p:
@@ -124,7 +144,7 @@ tor:
   socks_port: 9050
   control_port: 9051
   data_dir: %s/tor
-
+%s
 # Container settings
 container:
   default_cpu_quota: 100000
@@ -136,11 +156,15 @@ redundancy:
   replica_count: 3
   health_check_interval: 30s
 
+# Economics settings
+economics:
+  mock_payments: true  # Set to false for real on-chain payments
+
 # Payment settings
 payment:
   contract_address: ""
   rpc_url: ""
-`, dataDir, dataDir)
+`, dataDir, dataDir, runtimeSection)
 }
 
 func installSystemdService(cmd *cobra.Command) {
@@ -157,7 +181,7 @@ After=network.target
 [Service]
 Type=simple
 User=%s
-ExecStart=/usr/local/bin/moltbunker-daemon --data=%s
+ExecStart=/usr/local/bin/moltbunkerd --data=%s
 Restart=always
 RestartSec=5
 
@@ -195,7 +219,7 @@ func installLaunchdService(cmd *cobra.Command) {
     <string>com.moltbunker.daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/moltbunker-daemon</string>
+        <string>/usr/local/bin/moltbunkerd</string>
         <string>--data=%s</string>
     </array>
     <key>RunAtLoad</key>

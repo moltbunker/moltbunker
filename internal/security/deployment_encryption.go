@@ -305,6 +305,28 @@ type EncryptedLogEntry struct {
 	Timestamp     time.Time `json:"timestamp"`
 }
 
+// GetStaleDeployments returns deployment IDs with keys older than maxAge.
+// Callers should re-key or alert when this list is non-empty.
+func (dem *DeploymentEncryptionManager) GetStaleDeployments(maxAge time.Duration) []string {
+	dem.mu.RLock()
+	defer dem.mu.RUnlock()
+	cutoff := time.Now().Add(-maxAge)
+	var stale []string
+	for id, keys := range dem.deployments {
+		if keys.CreatedAt.Before(cutoff) {
+			stale = append(stale, id)
+		}
+	}
+	return stale
+}
+
+// DeploymentCount returns the number of active deployment key sets.
+func (dem *DeploymentEncryptionManager) DeploymentCount() int {
+	dem.mu.RLock()
+	defer dem.mu.RUnlock()
+	return len(dem.deployments)
+}
+
 // CreateEncryptedOutput creates an encrypted output for delivery to the requester
 func (dem *DeploymentEncryptionManager) CreateEncryptedOutput(deploymentID string, data []byte, outputType string) (*EncryptedOutput, error) {
 	encryptedData, err := dem.EncryptData(deploymentID, data)

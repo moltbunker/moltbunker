@@ -32,8 +32,16 @@ func (cm *ContainerManager) saveState() error {
 		Version:     1,
 	}
 	for k, v := range cm.deployments {
-		// Deep copy to avoid race
+		// Deep copy struct and slices to avoid shared backing arrays
 		depCopy := *v
+		if len(v.Regions) > 0 {
+			depCopy.Regions = make([]string, len(v.Regions))
+			copy(depCopy.Regions, v.Regions)
+		}
+		if len(v.Locations) > 0 {
+			depCopy.Locations = make([]ReplicaLocation, len(v.Locations))
+			copy(depCopy.Locations, v.Locations)
+		}
 		state.Deployments[k] = &depCopy
 	}
 	cm.mu.RUnlock()

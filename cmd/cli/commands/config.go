@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -42,12 +41,12 @@ func NewConfigGetCmd() *cobra.Command {
 			key := args[0]
 
 			// First try to get from running daemon
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err == nil {
-				defer daemonClient.Close()
-				value, err := daemonClient.ConfigGet(key)
+			c, clientErr := GetClient()
+			if clientErr == nil {
+				defer c.Close()
+				value, err := c.ConfigGet(key)
 				if err == nil {
-					fmt.Printf("%s = %v\n", key, value)
+					fmt.Println(KeyValue(key, fmt.Sprintf("%v", value)))
 					return nil
 				}
 			}
@@ -63,7 +62,7 @@ func NewConfigGetCmd() *cobra.Command {
 				return fmt.Errorf("key not found: %s", key)
 			}
 
-			fmt.Printf("%s = %v\n", key, value)
+			fmt.Println(KeyValue(key, fmt.Sprintf("%v", value)))
 			return nil
 		},
 	}
@@ -89,8 +88,8 @@ func NewConfigSetCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Printf("Set %s = %s\n", key, value)
-			fmt.Println("Note: Restart daemon for changes to take effect")
+			Success(fmt.Sprintf("Set %s = %s", key, value))
+			fmt.Println(Hint("Restart daemon for changes to take effect"))
 			return nil
 		},
 	}
@@ -108,8 +107,8 @@ func NewConfigShowCmd() *cobra.Command {
 				return fmt.Errorf("failed to read config: %w", err)
 			}
 
-			fmt.Printf("Configuration file: %s\n", configPath)
-			fmt.Println("---")
+			fmt.Println(KeyValue("Config file", configPath))
+			fmt.Println()
 			fmt.Println(string(data))
 
 			return nil

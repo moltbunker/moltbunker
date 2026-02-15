@@ -74,7 +74,7 @@ func TestStatusResponse_Structure(t *testing.T) {
 		NodeID:     "test-node-id",
 		Running:    true,
 		Port:       9000,
-		PeerCount:  5,
+		NetworkNodes: 5,
 		Version:    "0.1.0",
 		TorEnabled: true,
 		TorAddress: "test.onion",

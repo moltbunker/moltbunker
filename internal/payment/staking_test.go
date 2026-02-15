@@ -225,38 +225,38 @@ func TestStakingManager_GetTier(t *testing.T) {
 			expectTier: "",
 		},
 		{
-			name:       "below starter",
-			stakeWei:   "100000000000000000000", // 100 BUNKER
+			name:       "below starter - 10000 BUNKER",
+			stakeWei:   "10000000000000000000000",
 			expectTier: "",
 		},
 		{
-			name:       "starter tier - 500 BUNKER",
-			stakeWei:   "500000000000000000000",
+			name:       "starter tier - 1000000 BUNKER",
+			stakeWei:   "1000000000000000000000000",
 			expectTier: types.StakingTierStarter,
 		},
 		{
-			name:       "bronze tier - 2000 BUNKER",
-			stakeWei:   "2000000000000000000000",
+			name:       "bronze tier - 5000000 BUNKER",
+			stakeWei:   "5000000000000000000000000",
 			expectTier: types.StakingTierBronze,
 		},
 		{
-			name:       "silver tier - 10000 BUNKER",
-			stakeWei:   "10000000000000000000000",
+			name:       "silver tier - 10000000 BUNKER",
+			stakeWei:   "10000000000000000000000000",
 			expectTier: types.StakingTierSilver,
 		},
 		{
-			name:       "gold tier - 50000 BUNKER",
-			stakeWei:   "50000000000000000000000",
+			name:       "gold tier - 100000000 BUNKER",
+			stakeWei:   "100000000000000000000000000",
 			expectTier: types.StakingTierGold,
 		},
 		{
-			name:       "platinum tier - 250000 BUNKER",
-			stakeWei:   "250000000000000000000000",
+			name:       "platinum tier - 1000000000 BUNKER",
+			stakeWei:   "1000000000000000000000000000",
 			expectTier: types.StakingTierPlatinum,
 		},
 		{
-			name:       "above platinum - 1000000 BUNKER",
-			stakeWei:   "1000000000000000000000000",
+			name:       "above platinum - 10000000000 BUNKER",
+			stakeWei:   "10000000000000000000000000000",
 			expectTier: types.StakingTierPlatinum,
 		},
 	}
@@ -451,8 +451,8 @@ func TestStakingManager_GetProviderState(t *testing.T) {
 
 	provider := common.HexToAddress("0x1234567890123456789012345678901234567890")
 
-	// Stake enough for bronze tier
-	stakeAmount, _ := new(big.Int).SetString("2000000000000000000000", 10) // 2000 BUNKER
+	// Stake enough for starter tier (1,000,000 BUNKER)
+	stakeAmount, _ := new(big.Int).SetString("1000000000000000000000000", 10) // 1,000,000 BUNKER
 	sm.Stake(nil, provider, stakeAmount)
 
 	// Add rewards
@@ -466,8 +466,8 @@ func TestStakingManager_GetProviderState(t *testing.T) {
 			state.StakedAmount.String(), stakeAmount.String())
 	}
 
-	if state.Tier != types.StakingTierBronze {
-		t.Errorf("Tier mismatch: got %q, want %q", state.Tier, types.StakingTierBronze)
+	if state.Tier != types.StakingTierStarter {
+		t.Errorf("Tier mismatch: got %q, want %q", state.Tier, types.StakingTierStarter)
 	}
 
 	if state.WalletAddress != provider.Hex() {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -43,6 +44,11 @@ type StakingManager struct {
 	nowFunc             func() time.Time // for testing
 }
 
+// SetNowFunc sets the time function used by the staking manager (for testing)
+func (sm *StakingManager) SetNowFunc(fn func() time.Time) {
+	sm.nowFunc = fn
+}
+
 // NewStakingManager creates a new staking manager
 func NewStakingManager(client *ethclient.Client, minStake *big.Int) *StakingManager {
 	return &StakingManager{
@@ -72,13 +78,18 @@ func (sm *StakingManager) Stake(ctx context.Context, provider common.Address, am
 	}
 	sm.mu.Unlock()
 
-	// Mock implementation: Log the staking action
-	// TODO: Replace with actual Base network contract call
-	// Contract call would be:
-	//   tx, err := stakingContract.Transact(auth, "stake", amount)
-	//   if err != nil { return err }
-	//   _, err = bind.WaitMined(ctx, sm.client, tx)
-	fmt.Printf("[MOCK] Staked %s tokens for provider %s\n", amount.String(), provider.Hex())
+	logging.Info("staked tokens",
+		"provider", provider.Hex(),
+		"amount", amount.String(),
+		"total_stake", sm.stakes[provider].String())
+
+	logging.Audit(logging.AuditEvent{
+		Operation: "stake_created",
+		Actor:     provider.Hex(),
+		Target:    provider.Hex(),
+		Result:    "success",
+		Details:   fmt.Sprintf("amount=%s total_stake=%s", amount.String(), sm.stakes[provider].String()),
+	})
 
 	return nil
 }
@@ -112,13 +123,18 @@ func (sm *StakingManager) Slash(ctx context.Context, provider common.Address, am
 
 	sm.stakes[provider] = new(big.Int).Sub(currentStake, amount)
 
-	// Mock implementation: Log the slashing action
-	// TODO: Replace with actual Base network contract call
-	// Contract call would be:
-	//   tx, err := stakingContract.Transact(auth, "slash", provider, amount)
-	//   if err != nil { return err }
-	//   _, err = bind.WaitMined(ctx, sm.client, tx)
-	fmt.Printf("[MOCK] Slashed %s tokens from provider %s\n", amount.String(), provider.Hex())
+	logging.Info("slashed tokens",
+		"provider", provider.Hex(),
+		"amount", amount.String(),
+		"remaining_stake", sm.stakes[provider].String())
+
+	logging.Audit(logging.AuditEvent{
+		Operation: "stake_slashed",
+		Actor:     "system",
+		Target:    provider.Hex(),
+		Result:    "success",
+		Details:   fmt.Sprintf("amount=%s remaining_stake=%s", amount.String(), sm.stakes[provider].String()),
+	})
 
 	return nil
 }
@@ -151,8 +167,10 @@ func (sm *StakingManager) SetBeneficiary(provider, beneficiary common.Address) e
 		RequestedAt:    sm.nowFunc(),
 	}
 
-	fmt.Printf("[MOCK] Beneficiary change requested for provider %s to %s (24h timelock)\n",
-		provider.Hex(), beneficiary.Hex())
+	logging.Info("beneficiary change requested",
+		"provider", provider.Hex(),
+		"new_beneficiary", beneficiary.Hex(),
+		"timelock", BeneficiaryTimelockDuration.String())
 
 	return nil
 }
@@ -195,10 +213,10 @@ func (sm *StakingManager) ClaimRewards(ctx context.Context, provider common.Addr
 	claimed := new(big.Int).Set(reward)
 	sm.rewards[provider] = big.NewInt(0)
 
-	// Mock implementation: Log the reward claim
-	// TODO: Replace with actual Base network transfer
-	fmt.Printf("[MOCK] Claimed %s reward tokens for provider %s, sent to beneficiary %s\n",
-		claimed.String(), provider.Hex(), beneficiary.Hex())
+	logging.Info("claimed rewards",
+		"provider", provider.Hex(),
+		"beneficiary", beneficiary.Hex(),
+		"amount", claimed.String())
 
 	return claimed, nil
 }
@@ -294,8 +312,10 @@ func (sm *StakingManager) Unstake(ctx context.Context, provider common.Address, 
 		RequestedAt: sm.nowFunc(),
 	}
 
-	fmt.Printf("[MOCK] Unstake request for %s tokens from provider %s (7-day cooldown)\n",
-		amount.String(), provider.Hex())
+	logging.Info("unstake request created",
+		"provider", provider.Hex(),
+		"amount", amount.String(),
+		"cooldown", UnstakeCooldownDuration.String())
 
 	return nil
 }
@@ -327,8 +347,10 @@ func (sm *StakingManager) CompleteUnstake(ctx context.Context, provider common.A
 	sm.stakes[provider] = new(big.Int).Sub(currentStake, unstakeAmount)
 	delete(sm.unstakeRequests, provider)
 
-	fmt.Printf("[MOCK] Completed unstake of %s tokens for provider %s\n",
-		unstakeAmount.String(), provider.Hex())
+	logging.Info("unstake completed",
+		"provider", provider.Hex(),
+		"amount", unstakeAmount.String(),
+		"remaining_stake", sm.stakes[provider].String())
 
 	return unstakeAmount, nil
 }

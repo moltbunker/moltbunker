@@ -63,6 +63,13 @@ type PackageManager interface {
 	IsInstalled(pkg string) bool
 }
 
+// RoleAware is an optional interface for checkers that only apply to specific roles.
+// Checkers that don't implement this run for all roles.
+type RoleAware interface {
+	// Roles returns the roles this checker applies to (e.g., ["provider", "hybrid"])
+	Roles() []string
+}
+
 // DoctorOptions configures the doctor run
 type DoctorOptions struct {
 	// Fix enables auto-fix mode
@@ -73,6 +80,8 @@ type DoctorOptions struct {
 	JSON bool
 	// Category filters checks to a specific category
 	Category Category
+	// Role filters checks to a specific node role
+	Role string
 	// Verbose enables verbose output
 	Verbose bool
 }

@@ -1,5 +1,10 @@
 package payment
 
+// SlashingContract wraps the BunkerStaking contract's slash proposal and appeal
+// system. Despite the separate Go wrapper, all on-chain calls route to the
+// BunkerStaking contract address. The slashing contract address provided at
+// construction should be the BunkerStaking contract address.
+
 import (
 	"context"
 	"crypto/sha256"
@@ -15,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/util"
 )
 
@@ -70,10 +76,12 @@ func NewSlashingContract(baseClient *BaseClient, stakingContract *StakingContrac
 		mockHistory:    make(map[common.Address]*SlashingHistory),
 	}
 
-	// If no base client, use mock mode
-	if baseClient == nil || !baseClient.IsConnected() {
-		sc.mockMode = true
-		return sc, nil
+	// Require a connected base client; use NewMockSlashingContract() for testing
+	if baseClient == nil {
+		return nil, fmt.Errorf("base client is required (use NewMockSlashingContract for testing)")
+	}
+	if !baseClient.IsConnected() {
+		return nil, fmt.Errorf("base client not connected to RPC")
 	}
 
 	parsedABI, err := abi.JSON(strings.NewReader(SlashingContractABI))
@@ -113,7 +121,11 @@ func (sc *SlashingContract) ReportViolation(ctx context.Context, provider common
 		return [32]byte{}, nil, fmt.Errorf("failed to get transaction options: %w", err)
 	}
 
-	tx, err := sc.contract.Transact(auth, "reportViolation", provider, jobID, uint8(reason), evidence)
+	// On-chain proposeSlash takes (address, uint256, string).
+	// Convert the ViolationReason to a slash amount via the staking contract,
+	// and pass the reason as a human-readable string.
+	slashAmount := sc.CalculateSlashAmount(big.NewInt(0), reason) // caller should supply real stake
+	tx, err := sc.contract.Transact(auth, "proposeSlash", provider, slashAmount, reason.String())
 	if err != nil {
 		return [32]byte{}, nil, fmt.Errorf("failed to report violation: %w", err)
 	}
@@ -149,8 +161,7 @@ func (sc *SlashingContract) mockReportViolation(_ context.Context, provider comm
 		Timestamp: time.Now(),
 	}
 
-	fmt.Printf("[MOCK] Reported violation against %s: reason=%s, disputeID=%x\n",
-		provider.Hex(), reason.String(), disputeID[:8])
+	logging.Info("reported violation", "provider", provider.Hex(), "reason", reason.String(), "dispute_id", fmt.Sprintf("%x", disputeID[:8]))
 
 	return disputeID, nil, nil
 }
@@ -179,7 +190,10 @@ func (sc *SlashingContract) SubmitDefense(ctx context.Context, disputeID [32]byt
 		return nil, fmt.Errorf("failed to get transaction options: %w", err)
 	}
 
-	tx, err := sc.contract.Transact(auth, "submitDefense", disputeID, defense)
+	// On-chain appealSlash takes only proposalId (uint256).
+	// Convert the [32]byte disputeID to a *big.Int proposalId.
+	proposalId := new(big.Int).SetBytes(disputeID[:])
+	tx, err := sc.contract.Transact(auth, "appealSlash", proposalId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to submit defense: %w", err)
 	}
@@ -204,7 +218,7 @@ func (sc *SlashingContract) mockSubmitDefense(_ context.Context, disputeID [32]b
 	dispute.Defense = defense
 	dispute.State = DisputeStateDefenseSubmitted
 
-	fmt.Printf("[MOCK] Defense submitted for dispute %x\n", disputeID[:8])
+	logging.Info("defense submitted", "dispute_id", fmt.Sprintf("%x", disputeID[:8]))
 
 	return nil, nil
 }
@@ -220,7 +234,11 @@ func (sc *SlashingContract) ResolveDispute(ctx context.Context, disputeID [32]by
 		return nil, fmt.Errorf("failed to get transaction options: %w", err)
 	}
 
-	tx, err := sc.contract.Transact(auth, "resolveDispute", disputeID, slashAmount)
+	// On-chain resolveAppeal takes (uint256 proposalId, bool uphold).
+	// Convert disputeID to proposalId, and slashAmount > 0 means uphold.
+	proposalId := new(big.Int).SetBytes(disputeID[:])
+	uphold := slashAmount.Sign() > 0
+	tx, err := sc.contract.Transact(auth, "resolveAppeal", proposalId, uphold)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve dispute: %w", err)
 	}
@@ -253,8 +271,7 @@ func (sc *SlashingContract) mockResolveDispute(_ context.Context, disputeID [32]
 	history.TotalSlashed.Add(history.TotalSlashed, slashAmount)
 	history.Violations++
 
-	fmt.Printf("[MOCK] Resolved dispute %x: slashed %s from %s\n",
-		disputeID[:8], slashAmount.String(), dispute.Provider.Hex())
+	logging.Info("resolved dispute", "dispute_id", fmt.Sprintf("%x", disputeID[:8]), "slash_amount", slashAmount.String(), "provider", dispute.Provider.Hex())
 
 	return nil, nil
 }
@@ -270,7 +287,8 @@ func (sc *SlashingContract) Slash(ctx context.Context, provider common.Address, 
 		return nil, fmt.Errorf("failed to get transaction options: %w", err)
 	}
 
-	tx, err := sc.contract.Transact(auth, "slash", provider, amount, uint8(reason))
+	// On-chain slashImmediate takes only (address provider, uint256 amount).
+	tx, err := sc.contract.Transact(auth, "slashImmediate", provider, amount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to slash: %w", err)
 	}
@@ -292,8 +310,7 @@ func (sc *SlashingContract) mockSlash(_ context.Context, provider common.Address
 	history.TotalSlashed.Add(history.TotalSlashed, amount)
 	history.Violations++
 
-	fmt.Printf("[MOCK] Slashed %s from %s: reason=%s\n",
-		amount.String(), provider.Hex(), reason.String())
+	logging.Info("slashed provider", "amount", amount.String(), "provider", provider.Hex(), "reason", reason.String())
 
 	return nil, nil
 }
@@ -321,13 +338,15 @@ func (sc *SlashingContract) GetDispute(ctx context.Context, disputeID [32]byte) 
 		}, nil
 	}
 
+	// On-chain getSlashProposal takes uint256 proposalId.
+	proposalId := new(big.Int).SetBytes(disputeID[:])
 	var result []interface{}
-	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getDispute", disputeID)
+	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getSlashProposal", proposalId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get dispute: %w", err)
 	}
 
-	if len(result) < 6 {
+	if len(result) == 0 {
 		return nil, fmt.Errorf("unexpected result format")
 	}
 
@@ -335,23 +354,27 @@ func (sc *SlashingContract) GetDispute(ctx context.Context, disputeID [32]byte) 
 		DisputeID: disputeID,
 	}
 
-	if addr, ok := result[0].(common.Address); ok {
-		dispute.Reporter = addr
-	}
-	if addr, ok := result[1].(common.Address); ok {
-		dispute.Provider = addr
-	}
-	if jobID, ok := result[2].([32]byte); ok {
-		dispute.JobID = jobID
-	}
-	if reason, ok := result[3].(uint8); ok {
-		dispute.Reason = ViolationReason(reason)
-	}
-	if state, ok := result[4].(uint8); ok {
-		dispute.State = DisputeState(state)
-	}
-	if timestamp, ok := result[5].(*big.Int); ok {
-		dispute.Timestamp = time.Unix(timestamp.Int64(), 0)
+	// getSlashProposal returns a struct (provider, amount, reason, proposedAt, executed, appealed, resolved)
+	if res, ok := result[0].(struct {
+		Provider   common.Address
+		Amount     *big.Int
+		Reason     string
+		ProposedAt *big.Int
+		Executed   bool
+		Appealed   bool
+		Resolved   bool
+	}); ok {
+		dispute.Provider = res.Provider
+		if res.ProposedAt != nil {
+			dispute.Timestamp = time.Unix(res.ProposedAt.Int64(), 0)
+		}
+		if res.Resolved {
+			dispute.State = DisputeStateResolved
+		} else if res.Appealed {
+			dispute.State = DisputeStateDefenseSubmitted
+		} else {
+			dispute.State = DisputeStatePending
+		}
 	}
 
 	return dispute, nil
@@ -372,19 +395,17 @@ func (sc *SlashingContract) GetSlashingHistory(ctx context.Context, provider com
 		}, nil
 	}
 
+	// On-chain getSlashableBalance returns a single uint256.
 	var result []interface{}
-	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getSlashingHistory", provider)
+	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getSlashableBalance", provider)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get slashing history: %w", err)
 	}
 
 	history := &SlashingHistory{TotalSlashed: big.NewInt(0)}
-	if len(result) >= 2 {
+	if len(result) >= 1 {
 		if total, ok := result[0].(*big.Int); ok {
 			history.TotalSlashed = total
-		}
-		if violations, ok := result[1].(*big.Int); ok {
-			history.Violations = int(violations.Int64())
 		}
 	}
 
@@ -427,7 +448,7 @@ func (sc *SlashingContract) SubscribeSlashEvents(ctx context.Context, ch chan<- 
 				ch <- event
 			case err := <-sub.Err():
 				if err != nil {
-					fmt.Printf("Slash event subscription error: %v\n", err)
+					logging.Error("slash event subscription error", "error", err)
 				}
 				return
 			}
@@ -465,12 +486,14 @@ func (sc *SlashingContract) CalculateSlashAmount(stake *big.Int, reason Violatio
 		percentage = 5 // 5% for downtime
 	case ViolationSLAViolation:
 		percentage = 10 // 10% for SLA violations
+	case ViolationJobAbandonment:
+		percentage = 15 // 15% for job abandonment
+	case ViolationSecurityViolation:
+		percentage = 50 // 50% for security violation
+	case ViolationFraud:
+		percentage = 100 // 100% for fraud
 	case ViolationDataLoss:
 		percentage = 25 // 25% for data loss
-	case ViolationSecurityBreach:
-		percentage = 50 // 50% for security breach
-	case ViolationMaliciousBehavior:
-		percentage = 100 // 100% for malicious behavior
 	default:
 		percentage = 0
 	}

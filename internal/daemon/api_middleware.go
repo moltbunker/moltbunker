@@ -121,6 +121,8 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 		response = s.handleDeploy(ctx, req)
 	case "stop":
 		response = s.handleStop(ctx, req)
+	case "start":
+		response = s.handleStart(ctx, req)
 	case "delete":
 		response = s.handleDelete(ctx, req)
 	case "logs":
@@ -208,6 +210,9 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 		response = s.handleSnapshotRestore(ctx, req)
 	case "snapshot_stats":
 		response = s.handleSnapshotStats(ctx, req)
+	// Exec helpers
+	case "container_detail":
+		response = s.handleContainerDetail(ctx, req)
 	default:
 		response = &APIResponse{
 			Error: fmt.Sprintf("unknown method: %s", req.Method),

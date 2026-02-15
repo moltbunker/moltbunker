@@ -712,6 +712,7 @@ func (m *Manager) DeleteContainerSnapshots(containerID string) error {
 	}
 
 	delete(m.snapshots, containerID)
+	delete(m.blockHashes, containerID)
 
 	logging.Info("all container snapshots deleted",
 		"container_id", containerID,

@@ -51,6 +51,13 @@ func (tc *TorClient) DialContext(ctx context.Context, network, address string) (
 
 	select {
 	case <-ctx.Done():
+		// Drain any connection the goroutine may have established
+		// to prevent TCP connection leak through the SOCKS proxy
+		go func() {
+			if res := <-resultChan; res.conn != nil {
+				res.conn.Close()
+			}
+		}()
 		return nil, ctx.Err()
 	case res := <-resultChan:
 		return res.conn, res.err

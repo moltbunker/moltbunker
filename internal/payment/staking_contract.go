@@ -13,30 +13,63 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/util"
 	pkgtypes "github.com/moltbunker/moltbunker/pkg/types"
 )
 
-// StakingContract provides interface to the staking smart contract
+// StakingContract provides interface to the BunkerStaking smart contract
 type StakingContract struct {
-	baseClient     *BaseClient
-	tokenContract  *TokenContract
-	contract       *bind.BoundContract
-	contractABI    abi.ABI
-	contractAddr   common.Address
-	mockMode       bool
-	retryConfig    *util.RetryConfig
+	baseClient    *BaseClient
+	tokenContract *TokenContract
+	contract      *bind.BoundContract
+	contractABI   abi.ABI
+	contractAddr  common.Address
+	mockMode      bool
+	retryConfig   *util.RetryConfig
+
+	// Optional delegation contract for computing effective stake (personal + delegated)
+	delegationContract *DelegationContract
 
 	// Mock state
-	mockStakes   map[common.Address]*big.Int
-	mockPending  map[common.Address]*PendingUnstake
-	mockMu       sync.RWMutex
+	mockStakes     map[common.Address]*big.Int
+	mockPending    map[common.Address][]*PendingUnstake // queue-based
+	mockIdentities map[common.Address]*NodeIdentity
+	mockNodeIDMap  map[[32]byte]common.Address // nodeID → provider
+	mockMu         sync.RWMutex
+}
+
+// SetDelegationContract sets the delegation contract for effective stake calculation.
+// When set, determineTier includes delegated stake in addition to personal stake.
+func (sc *StakingContract) SetDelegationContract(dc *DelegationContract) {
+	sc.delegationContract = dc
 }
 
 // PendingUnstake represents a pending unstake request
 type PendingUnstake struct {
 	Amount     *big.Int
 	UnlockTime time.Time
+	Completed  bool
+}
+
+// ProviderInfoData contains provider information from the contract
+type ProviderInfoData struct {
+	StakedAmount   *big.Int
+	TotalUnbonding *big.Int
+	Beneficiary    common.Address
+	RegisteredAt   time.Time
+	Active         bool
+	NodeID         [32]byte // On-chain NodeID binding
+	Region         [32]byte // Region identifier
+	Capabilities   uint64   // Capability flags
+	Frozen         bool     // Provider frozen by governance
+}
+
+// NodeIdentity holds the identity fields for mock mode.
+type NodeIdentity struct {
+	NodeID       [32]byte
+	Region       [32]byte
+	Capabilities uint64
 }
 
 // StakeInfo contains staking information for a provider
@@ -58,18 +91,22 @@ type StakeEvent struct {
 // NewStakingContract creates a new staking contract client
 func NewStakingContract(baseClient *BaseClient, tokenContract *TokenContract, contractAddr common.Address) (*StakingContract, error) {
 	sc := &StakingContract{
-		baseClient:    baseClient,
-		tokenContract: tokenContract,
-		contractAddr:  contractAddr,
-		mockStakes:    make(map[common.Address]*big.Int),
-		mockPending:   make(map[common.Address]*PendingUnstake),
-		retryConfig:   util.DefaultRetryConfig(),
+		baseClient:     baseClient,
+		tokenContract:  tokenContract,
+		contractAddr:   contractAddr,
+		mockStakes:     make(map[common.Address]*big.Int),
+		mockPending:    make(map[common.Address][]*PendingUnstake),
+		mockIdentities: make(map[common.Address]*NodeIdentity),
+		mockNodeIDMap:  make(map[[32]byte]common.Address),
+		retryConfig:    util.DefaultRetryConfig(),
 	}
 
-	// If no base client, use mock mode
-	if baseClient == nil || !baseClient.IsConnected() {
-		sc.mockMode = true
-		return sc, nil
+	// Require a connected base client; use NewMockStakingContract() for testing
+	if baseClient == nil {
+		return nil, fmt.Errorf("base client is required (use NewMockStakingContract for testing)")
+	}
+	if !baseClient.IsConnected() {
+		return nil, fmt.Errorf("base client not connected to RPC")
 	}
 
 	parsedABI, err := abi.JSON(strings.NewReader(StakingContractABI))
@@ -87,9 +124,11 @@ func NewStakingContract(baseClient *BaseClient, tokenContract *TokenContract, co
 // NewMockStakingContract creates a mock staking contract for testing
 func NewMockStakingContract() *StakingContract {
 	return &StakingContract{
-		mockMode:    true,
-		mockStakes:  make(map[common.Address]*big.Int),
-		mockPending: make(map[common.Address]*PendingUnstake),
+		mockMode:       true,
+		mockStakes:     make(map[common.Address]*big.Int),
+		mockPending:    make(map[common.Address][]*PendingUnstake),
+		mockIdentities: make(map[common.Address]*NodeIdentity),
+		mockNodeIDMap:  make(map[[32]byte]common.Address),
 	}
 }
 
@@ -155,8 +194,7 @@ func (sc *StakingContract) mockStake(_ context.Context, amount *big.Int) (*types
 		sc.mockStakes[addr] = new(big.Int).Add(current, amount)
 	}
 
-	fmt.Printf("[MOCK] Staked %s BUNKER tokens for %s (total: %s)\n",
-		amount.String(), addr.Hex(), sc.mockStakes[addr].String())
+	logging.Info("staked tokens", "amount", amount.String(), "provider", addr.Hex(), "total_stake", sc.mockStakes[addr].String())
 
 	return nil, nil
 }
@@ -195,22 +233,22 @@ func (sc *StakingContract) mockRequestUnstake(_ context.Context, amount *big.Int
 	}
 
 	// 7 day cooldown (mock)
-	sc.mockPending[addr] = &PendingUnstake{
+	sc.mockPending[addr] = append(sc.mockPending[addr], &PendingUnstake{
 		Amount:     new(big.Int).Set(amount),
 		UnlockTime: time.Now().Add(7 * 24 * time.Hour),
-	}
+	})
 	sc.mockStakes[addr] = new(big.Int).Sub(current, amount)
 
-	fmt.Printf("[MOCK] Requested unstake of %s BUNKER for %s (unlock: %s)\n",
-		amount.String(), addr.Hex(), sc.mockPending[addr].UnlockTime.Format(time.RFC3339))
+	logging.Info("requested unstake", "amount", amount.String(), "provider", addr.Hex(),
+		"queue_index", len(sc.mockPending[addr])-1)
 
 	return nil, nil
 }
 
-// Withdraw withdraws unstaked tokens after cooldown
-func (sc *StakingContract) Withdraw(ctx context.Context) (*types.Transaction, error) {
+// CompleteUnstake completes a pending unstake request by queue index
+func (sc *StakingContract) CompleteUnstake(ctx context.Context, requestIndex *big.Int) (*types.Transaction, error) {
 	if sc.mockMode {
-		return sc.mockWithdraw(ctx)
+		return sc.mockCompleteUnstake(ctx, requestIndex)
 	}
 
 	auth, err := sc.baseClient.GetTransactOpts(ctx)
@@ -218,16 +256,16 @@ func (sc *StakingContract) Withdraw(ctx context.Context) (*types.Transaction, er
 		return nil, fmt.Errorf("failed to get transaction options: %w", err)
 	}
 
-	tx, err := sc.contract.Transact(auth, "withdraw")
+	tx, err := sc.contract.Transact(auth, "completeUnstake", requestIndex)
 	if err != nil {
-		return nil, fmt.Errorf("failed to withdraw: %w", err)
+		return nil, fmt.Errorf("failed to complete unstake: %w", err)
 	}
 
 	return tx, nil
 }
 
-// mockWithdraw handles withdrawal in mock mode
-func (sc *StakingContract) mockWithdraw(_ context.Context) (*types.Transaction, error) {
+// mockCompleteUnstake handles unstake completion in mock mode
+func (sc *StakingContract) mockCompleteUnstake(_ context.Context, requestIndex *big.Int) (*types.Transaction, error) {
 	sc.mockMu.Lock()
 	defer sc.mockMu.Unlock()
 
@@ -235,20 +273,35 @@ func (sc *StakingContract) mockWithdraw(_ context.Context) (*types.Transaction, 
 	if sc.baseClient != nil {
 		addr = sc.baseClient.Address()
 	}
-	pending, exists := sc.mockPending[addr]
+
+	queue, exists := sc.mockPending[addr]
 	if !exists {
-		return nil, fmt.Errorf("no pending unstake")
+		return nil, fmt.Errorf("no pending unstake requests")
 	}
 
-	if time.Now().Before(pending.UnlockTime) {
+	idx := int(requestIndex.Int64())
+	if idx >= len(queue) {
+		return nil, fmt.Errorf("invalid request index: %d", idx)
+	}
+
+	req := queue[idx]
+	if req.Completed {
+		return nil, fmt.Errorf("unstake request already completed")
+	}
+	if time.Now().Before(req.UnlockTime) {
 		return nil, fmt.Errorf("cooldown not complete")
 	}
 
-	fmt.Printf("[MOCK] Withdrew %s BUNKER tokens for %s\n",
-		pending.Amount.String(), addr.Hex())
+	req.Completed = true
+	logging.Info("completed unstake", "amount", req.Amount.String(), "provider", addr.Hex(), "index", idx)
 
-	delete(sc.mockPending, addr)
 	return nil, nil
+}
+
+// Withdraw is kept for backwards compatibility, completes the first pending unstake
+// Deprecated: Use CompleteUnstake with explicit request index
+func (sc *StakingContract) Withdraw(ctx context.Context) (*types.Transaction, error) {
+	return sc.CompleteUnstake(ctx, big.NewInt(0))
 }
 
 // GetStake returns the staked amount for an address
@@ -278,6 +331,116 @@ func (sc *StakingContract) GetStake(ctx context.Context, provider common.Address
 	return big.NewInt(0), nil
 }
 
+// IsActiveProvider checks if a provider is active (staked and registered)
+func (sc *StakingContract) IsActiveProvider(ctx context.Context, provider common.Address) (bool, error) {
+	if sc.mockMode {
+		sc.mockMu.RLock()
+		defer sc.mockMu.RUnlock()
+		stake, exists := sc.mockStakes[provider]
+		if !exists {
+			return false, nil
+		}
+		minStake := parseWei("1000000") // Starter tier minimum (1,000,000 BUNKER)
+		return stake.Cmp(minStake) >= 0, nil
+	}
+
+	var result []interface{}
+	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "isActiveProvider", provider)
+	if err != nil {
+		return false, fmt.Errorf("failed to check active provider: %w", err)
+	}
+
+	if len(result) == 0 {
+		return false, nil
+	}
+	if active, ok := result[0].(bool); ok {
+		return active, nil
+	}
+	return false, nil
+}
+
+// GetProviderInfo returns provider information from the contract
+func (sc *StakingContract) GetProviderInfo(ctx context.Context, provider common.Address) (*ProviderInfoData, error) {
+	if sc.mockMode {
+		sc.mockMu.RLock()
+		defer sc.mockMu.RUnlock()
+
+		stake, _ := sc.mockStakes[provider]
+		if stake == nil {
+			stake = big.NewInt(0)
+		}
+
+		totalUnbonding := big.NewInt(0)
+		if queue, exists := sc.mockPending[provider]; exists {
+			for _, req := range queue {
+				if !req.Completed {
+					totalUnbonding.Add(totalUnbonding, req.Amount)
+				}
+			}
+		}
+
+		minStake := parseWei("1000000") // Starter tier minimum (1,000,000 BUNKER)
+		info := &ProviderInfoData{
+			StakedAmount:   new(big.Int).Set(stake),
+			TotalUnbonding: totalUnbonding,
+			Active:         stake.Cmp(minStake) >= 0,
+		}
+
+		if identity, exists := sc.mockIdentities[provider]; exists {
+			info.NodeID = identity.NodeID
+			info.Region = identity.Region
+			info.Capabilities = identity.Capabilities
+		}
+
+		return info, nil
+	}
+
+	var result []interface{}
+	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getProviderInfo", provider)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get provider info: %w", err)
+	}
+
+	if len(result) == 0 {
+		return &ProviderInfoData{
+			StakedAmount:   big.NewInt(0),
+			TotalUnbonding: big.NewInt(0),
+		}, nil
+	}
+
+	info := &ProviderInfoData{
+		StakedAmount:   big.NewInt(0),
+		TotalUnbonding: big.NewInt(0),
+	}
+
+	// go-ethereum unpacks the full struct including identity fields
+	if res, ok := result[0].(struct {
+		StakedAmount   *big.Int
+		TotalUnbonding *big.Int
+		Beneficiary    common.Address
+		RegisteredAt   *big.Int
+		Active         bool
+		NodeId         [32]byte
+		Region         [32]byte
+		Capabilities   uint64
+		Frozen         bool
+	}); ok {
+		info.StakedAmount = res.StakedAmount
+		info.TotalUnbonding = res.TotalUnbonding
+		info.Beneficiary = res.Beneficiary
+		if res.RegisteredAt != nil {
+			info.RegisteredAt = time.Unix(res.RegisteredAt.Int64(), 0)
+		}
+		info.Active = res.Active
+		info.NodeID = res.NodeId
+		info.Region = res.Region
+		info.Capabilities = res.Capabilities
+		info.Frozen = res.Frozen
+	}
+
+	return info, nil
+}
+
 // GetStakeInfo returns full staking information
 func (sc *StakingContract) GetStakeInfo(ctx context.Context, provider common.Address) (*StakeInfo, error) {
 	stake, err := sc.GetStake(ctx, provider)
@@ -292,27 +455,34 @@ func (sc *StakingContract) GetStakeInfo(ctx context.Context, provider common.Add
 
 	if sc.mockMode {
 		sc.mockMu.RLock()
-		if pending, exists := sc.mockPending[provider]; exists {
-			info.PendingUnstake = new(big.Int).Set(pending.Amount)
-			info.UnlockTime = pending.UnlockTime
+		if queue, exists := sc.mockPending[provider]; exists {
+			for _, req := range queue {
+				if !req.Completed {
+					info.PendingUnstake.Add(info.PendingUnstake, req.Amount)
+					// Use the earliest unlock time
+					if info.UnlockTime.IsZero() || req.UnlockTime.Before(info.UnlockTime) {
+						info.UnlockTime = req.UnlockTime
+					}
+				}
+			}
 		}
 		sc.mockMu.RUnlock()
 	} else {
-		// Call getPendingUnstake
-		var result []interface{}
-		err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getPendingUnstake", provider)
-		if err == nil && len(result) >= 2 {
-			if amount, ok := result[0].(*big.Int); ok {
-				info.PendingUnstake = amount
-			}
-			if unlockTime, ok := result[1].(*big.Int); ok {
-				info.UnlockTime = time.Unix(unlockTime.Int64(), 0)
-			}
+		// Get total unbonding from provider info
+		providerInfo, err := sc.GetProviderInfo(ctx, provider)
+		if err == nil && providerInfo != nil {
+			info.PendingUnstake = providerInfo.TotalUnbonding
 		}
 	}
 
-	// Determine tier based on stake
-	info.Tier = sc.determineTier(stake)
+	// Determine tier based on effective stake (personal + delegated)
+	effectiveStake := new(big.Int).Set(stake)
+	if sc.delegationContract != nil {
+		if delegated, err := sc.delegationContract.GetTotalDelegatedTo(ctx, provider); err == nil && delegated != nil {
+			effectiveStake.Add(effectiveStake, delegated)
+		}
+	}
+	info.Tier = sc.determineTier(effectiveStake)
 
 	return info, nil
 }
@@ -373,11 +543,11 @@ func (sc *StakingContract) GetTotalStaked(ctx context.Context) (*big.Int, error)
 // tierFromIndex maps a contract tier index to StakingTier
 func (sc *StakingContract) tierFromIndex(index uint8) pkgtypes.StakingTier {
 	tiers := []pkgtypes.StakingTier{
-		"",                          // 0 = none
-		pkgtypes.StakingTierStarter, // 1
-		pkgtypes.StakingTierBronze,  // 2
-		pkgtypes.StakingTierSilver,  // 3
-		pkgtypes.StakingTierGold,    // 4
+		"",                           // 0 = none
+		pkgtypes.StakingTierStarter,  // 1
+		pkgtypes.StakingTierBronze,   // 2
+		pkgtypes.StakingTierSilver,   // 3
+		pkgtypes.StakingTierGold,     // 4
 		pkgtypes.StakingTierPlatinum, // 5
 	}
 	if int(index) < len(tiers) {
@@ -388,17 +558,16 @@ func (sc *StakingContract) tierFromIndex(index uint8) pkgtypes.StakingTier {
 
 // determineTier determines the staking tier based on stake amount
 func (sc *StakingContract) determineTier(stake *big.Int) pkgtypes.StakingTier {
-	// Tier thresholds (in wei, assuming 18 decimals)
-	// These should match the contract's tier thresholds
+	// Tier thresholds match BunkerStaking.sol
 	tiers := []struct {
 		tier   pkgtypes.StakingTier
 		minWei *big.Int
 	}{
-		{pkgtypes.StakingTierPlatinum, parseWei("100000")}, // 100,000 BUNKER
-		{pkgtypes.StakingTierGold, parseWei("50000")},      // 50,000 BUNKER
-		{pkgtypes.StakingTierSilver, parseWei("10000")},    // 10,000 BUNKER
-		{pkgtypes.StakingTierBronze, parseWei("2000")},     // 2,000 BUNKER
-		{pkgtypes.StakingTierStarter, parseWei("500")},     // 500 BUNKER
+		{pkgtypes.StakingTierPlatinum, parseWei("1000000000")}, // 1,000,000,000 BUNKER
+		{pkgtypes.StakingTierGold, parseWei("100000000")},     // 100,000,000 BUNKER
+		{pkgtypes.StakingTierSilver, parseWei("10000000")},    // 10,000,000 BUNKER
+		{pkgtypes.StakingTierBronze, parseWei("5000000")},     // 5,000,000 BUNKER
+		{pkgtypes.StakingTierStarter, parseWei("1000000")},    // 1,000,000 BUNKER
 	}
 
 	for _, t := range tiers {
@@ -452,7 +621,7 @@ func (sc *StakingContract) SubscribeStakeEvents(ctx context.Context, ch chan<- *
 				ch <- event
 			case err := <-sub.Err():
 				if err != nil {
-					fmt.Printf("Stake event subscription error: %v\n", err)
+					logging.Error("stake event subscription error", "error", err)
 				}
 				return
 			}
@@ -472,7 +641,7 @@ func (sc *StakingContract) parseStakeEvent(log types.Log) (*StakeEvent, error) {
 		event.Provider = common.HexToAddress(log.Topics[1].Hex())
 	}
 
-	// Parse data (amount, totalStake)
+	// Parse data (amount, totalStake, tier)
 	if len(log.Data) >= 64 {
 		event.Amount = new(big.Int).SetBytes(log.Data[:32])
 		event.TotalStake = new(big.Int).SetBytes(log.Data[32:64])
@@ -481,13 +650,250 @@ func (sc *StakingContract) parseStakeEvent(log types.Log) (*StakeEvent, error) {
 	return event, nil
 }
 
-// HasMinimumStake checks if provider has minimum stake
+// StakeWithIdentity stakes tokens with an on-chain NodeID binding.
+func (sc *StakingContract) StakeWithIdentity(ctx context.Context, amount *big.Int, nodeID [32]byte, region [32]byte, capabilities uint64) (*types.Transaction, error) {
+	if sc.mockMode {
+		// First, do the normal stake
+		tx, err := sc.mockStake(ctx, amount)
+		if err != nil {
+			return nil, err
+		}
+		// Then record identity
+		sc.mockMu.Lock()
+		var addr common.Address
+		if sc.baseClient != nil {
+			addr = sc.baseClient.Address()
+		}
+		sc.mockIdentities[addr] = &NodeIdentity{
+			NodeID:       nodeID,
+			Region:       region,
+			Capabilities: capabilities,
+		}
+		sc.mockNodeIDMap[nodeID] = addr
+		sc.mockMu.Unlock()
+
+		logging.Info("staked with identity",
+			"provider", addr.Hex(),
+			"node_id", fmt.Sprintf("%x", nodeID[:8]),
+			"amount", amount.String())
+		return tx, nil
+	}
+
+	// Approve token spend
+	if sc.tokenContract != nil {
+		_, err := sc.tokenContract.Approve(ctx, sc.contractAddr, amount)
+		if err != nil {
+			return nil, fmt.Errorf("failed to approve token spend: %w", err)
+		}
+	}
+
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+
+	tx, err := sc.contract.Transact(auth, "stakeWithIdentity", amount, nodeID, region, capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("failed to stake with identity: %w", err)
+	}
+
+	return tx, nil
+}
+
+// UpdateIdentity updates a provider's on-chain NodeID, region, and capabilities.
+func (sc *StakingContract) UpdateIdentity(ctx context.Context, nodeID [32]byte, region [32]byte, capabilities uint64) (*types.Transaction, error) {
+	if sc.mockMode {
+		sc.mockMu.Lock()
+		defer sc.mockMu.Unlock()
+
+		var addr common.Address
+		if sc.baseClient != nil {
+			addr = sc.baseClient.Address()
+		}
+
+		// Remove old nodeID mapping if exists
+		if old, exists := sc.mockIdentities[addr]; exists {
+			delete(sc.mockNodeIDMap, old.NodeID)
+		}
+
+		sc.mockIdentities[addr] = &NodeIdentity{
+			NodeID:       nodeID,
+			Region:       region,
+			Capabilities: capabilities,
+		}
+		sc.mockNodeIDMap[nodeID] = addr
+
+		logging.Info("updated identity",
+			"provider", addr.Hex(),
+			"node_id", fmt.Sprintf("%x", nodeID[:8]))
+		return nil, nil
+	}
+
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+
+	tx, err := sc.contract.Transact(auth, "updateIdentity", nodeID, region, capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update identity: %w", err)
+	}
+
+	return tx, nil
+}
+
+// NodeIDToProvider returns the provider address registered for a given NodeID.
+// Returns the zero address if not found.
+func (sc *StakingContract) NodeIDToProvider(ctx context.Context, nodeID [32]byte) (common.Address, error) {
+	if sc.mockMode {
+		sc.mockMu.RLock()
+		defer sc.mockMu.RUnlock()
+		if addr, exists := sc.mockNodeIDMap[nodeID]; exists {
+			return addr, nil
+		}
+		return common.Address{}, nil
+	}
+
+	var result []interface{}
+	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "nodeIdToProvider", nodeID)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("failed to lookup nodeID: %w", err)
+	}
+
+	if len(result) == 0 {
+		return common.Address{}, nil
+	}
+	if addr, ok := result[0].(common.Address); ok {
+		return addr, nil
+	}
+	return common.Address{}, nil
+}
+
+// HasMinimumStake checks if provider has minimum stake (1,000,000 BUNKER = Starter tier)
 func (sc *StakingContract) HasMinimumStake(ctx context.Context, provider common.Address) (bool, error) {
 	stake, err := sc.GetStake(ctx, provider)
 	if err != nil {
 		return false, err
 	}
 
-	minStake := parseWei("1000") // 1000 BUNKER minimum
+	minStake := parseWei("1000000") // 1,000,000 BUNKER minimum (Starter tier)
 	return stake.Cmp(minStake) >= 0, nil
+}
+
+// ─── Admin Setters ───────────────────────────────────────────────────────────
+
+// SetTierRewardMultiplier adjusts the reward multiplier for a staking tier.
+func (sc *StakingContract) SetTierRewardMultiplier(ctx context.Context, tier uint8, multiplierBps uint16) (*types.Transaction, error) {
+	if sc.mockMode {
+		logging.Info("mock: setTierRewardMultiplier tier=%d bps=%d", tier, multiplierBps)
+		return nil, nil
+	}
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+	tx, err := sc.contract.Transact(auth, "setTierRewardMultiplier", tier, multiplierBps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set tier reward multiplier: %w", err)
+	}
+	return tx, nil
+}
+
+// SetMaxTierMultiplierBps adjusts the maximum tier multiplier cap.
+func (sc *StakingContract) SetMaxTierMultiplierBps(ctx context.Context, newMax uint16) (*types.Transaction, error) {
+	if sc.mockMode {
+		logging.Info("mock: setMaxTierMultiplierBps newMax=%d", newMax)
+		return nil, nil
+	}
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+	tx, err := sc.contract.Transact(auth, "setMaxTierMultiplierBps", newMax)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set max tier multiplier: %w", err)
+	}
+	return tx, nil
+}
+
+// SetUnbondingPeriod adjusts the unstaking unbonding period.
+func (sc *StakingContract) SetUnbondingPeriod(ctx context.Context, newPeriod *big.Int) (*types.Transaction, error) {
+	if sc.mockMode {
+		logging.Info("mock: setUnbondingPeriod period=%s", newPeriod)
+		return nil, nil
+	}
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+	tx, err := sc.contract.Transact(auth, "setUnbondingPeriod", newPeriod)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set unbonding period: %w", err)
+	}
+	return tx, nil
+}
+
+// SetSlashFeeSplit adjusts the burn/treasury split for slashed tokens.
+func (sc *StakingContract) SetSlashFeeSplit(ctx context.Context, burnBps, treasuryBps uint16) (*types.Transaction, error) {
+	if sc.mockMode {
+		logging.Info("mock: setSlashFeeSplit burn=%d treasury=%d", burnBps, treasuryBps)
+		return nil, nil
+	}
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+	tx, err := sc.contract.Transact(auth, "setSlashFeeSplit", burnBps, treasuryBps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set slash fee split: %w", err)
+	}
+	return tx, nil
+}
+
+// SetAppealWindow adjusts the slash appeal window duration.
+func (sc *StakingContract) SetAppealWindow(ctx context.Context, newWindow *big.Int) (*types.Transaction, error) {
+	if sc.mockMode {
+		logging.Info("mock: setAppealWindow window=%s", newWindow)
+		return nil, nil
+	}
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+	tx, err := sc.contract.Transact(auth, "setAppealWindow", newWindow)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set appeal window: %w", err)
+	}
+	return tx, nil
+}
+
+// SetSlashingEnabled enables or disables slashing execution.
+// When disabled, proposals can still be created (monitor mode) but execution reverts.
+func (sc *StakingContract) SetSlashingEnabled(ctx context.Context, enabled bool) (*types.Transaction, error) {
+	if sc.mockMode {
+		logging.Info("mock: setSlashingEnabled enabled=%v", enabled)
+		return nil, nil
+	}
+	auth, err := sc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get transaction options: %w", err)
+	}
+	tx, err := sc.contract.Transact(auth, "setSlashingEnabled", enabled)
+	if err != nil {
+		return nil, fmt.Errorf("failed to set slashing enabled: %w", err)
+	}
+	return tx, nil
+}
+
+// SlashingEnabled returns whether slashing execution is currently enabled.
+func (sc *StakingContract) SlashingEnabled(ctx context.Context) (bool, error) {
+	if sc.mockMode {
+		return false, nil
+	}
+	var result []interface{}
+	err := sc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "slashingEnabled")
+	if err != nil {
+		return false, fmt.Errorf("failed to query slashing enabled: %w", err)
+	}
+	return result[0].(bool), nil
 }

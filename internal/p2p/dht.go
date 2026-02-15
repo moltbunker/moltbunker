@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/moltbunker/moltbunker/internal/identity"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
@@ -29,37 +31,59 @@ type DHTConfig struct {
 	Port           int
 	BootstrapPeers []string
 	EnableMDNS     bool
+	EnableNAT      bool // Enable NAT traversal (AutoNAT, port mapping, relay, hole punching)
 	ExternalIP     string
 	AnnounceAddrs  []string
 	MaxPeers       int
+
+	// Connection manager watermarks for automatic pruning.
+	// When connections exceed HighWatermark, the manager prunes down to LowWatermark.
+	ConnManagerLowWatermark  int
+	ConnManagerHighWatermark int
+
+	// AddressBookPath is the file path for persisting the peer address book.
+	// If empty, the address book is kept in memory only.
+	AddressBookPath string
+
+	// DNSBootstrap configures DNS-based bootstrap peer resolution.
+	// When set, bootstrap peers are resolved via DNS TXT records at
+	// _dnsaddr.<domain> before falling back to static peers.
+	// If nil, the default BootstrapConfig is used for DNS resolution.
+	DNSBootstrap *BootstrapConfig
 }
 
 // DHT implements Kademlia DHT for node discovery
 type DHT struct {
-	host       host.Host
-	dht        *dual.DHT
-	mdns       mdns.Service
-	peers      map[types.NodeID]*types.Node
-	peersMu    sync.RWMutex
-	config     *DHTConfig
-	keyManager *identity.KeyManager
-	localNode  *types.Node
+	host        host.Host
+	dht         *dual.DHT
+	mdns        mdns.Service
+	peers       map[types.NodeID]*types.Node
+	peersMu     sync.RWMutex
+	config      *DHTConfig
+	keyManager  *identity.KeyManager
+	localNode   *types.Node
+	addressBook *AddressBook
 
 	// Callbacks
 	onPeerConnected    func(*types.Node)
 	onPeerDisconnected func(*types.Node)
 }
 
-// DefaultBootstrapPeers returns default bootstrap peers
-// In production, these would be well-known bootstrap nodes
+// DefaultBootstrapPeers returns default bootstrap peers.
+// It resolves DNS-based bootstrap via /dnsaddr/bootstrap.moltbunker.com.
+// If DNS resolution fails, returns an empty list — the node will still
+// discover peers via mDNS (LAN) and the persisted address book.
+// We intentionally do NOT fall back to public IPFS/libp2p bootstrap nodes
+// to avoid untrusted peers polluting our routing table.
 func DefaultBootstrapPeers() []string {
-	return []string{
-		// IPFS bootstrap nodes (can be used for initial connectivity)
-		"/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-		"/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
-		"/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
-		"/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+	resolved := BootstrapPeerStrings(DefaultBootstrapConfig())
+	if len(resolved) > 0 {
+		return resolved
 	}
+
+	logging.Info("no bootstrap peers resolved via DNS, relying on mDNS and address book",
+		logging.Component("dht"))
+	return []string{}
 }
 
 // NewDHT creates a new DHT instance
@@ -69,8 +93,15 @@ func NewDHT(ctx context.Context, config *DHTConfig, keyManager *identity.KeyMana
 			Port:           9000,
 			BootstrapPeers: DefaultBootstrapPeers(),
 			EnableMDNS:     true,
+			EnableNAT:      true,
 			MaxPeers:       50,
 		}
+	}
+
+	// Resolve bootstrap peers via DNS if DNSBootstrap is configured
+	// and no explicit BootstrapPeers are set
+	if len(config.BootstrapPeers) == 0 && config.DNSBootstrap != nil {
+		config.BootstrapPeers = BootstrapPeerStrings(config.DNSBootstrap)
 	}
 
 	// Build listen addresses
@@ -82,10 +113,42 @@ func NewDHT(ctx context.Context, config *DHTConfig, keyManager *identity.KeyMana
 	// Build libp2p options
 	opts := []libp2p.Option{
 		libp2p.ListenAddrStrings(listenAddrs...),
-		libp2p.NATPortMap(),
-		libp2p.EnableNATService(),
-		libp2p.EnableRelay(),
-		libp2p.EnableHolePunching(),
+	}
+
+	// Configure resource manager to prevent resource exhaustion from connection flooding
+	rm, err := NewResourceManager()
+	if err != nil {
+		logging.Warn("failed to create resource manager, continuing without it", "error", err)
+	} else {
+		opts = append(opts, libp2p.ResourceManager(rm))
+	}
+
+	// Configure connection manager with watermark-based pruning
+	{
+		low := config.ConnManagerLowWatermark
+		if low <= 0 {
+			low = DefaultConnManagerLowWatermark
+		}
+		high := config.ConnManagerHighWatermark
+		if high <= 0 {
+			high = DefaultConnManagerHighWatermark
+		}
+		cm, cmErr := NewConnectionManager(low, high, DefaultConnManagerGracePeriod)
+		if cmErr != nil {
+			logging.Warn("failed to create connection manager, continuing without it", "error", cmErr)
+		} else {
+			opts = append(opts, libp2p.ConnectionManager(cm))
+		}
+	}
+
+	// Enable NAT traversal options when configured
+	if config.EnableNAT {
+		opts = append(opts,
+			libp2p.NATPortMap(),        // Automatic port mapping via UPnP/NAT-PMP
+			libp2p.EnableNATService(),   // Help other nodes determine their NAT status
+			libp2p.EnableRelay(),        // Act as a relay for nodes behind NAT
+			libp2p.EnableHolePunching(), // Direct connection upgrade via hole punching
+		)
 	}
 
 	// Add external addresses if configured
@@ -136,15 +199,25 @@ func NewDHT(ctx context.Context, config *DHTConfig, keyManager *identity.KeyMana
 	}
 
 	d := &DHT{
-		host:       h,
-		dht:        dhtInstance,
-		peers:      make(map[types.NodeID]*types.Node),
-		config:     config,
-		keyManager: keyManager,
+		host:        h,
+		dht:         dhtInstance,
+		peers:       make(map[types.NodeID]*types.Node),
+		config:      config,
+		keyManager:  keyManager,
+		addressBook: NewAddressBook(),
 	}
 
 	// Create local node info
 	d.localNode = d.createLocalNode()
+
+	// Load address book from disk and connect to known peers before DHT bootstrap
+	if config.AddressBookPath != "" {
+		if err := d.addressBook.Load(config.AddressBookPath); err != nil {
+			logging.Warn("failed to load address book", "error", err, logging.Component("dht"))
+		} else {
+			d.connectFromAddressBook(ctx)
+		}
+	}
 
 	// Set up connection notifier
 	h.Network().Notify(&network.NotifyBundle{
@@ -235,6 +308,9 @@ func (d *DHT) Bootstrap(ctx context.Context) error {
 			continue
 		}
 
+		// Add bootstrap peers to address book
+		d.addressBook.AddPeer(peerInfo.ID, peerInfo.Addrs, "bootstrap")
+
 		wg.Add(1)
 		pi := *peerInfo
 		util.SafeGoWithName("dht-bootstrap-connect", func() {
@@ -246,9 +322,11 @@ func (d *DHT) Bootstrap(ctx context.Context) error {
 			d.host.Peerstore().AddAddrs(pi.ID, pi.Addrs, peerstore.PermanentAddrTTL)
 
 			if err := d.host.Connect(connectCtx, pi); err != nil {
+				d.addressBook.RecordConnectionAttempt(pi.ID, false)
 				return
 			}
 
+			d.addressBook.RecordConnectionAttempt(pi.ID, true)
 			mu.Lock()
 			connectedCount++
 			mu.Unlock()
@@ -273,6 +351,12 @@ func (d *DHT) handlePeerConnected(peerID peer.ID) {
 	d.peers[node.ID] = node
 	d.peersMu.Unlock()
 
+	// Track in address book
+	addrs := d.host.Peerstore().Addrs(peerID)
+	if len(addrs) > 0 {
+		d.addressBook.AddPeer(peerID, addrs, "dht")
+	}
+
 	if d.onPeerConnected != nil {
 		d.onPeerConnected(node)
 	}
@@ -285,6 +369,9 @@ func (d *DHT) handlePeerDisconnected(peerID peer.ID) {
 	d.peersMu.Lock()
 	delete(d.peers, node.ID)
 	d.peersMu.Unlock()
+
+	// Update last seen in address book (peer was known until now)
+	d.addressBook.UpdateLastSeen(peerID)
 
 	if d.onPeerDisconnected != nil {
 		d.onPeerDisconnected(node)
@@ -481,15 +568,79 @@ func (d *DHT) Addresses() []string {
 	return fullAddrs
 }
 
-// Close closes the DHT
+// AddressBook returns the address book for this DHT instance.
+func (d *DHT) AddressBook() *AddressBook {
+	return d.addressBook
+}
+
+// connectFromAddressBook connects to the best known peers from the persisted
+// address book. This is called on startup before DHT bootstrap to quickly
+// reconnect to previously known peers.
+func (d *DHT) connectFromAddressBook(ctx context.Context) {
+	entries := d.addressBook.GetBestPeers(d.config.MaxPeers)
+	if len(entries) == 0 {
+		return
+	}
+
+	logging.Info("connecting to peers from address book",
+		"peers", len(entries),
+		logging.Component("dht"))
+
+	var connected, failed int
+	for _, entry := range entries {
+		// Skip ourselves
+		if entry.PeerID == d.host.ID() {
+			continue
+		}
+
+		// Parse multiaddresses
+		var addrs []ma.Multiaddr
+		for _, addrStr := range entry.Addrs {
+			maddr, err := ma.NewMultiaddr(addrStr)
+			if err != nil {
+				continue
+			}
+			addrs = append(addrs, maddr)
+		}
+		if len(addrs) == 0 {
+			continue
+		}
+
+		// Add addresses to the peerstore
+		d.host.Peerstore().AddAddrs(entry.PeerID, addrs, peerstore.PermanentAddrTTL)
+
+		// Attempt connection with a timeout
+		connectCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		err := d.host.Connect(connectCtx, peer.AddrInfo{
+			ID:    entry.PeerID,
+			Addrs: addrs,
+		})
+		cancel()
+
+		if err != nil {
+			d.addressBook.RecordConnectionAttempt(entry.PeerID, false)
+			failed++
+		} else {
+			d.addressBook.RecordConnectionAttempt(entry.PeerID, true)
+			connected++
+		}
+	}
+
+	logging.Info("address book reconnection complete",
+		"connected", connected,
+		"failed", failed,
+		logging.Component("dht"))
+}
+
+// Close closes the DHT and its underlying libp2p host.
+// Both resources are closed regardless of individual errors.
 func (d *DHT) Close() error {
 	if d.mdns != nil {
 		d.mdns.Close()
 	}
-	if err := d.dht.Close(); err != nil {
-		return err
-	}
-	return d.host.Close()
+	dhtErr := d.dht.Close()
+	hostErr := d.host.Close()
+	return errors.Join(dhtErr, hostErr)
 }
 
 // mdnsNotifee handles mDNS peer discovery
@@ -506,12 +657,17 @@ func (m *mdnsNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	// Add addresses to peerstore
 	m.dht.host.Peerstore().AddAddrs(pi.ID, pi.Addrs, peerstore.TempAddrTTL)
 
+	// Track in address book
+	m.dht.addressBook.AddPeer(pi.ID, pi.Addrs, "mdns")
+
 	// Try to connect
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := m.dht.host.Connect(ctx, pi); err != nil {
+		m.dht.addressBook.RecordConnectionAttempt(pi.ID, false)
 		// Connection failed, but that's okay for mDNS discovery
 		return
 	}
+	m.dht.addressBook.RecordConnectionAttempt(pi.ID, true)
 }

@@ -12,14 +12,25 @@ import (
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
+// KataConfig contains Kata Containers hypervisor overrides.
+// Non-zero values are emitted as OCI annotations for the Kata shim.
+type KataConfig struct {
+	VMMemoryMB int    // VM memory in MB (Kata default applies if 0)
+	VMCPUs     int    // VM vCPU count (Kata default applies if 0)
+	KernelPath string // Custom kernel image path
+	ImagePath  string // Custom rootfs/initrd path
+}
+
 // ContainerdClient wraps containerd client with full lifecycle management
 type ContainerdClient struct {
-	client     *containerd.Client
-	namespace  string
-	containers map[string]*ManagedContainer
-	mu         sync.RWMutex
-	logManager *LogManager
-	logsDir    string
+	client      *containerd.Client
+	namespace   string
+	runtimeName string // OCI runtime (e.g. "io.containerd.runc.v2", "io.containerd.kata.v2")
+	kataConfig  *KataConfig
+	containers  map[string]*ManagedContainer
+	mu          sync.RWMutex
+	logManager  *LogManager
+	logsDir     string
 }
 
 // ManagedContainer represents a container managed by the runtime
@@ -56,8 +67,10 @@ type ManagedContainerInfo struct {
 	ShellDisabled   bool // Security: shell is disabled
 }
 
-// NewContainerdClient creates a new containerd client
-func NewContainerdClient(socketPath string, namespace string, logsDir string) (*ContainerdClient, error) {
+// NewContainerdClient creates a new containerd client.
+// runtimeName is the OCI runtime shim (e.g. "io.containerd.runc.v2"). Pass "" for default (runc.v2).
+// kata may be nil; non-nil values emit OCI annotations when the runtime is a Kata variant.
+func NewContainerdClient(socketPath string, namespace string, logsDir string, runtimeName string, kata *KataConfig) (*ContainerdClient, error) {
 	client, err := containerd.New(socketPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to containerd: %w", err)
@@ -71,6 +84,10 @@ func NewContainerdClient(socketPath string, namespace string, logsDir string) (*
 		logsDir = "/var/log/moltbunker/containers"
 	}
 
+	if runtimeName == "" {
+		runtimeName = RuntimeRuncV2
+	}
+
 	// Create log manager
 	logManager, err := NewLogManager(logsDir)
 	if err != nil {
@@ -79,11 +96,13 @@ func NewContainerdClient(socketPath string, namespace string, logsDir string) (*
 	}
 
 	return &ContainerdClient{
-		client:     client,
-		namespace:  namespace,
-		containers: make(map[string]*ManagedContainer),
-		logManager: logManager,
-		logsDir:    logsDir,
+		client:      client,
+		namespace:   namespace,
+		runtimeName: runtimeName,
+		kataConfig:  kata,
+		containers:  make(map[string]*ManagedContainer),
+		logManager:  logManager,
+		logsDir:     logsDir,
 	}, nil
 }
 
@@ -155,11 +174,12 @@ func (cc *ContainerdClient) LoadExistingContainers(ctx context.Context) error {
 		}
 
 		managed := &ManagedContainer{
-			ID:        container.ID(),
-			Image:     info.Image,
-			Container: container,
-			Status:    types.ContainerStatusStopped,
-			CreatedAt: info.CreatedAt,
+			ID:               container.ID(),
+			Image:            info.Image,
+			Container:        container,
+			Status:           types.ContainerStatusStopped,
+			CreatedAt:        info.CreatedAt,
+			SecurityEnforcer: NewSecurityEnforcer(types.DeploymentSecurityProfile()),
 		}
 
 		// Check if task is running
@@ -176,6 +196,25 @@ func (cc *ContainerdClient) LoadExistingContainers(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// Ping checks connectivity to containerd by listing containers
+func (cc *ContainerdClient) Ping(ctx context.Context) error {
+	ctx = cc.WithNamespace(ctx)
+	_, err := cc.client.Containers(ctx)
+	return err
+}
+
+// GetContainerDiskUsage returns the writable layer disk usage in bytes for a container.
+// Uses containerd's snapshot service to query the overlay upper directory size.
+func (cc *ContainerdClient) GetContainerDiskUsage(ctx context.Context, id string) (int64, error) {
+	ctx = cc.WithNamespace(ctx)
+	snapshotter := cc.client.SnapshotService("")
+	usage, err := snapshotter.Usage(ctx, id+"-snapshot")
+	if err != nil {
+		return 0, fmt.Errorf("snapshot usage: %w", err)
+	}
+	return usage.Size, nil
 }
 
 // Close closes the containerd client

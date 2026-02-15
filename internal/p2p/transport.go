@@ -205,11 +205,25 @@ func (t *Transport) DialContext(ctx context.Context, nodeID types.NodeID, addres
 		return nil, fmt.Errorf("TLS handshake failed: %w", err)
 	}
 
-	// Pin certificate if this is first connection (TOFU - Trust On First Use)
-	if !hasPinnedCert || pinnedHash == nil {
-		state := tlsConn.ConnectionState()
-		if len(state.PeerCertificates) > 0 {
-			t.pinStore.PinCertificate(nodeID.String(), state.PeerCertificates[0])
+	// Verify that the peer's certificate maps to the expected NodeID.
+	// NodeID = SHA256(SubjectPublicKeyInfo), so we compute it from the
+	// peer cert and reject if it doesn't match. This prevents MITM attacks
+	// where an attacker controls the IP but has a different key.
+	state := tlsConn.ConnectionState()
+	if len(state.PeerCertificates) > 0 {
+		peerCert := state.PeerCertificates[0]
+		certHash := sha256.Sum256(peerCert.RawSubjectPublicKeyInfo)
+		var derivedNodeID types.NodeID
+		copy(derivedNodeID[:], certHash[:])
+		if derivedNodeID != nodeID {
+			tlsConn.Close()
+			return nil, fmt.Errorf("SECURITY: peer certificate NodeID mismatch: expected %s, got %s",
+				nodeID.String()[:16], derivedNodeID.String()[:16])
+		}
+
+		// Pin certificate on first connection (TOFU - Trust On First Use)
+		if !hasPinnedCert || pinnedHash == nil {
+			t.pinStore.PinCertificate(nodeID.String(), peerCert)
 		}
 	}
 

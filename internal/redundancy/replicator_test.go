@@ -34,27 +34,45 @@ func TestReplicator_CreateReplicaSet(t *testing.T) {
 		t.Errorf("ContainerID mismatch: got %s, want %s", replicaSet.ContainerID, containerID)
 	}
 
-	if replicaSet.Region1 != regions[0] {
-		t.Errorf("Region1 mismatch: got %s, want %s", replicaSet.Region1, regions[0])
+	if len(replicaSet.Regions) != len(regions) {
+		t.Errorf("Regions length mismatch: got %d, want %d", len(replicaSet.Regions), len(regions))
 	}
-
-	if replicaSet.Region2 != regions[1] {
-		t.Errorf("Region2 mismatch: got %s, want %s", replicaSet.Region2, regions[1])
-	}
-
-	if replicaSet.Region3 != regions[2] {
-		t.Errorf("Region3 mismatch: got %s, want %s", replicaSet.Region3, regions[2])
+	for i, r := range regions {
+		if replicaSet.Regions[i] != r {
+			t.Errorf("Region[%d] mismatch: got %s, want %s", i, replicaSet.Regions[i], r)
+		}
 	}
 }
 
-func TestReplicator_CreateReplicaSet_InsufficientRegions(t *testing.T) {
+func TestReplicator_CreateReplicaSet_FewerRegions(t *testing.T) {
 	r := NewReplicator()
 
+	// 2 regions should now succeed (graceful degradation)
 	regions := []string{"Americas", "Europe"}
+	rs, err := r.CreateReplicaSet("test-container-2", regions)
+	if err != nil {
+		t.Fatalf("Should succeed with 2 regions: %v", err)
+	}
+	if len(rs.Regions) != 2 {
+		t.Errorf("Expected 2 regions, got %d", len(rs.Regions))
+	}
+	if len(rs.Replicas) != 2 {
+		t.Errorf("Expected 2 replicas, got %d", len(rs.Replicas))
+	}
 
-	_, err := r.CreateReplicaSet("test-container", regions)
+	// 1 region should also succeed
+	rs1, err := r.CreateReplicaSet("test-container-1", []string{"Europe"})
+	if err != nil {
+		t.Fatalf("Should succeed with 1 region: %v", err)
+	}
+	if len(rs1.Regions) != 1 {
+		t.Errorf("Expected 1 region, got %d", len(rs1.Regions))
+	}
+
+	// 0 regions should fail
+	_, err = r.CreateReplicaSet("test-container-0", []string{})
 	if err == nil {
-		t.Error("Should fail with insufficient regions")
+		t.Error("Should fail with 0 regions")
 	}
 }
 

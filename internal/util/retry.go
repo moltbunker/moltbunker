@@ -2,9 +2,10 @@ package util
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"errors"
 	"math"
-	"math/rand"
 	"time"
 )
 
@@ -161,10 +162,13 @@ func calculateDelay(config *RetryConfig, attempt int) time.Duration {
 	// delay = baseDelay * multiplier^(attempt-1)
 	delay := float64(config.BaseDelay) * math.Pow(multiplier, float64(attempt-1))
 
-	// Apply jitter
+	// Apply jitter using crypto/rand
 	if config.Jitter > 0 {
 		jitterRange := delay * config.Jitter
-		delay = delay - jitterRange + (rand.Float64() * 2 * jitterRange)
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		randFloat := float64(binary.BigEndian.Uint64(b[:])>>(64-53)) / (1 << 53)
+		delay = delay - jitterRange + (randFloat * 2 * jitterRange)
 	}
 
 	// Clamp to max delay

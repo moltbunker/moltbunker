@@ -64,3 +64,42 @@ func isValidCID(cid string) bool {
 	return (len(cid) == 46 && cid[0] == 'Q' && cid[1] == 'm') ||
 		(len(cid) >= 4 && cid[0:4] == "bafy")
 }
+
+func TestNormalizeImageRef(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		// Official Docker Hub images (no slash)
+		{"nginx", "docker.io/library/nginx"},
+		{"nginx:alpine", "docker.io/library/nginx:alpine"},
+		{"nginx:latest", "docker.io/library/nginx:latest"},
+		{"mongo:7", "docker.io/library/mongo:7"},
+		{"redis:7-alpine", "docker.io/library/redis:7-alpine"},
+		{"postgres:16-alpine", "docker.io/library/postgres:16-alpine"},
+		{"traefik:v3.0", "docker.io/library/traefik:v3.0"},
+
+		// Docker Hub user images (one slash, no dot in host)
+		{"ollama/ollama:latest", "docker.io/ollama/ollama:latest"},
+		{"minio/minio:latest", "docker.io/minio/minio:latest"},
+		{"n8nio/n8n:latest", "docker.io/n8nio/n8n:latest"},
+		{"jupyter/scipy-notebook:latest", "docker.io/jupyter/scipy-notebook:latest"},
+
+		// Already fully qualified (dot in host)
+		{"docker.io/library/nginx:alpine", "docker.io/library/nginx:alpine"},
+		{"ghcr.io/huggingface/text-generation-inference:latest", "ghcr.io/huggingface/text-generation-inference:latest"},
+		{"registry.example.com/myimage:v1", "registry.example.com/myimage:v1"},
+
+		// Localhost registry (colon in host)
+		{"localhost:5000/myimage:latest", "localhost:5000/myimage:latest"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got := NormalizeImageRef(tt.input)
+			if got != tt.expected {
+				t.Errorf("NormalizeImageRef(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}

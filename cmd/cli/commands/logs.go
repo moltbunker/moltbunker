@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 
-	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -35,19 +34,18 @@ Examples:
 func runLogs(cmd *cobra.Command, args []string) error {
 	containerID := args[0]
 
-	daemonClient := client.NewDaemonClient(SocketPath)
-	if err := daemonClient.Connect(); err != nil {
-		return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
+	c, err := GetClient()
+	if err != nil {
+		return err
 	}
-	defer daemonClient.Close()
+	defer c.Close()
 
-	fmt.Printf("Fetching logs for container: %s\n", containerID)
+	Info(fmt.Sprintf("Logs for container: %s", FormatNodeID(containerID)))
 	if logsFollow {
-		fmt.Println("Following log output (Ctrl+C to stop)...")
+		Info("Following log output (Ctrl+C to stop)...")
 	}
-	fmt.Println("---")
 
-	logs, err := daemonClient.GetLogs(containerID, logsFollow, logsTail)
+	logs, err := c.GetLogs(containerID, logsFollow, logsTail)
 	if err != nil {
 		return fmt.Errorf("failed to get logs: %w", err)
 	}

@@ -261,6 +261,9 @@ func (d *Detector) RecordSignal(signal *Signal) {
 		signalID = signal.ContainerID + ":" + signalID
 	}
 	d.activeSignals[signalID] = signal
+	// Snapshot callbacks under lock to prevent data race
+	signalCallbacks := make([]SignalCallback, len(d.onSignal))
+	copy(signalCallbacks, d.onSignal)
 	d.mu.Unlock()
 
 	logging.Info("threat signal recorded",
@@ -270,8 +273,8 @@ func (d *Detector) RecordSignal(signal *Signal) {
 		"source", signal.Source,
 		logging.Component("threat"))
 
-	// Notify callbacks
-	for _, cb := range d.onSignal {
+	// Notify callbacks outside lock
+	for _, cb := range signalCallbacks {
 		cb(signal)
 	}
 
@@ -315,7 +318,6 @@ func (d *Detector) RecordProcessMonitoring(confidence float64, details string) {
 // recalculateThreatLevel updates the aggregate threat level
 func (d *Detector) recalculateThreatLevel() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 
 	// Collect active signals
 	signals := make([]Signal, 0, len(d.activeSignals))
@@ -347,8 +349,17 @@ func (d *Detector) recalculateThreatLevel() {
 	newLevel := NewThreatLevel(aggregateScore, signals)
 	d.threatLevel = newLevel
 
-	// Check if level category changed
-	if oldLevel.Level != newLevel.Level {
+	// Snapshot callbacks and check level change under lock
+	var threatCallbacks []ThreatChangeCallback
+	levelChanged := oldLevel.Level != newLevel.Level
+	if levelChanged {
+		threatCallbacks = make([]ThreatChangeCallback, len(d.onThreatChange))
+		copy(threatCallbacks, d.onThreatChange)
+	}
+	d.mu.Unlock()
+
+	// Notify callbacks outside lock to prevent deadlock
+	if levelChanged {
 		logging.Info("threat level changed",
 			"old_level", oldLevel.Level,
 			"new_level", newLevel.Level,
@@ -356,8 +367,7 @@ func (d *Detector) recalculateThreatLevel() {
 			"active_signals", len(signals),
 			logging.Component("threat"))
 
-		// Notify callbacks
-		for _, cb := range d.onThreatChange {
+		for _, cb := range threatCallbacks {
 			cb(oldLevel, newLevel)
 		}
 	}

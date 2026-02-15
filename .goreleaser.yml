@@ -1,3 +1,4 @@
+version: 2
 project_name: moltbunker
 
 before:
@@ -47,6 +48,36 @@ builds:
       - -X main.commit={{.Commit}}
       - -X main.date={{.Date}}
 
+  - id: api
+    binary: moltbunker-api
+    main: ./cmd/api
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: exec-agent
+    binary: exec-agent
+    main: ./cmd/exec-agent
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
 archives:
   - id: default
     format: tar.gz
@@ -63,7 +94,6 @@ archives:
     files:
       - README.md
       - LICENSE
-      - docs/*
 
 checksum:
   name_template: 'checksums.txt'
@@ -103,6 +133,7 @@ brews:
     install: |
       bin.install "moltbunker"
       bin.install "moltbunker-daemon"
+      bin.install "moltbunker-api"
 
 nfpms:
   - id: packages
@@ -117,10 +148,6 @@ nfpms:
       - rpm
       - apk
     bindir: /usr/local/bin
-    contents:
-      - src: ./configs/daemon.yaml
-        dst: /etc/moltbunker/daemon.yaml
-        type: config
 
 dockers:
   - id: daemon

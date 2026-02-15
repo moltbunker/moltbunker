@@ -2,8 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os"
-	"text/tabwriter"
 
 	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/moltbunker/moltbunker/pkg/types"
@@ -26,17 +24,24 @@ var (
 func NewProviderCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "provider",
-		Short: "Provider node management commands",
+		Short: "Provider node management",
 		Long: `Commands for managing a provider node on the Moltbunker network.
 
-Providers contribute compute resources to the network and earn BUNKER tokens
-for running containers. Providers must stake BUNKER to join the network.
+Providers contribute compute resources and earn BUNKER tokens.
+Requires a running daemon and a configured wallet with staked BUNKER.
 
-Examples:
-  moltbunker provider register   # Register as a provider
-  moltbunker provider status     # View provider status
-  moltbunker provider stake      # Manage staking
-  moltbunker provider earnings   # View earnings summary`,
+Getting started:
+  1. moltbunker wallet create          # Create a wallet (if not done)
+  2. moltbunker doctor provider        # Verify system requirements
+  3. moltbunker provider enable        # Guided setup wizard
+  4. moltbunker start                  # Start the daemon
+
+Day-to-day:
+  moltbunker provider status           # View provider status
+  moltbunker provider earnings         # View earnings summary
+  moltbunker provider jobs             # List active and recent jobs
+  moltbunker provider stake info       # View staking tiers
+  moltbunker provider maintenance on   # Enter maintenance mode`,
 	}
 
 	cmd.AddCommand(newProviderRegisterCmd())
@@ -45,54 +50,96 @@ Examples:
 	cmd.AddCommand(newProviderEarningsCmd())
 	cmd.AddCommand(newProviderJobsCmd())
 	cmd.AddCommand(newProviderMaintenanceCmd())
+	cmd.AddCommand(newProviderEnableCmd())
+	cmd.AddCommand(newProviderDisableCmd())
+
+	// Absorbed commands (formerly top-level)
+	cloneCmd := NewCloneCmd()
+	cloneCmd.GroupID = ""
+	cmd.AddCommand(cloneCmd)
+
+	snapshotCmd := NewSnapshotCmd()
+	snapshotCmd.GroupID = ""
+	cmd.AddCommand(snapshotCmd)
+
+	threatCmd := NewThreatCmd()
+	threatCmd.GroupID = ""
+	cmd.AddCommand(threatCmd)
+
+	colimaCmd := NewColimaCmd()
+	colimaCmd.GroupID = ""
+	cmd.AddCommand(colimaCmd)
 
 	return cmd
 }
 
-// newProviderRegisterCmd creates the register subcommand
+// --- enable / disable ---
+
+func newProviderEnableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "enable",
+		Short: "Become a provider (guided setup)",
+		Long: `Enable provider mode with a guided setup wizard.
+
+Runs health checks, configures containerd, and updates your node role.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			Info("Provider setup wizard")
+			Warning("This will update your node role to hybrid (provider + requester)")
+			// TODO: Phase 7 — huh wizard with doctor checks, containerd, staking tier
+			fmt.Println(Hint("Provider enable wizard not yet implemented"))
+			return nil
+		},
+	}
+}
+
+func newProviderDisableCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "disable",
+		Short: "Revert to requester mode",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			Info("Reverting to requester mode...")
+			// TODO: Phase 7 — confirmation, config update, daemon stop
+			fmt.Println(Hint("Provider disable not yet implemented"))
+			return nil
+		},
+	}
+}
+
+// --- register ---
+
 func newProviderRegisterCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "register",
 		Short: "Register this node as a provider",
-		Long: `Register this node as a provider on the Moltbunker network.
+		Long: `Register this node as a provider on the network.
 
-This will:
-1. Declare your node's compute resources (CPU, memory, disk)
-2. Optionally stake BUNKER tokens to set your tier
-3. Start accepting jobs from the network
-
-You must have a configured wallet address to register.
-
-Examples:
-  moltbunker provider register --cpu 8 --memory 32 --disk 500
-  moltbunker provider register --tier silver --auto-stake
-  moltbunker provider register --gpu --gpu-model "RTX 4090" --gpu-count 2`,
+This will declare your compute resources and optionally stake tokens.`,
 		RunE: runProviderRegister,
 	}
 
 	cmd.Flags().IntVar(&providerDeclaredCPU, "cpu", 0, "Declared CPU cores (0 = auto-detect)")
 	cmd.Flags().IntVar(&providerDeclaredMem, "memory", 0, "Declared memory in GB (0 = auto-detect)")
 	cmd.Flags().IntVar(&providerDeclaredDisk, "disk", 0, "Declared storage in GB (0 = auto-detect)")
-	cmd.Flags().StringVar(&providerTargetTier, "tier", "starter", "Target staking tier (starter, bronze, silver, gold, platinum)")
-	cmd.Flags().BoolVar(&providerAutoStake, "auto-stake", false, "Automatically stake tokens to reach target tier")
+	cmd.Flags().StringVar(&providerTargetTier, "tier", "starter", "Target staking tier")
+	cmd.Flags().BoolVar(&providerAutoStake, "auto-stake", false, "Auto-stake tokens to reach target tier")
 	cmd.Flags().BoolVar(&providerGPUEnabled, "gpu", false, "Enable GPU provider mode")
-	cmd.Flags().StringVar(&providerGPUModel, "gpu-model", "", "GPU model (e.g., 'RTX 4090', 'A100')")
-	cmd.Flags().IntVar(&providerGPUCount, "gpu-count", 1, "Number of GPUs available")
+	cmd.Flags().StringVar(&providerGPUModel, "gpu-model", "", "GPU model")
+	cmd.Flags().IntVar(&providerGPUCount, "gpu-count", 1, "Number of GPUs")
 
 	return cmd
 }
 
 func runProviderRegister(cmd *cobra.Command, args []string) error {
-	daemonClient := client.NewDaemonClient(SocketPath)
-	if err := daemonClient.Connect(); err != nil {
-		return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
+	c, err := GetClient()
+	if err != nil {
+		return err
 	}
-	defer daemonClient.Close()
+	defer c.Close()
 
-	fmt.Println("Registering as Provider")
-	fmt.Println("=======================")
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
 
-	// Validate tier
 	tier := types.StakingTier(providerTargetTier)
 	validTiers := map[types.StakingTier]bool{
 		types.StakingTierStarter:  true,
@@ -105,33 +152,22 @@ func runProviderRegister(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid tier: %s (must be starter, bronze, silver, gold, or platinum)", providerTargetTier)
 	}
 
-	fmt.Printf("Target Tier:  %s\n", tier)
-
+	fields := [][2]string{{"Target Tier", string(tier)}}
 	if providerDeclaredCPU > 0 {
-		fmt.Printf("Declared CPU: %d cores\n", providerDeclaredCPU)
-	} else {
-		fmt.Println("Declared CPU: (auto-detect)")
+		fields = append(fields, [2]string{"CPU", fmt.Sprintf("%d cores", providerDeclaredCPU)})
 	}
-
 	if providerDeclaredMem > 0 {
-		fmt.Printf("Declared RAM: %d GB\n", providerDeclaredMem)
-	} else {
-		fmt.Println("Declared RAM: (auto-detect)")
+		fields = append(fields, [2]string{"Memory", fmt.Sprintf("%d GB", providerDeclaredMem)})
 	}
-
 	if providerDeclaredDisk > 0 {
-		fmt.Printf("Declared Disk: %d GB\n", providerDeclaredDisk)
-	} else {
-		fmt.Println("Declared Disk: (auto-detect)")
+		fields = append(fields, [2]string{"Disk", fmt.Sprintf("%d GB", providerDeclaredDisk)})
 	}
-
 	if providerGPUEnabled {
-		fmt.Printf("GPU Enabled:  Yes\n")
-		fmt.Printf("GPU Model:    %s\n", providerGPUModel)
-		fmt.Printf("GPU Count:    %d\n", providerGPUCount)
+		fields = append(fields, [2]string{"GPU", fmt.Sprintf("%dx %s", providerGPUCount, providerGPUModel)})
 	}
 
-	// Build registration request
+	fmt.Println(StatusBox("Registering Provider", fields))
+
 	req := &client.ProviderRegisterRequest{
 		DeclaredCPU:    providerDeclaredCPU,
 		DeclaredMemory: providerDeclaredMem,
@@ -143,119 +179,93 @@ func runProviderRegister(cmd *cobra.Command, args []string) error {
 		GPUCount:       providerGPUCount,
 	}
 
-	resp, err := daemonClient.ProviderRegister(req)
+	dc := c.DaemonClient()
+	resp, err := dc.ProviderRegister(req)
 	if err != nil {
 		return fmt.Errorf("registration failed: %w", err)
 	}
 
-	fmt.Println()
-	fmt.Println("Registration Successful")
-	fmt.Println("=======================")
-	fmt.Printf("Node ID:       %s\n", resp.NodeID)
-	fmt.Printf("Current Tier:  %s\n", resp.CurrentTier)
-	fmt.Printf("Staked:        %s BUNKER\n", resp.StakedAmount)
+	fmt.Println(StatusBox("Registration Successful", [][2]string{
+		{"Node ID", FormatNodeID(resp.NodeID)},
+		{"Tier", resp.CurrentTier},
+		{"Staked", resp.StakedAmount + " BUNKER"},
+	}))
 
 	if resp.RequiredStake != "" && resp.RequiredStake != "0" {
-		fmt.Printf("Required:      %s BUNKER (to reach %s tier)\n", resp.RequiredStake, tier)
+		fmt.Println(Hint(fmt.Sprintf("Need %s BUNKER more for %s tier", resp.RequiredStake, tier)))
 	}
 
-	fmt.Println()
-	fmt.Println("Your node is now accepting jobs from the network.")
-	fmt.Println("Use 'moltbunker provider status' to monitor your node.")
+	Success("Your node is now accepting jobs.")
+	fmt.Println(Hint("Monitor with: moltbunker provider status"))
 
 	return nil
 }
 
-// newProviderStatusCmd creates the status subcommand
+// --- status ---
+
 func newProviderStatusCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "status",
 		Short: "Show provider status and statistics",
-		Long: `Display detailed status information for your provider node.
-
-Shows:
-- Current staking tier and amount
-- Reputation score and tier
-- Active jobs and capacity
-- 30-day uptime and earnings
-- Network connectivity
-
-Examples:
-  moltbunker provider status`,
-		RunE: runProviderStatus,
+		RunE:  runProviderStatus,
 	}
-
-	return cmd
 }
 
 func runProviderStatus(cmd *cobra.Command, args []string) error {
-	daemonClient := client.NewDaemonClient(SocketPath)
-	if err := daemonClient.Connect(); err != nil {
-		return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
+	c, err := GetClient()
+	if err != nil {
+		return err
 	}
-	defer daemonClient.Close()
+	defer c.Close()
 
-	resp, err := daemonClient.ProviderStatus()
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	dc := c.DaemonClient()
+	resp, err := dc.ProviderStatus()
 	if err != nil {
 		return fmt.Errorf("failed to get status: %w", err)
 	}
 
-	fmt.Println("Provider Status")
-	fmt.Println("===============")
-	fmt.Printf("Node ID:        %s\n", resp.NodeID)
-	fmt.Printf("Wallet:         %s\n", resp.WalletAddress)
-	fmt.Printf("Status:         %s\n", resp.Status)
-	fmt.Println()
+	fmt.Println(StatusBox("Provider", [][2]string{
+		{"Node ID", FormatNodeID(resp.NodeID)},
+		{"Wallet", FormatAddress(resp.WalletAddress)},
+		{"Status", StatusBadge(resp.Status)},
+	}))
 
-	fmt.Println("Staking")
-	fmt.Println("-------")
-	fmt.Printf("Current Tier:   %s\n", resp.Tier)
-	fmt.Printf("Staked Amount:  %s BUNKER\n", resp.StakedAmount)
-	fmt.Printf("Next Tier:      %s (requires %s BUNKER)\n", resp.NextTier, resp.NextTierRequired)
-	fmt.Println()
+	fmt.Println(StatusBox("Staking", [][2]string{
+		{"Tier", resp.Tier},
+		{"Staked", resp.StakedAmount + " BUNKER"},
+		{"Next Tier", fmt.Sprintf("%s (requires %s BUNKER)", resp.NextTier, resp.NextTierRequired)},
+	}))
 
-	fmt.Println("Reputation")
-	fmt.Println("----------")
-	fmt.Printf("Score:          %d / 1000\n", resp.ReputationScore)
-	fmt.Printf("Tier:           %s\n", resp.ReputationTier)
-	fmt.Printf("30-Day Uptime:  %.2f%%\n", resp.Uptime30Days)
-	fmt.Println()
+	fmt.Println(StatusBox("Performance", [][2]string{
+		{"Reputation", fmt.Sprintf("%d/1000 (%s)", resp.ReputationScore, resp.ReputationTier)},
+		{"Uptime 30d", fmt.Sprintf("%.2f%%", resp.Uptime30Days)},
+		{"Active Jobs", fmt.Sprintf("%d / %d", resp.ActiveJobs, resp.MaxConcurrentJobs)},
+		{"Completed", fmt.Sprintf("%d total, %d this week", resp.TotalJobsCompleted, resp.JobsCompleted7Days)},
+	}))
 
-	fmt.Println("Capacity")
-	fmt.Println("--------")
-	fmt.Printf("Active Jobs:    %d / %d\n", resp.ActiveJobs, resp.MaxConcurrentJobs)
-	fmt.Printf("Jobs (7 days):  %d completed\n", resp.JobsCompleted7Days)
-	fmt.Printf("Jobs (total):   %d completed\n", resp.TotalJobsCompleted)
-	fmt.Println()
-
-	fmt.Println("Resources")
-	fmt.Println("---------")
-	fmt.Printf("CPU:            %d cores (%.1f%% used)\n", resp.DeclaredCPU, resp.CPUUsagePercent)
-	fmt.Printf("Memory:         %d GB (%.1f%% used)\n", resp.DeclaredMemory, resp.MemoryUsagePercent)
-	fmt.Printf("Disk:           %d GB (%.1f%% used)\n", resp.DeclaredDisk, resp.DiskUsagePercent)
-	if resp.GPUEnabled {
-		fmt.Printf("GPU:            %dx %s\n", resp.GPUCount, resp.GPUModel)
+	resourceFields := [][2]string{
+		{"CPU", fmt.Sprintf("%d cores (%.1f%% used)", resp.DeclaredCPU, resp.CPUUsagePercent)},
+		{"Memory", fmt.Sprintf("%d GB (%.1f%% used)", resp.DeclaredMemory, resp.MemoryUsagePercent)},
+		{"Disk", fmt.Sprintf("%d GB (%.1f%% used)", resp.DeclaredDisk, resp.DiskUsagePercent)},
 	}
+	if resp.GPUEnabled {
+		resourceFields = append(resourceFields, [2]string{"GPU", fmt.Sprintf("%dx %s", resp.GPUCount, resp.GPUModel)})
+	}
+	fmt.Println(StatusBox("Resources", resourceFields))
 
 	return nil
 }
 
-// newProviderStakeCmd creates the stake subcommand
+// --- stake ---
+
 func newProviderStakeCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stake",
 		Short: "Manage staking (stake, unstake, view)",
-		Long: `Manage your BUNKER token staking.
-
-Subcommands:
-  stake add <amount>     - Stake additional BUNKER tokens
-  stake withdraw         - Initiate unstaking (7-day cooldown)
-  stake info             - View staking details and tiers
-
-Examples:
-  moltbunker provider stake add 1000
-  moltbunker provider stake withdraw
-  moltbunker provider stake info`,
 	}
 
 	cmd.AddCommand(newProviderStakeAddCmd())
@@ -273,25 +283,32 @@ func newProviderStakeAddCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			amount := args[0]
 
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running")
+			c, err := GetClient()
+			if err != nil {
+				return err
 			}
-			defer daemonClient.Close()
+			defer c.Close()
 
-			fmt.Printf("Staking %s BUNKER...\n", amount)
+			if err := c.RequireDaemon(); err != nil {
+				return err
+			}
 
-			resp, err := daemonClient.ProviderStakeAdd(amount)
+			dc := c.DaemonClient()
+			var resp *client.ProviderStakeAddResponse
+			err = WithSpinner(fmt.Sprintf("Staking %s BUNKER", amount), func() error {
+				var e error
+				resp, e = dc.ProviderStakeAdd(amount)
+				return e
+			})
 			if err != nil {
 				return fmt.Errorf("staking failed: %w", err)
 			}
 
-			fmt.Println()
-			fmt.Println("Staking Successful")
-			fmt.Println("==================")
-			fmt.Printf("TX Hash:      %s\n", resp.TxHash)
-			fmt.Printf("New Balance:  %s BUNKER\n", resp.NewStakedAmount)
-			fmt.Printf("New Tier:     %s\n", resp.NewTier)
+			fmt.Println(StatusBox("Staking Successful", [][2]string{
+				{"TX Hash", FormatNodeID(resp.TxHash)},
+				{"New Balance", resp.NewStakedAmount + " BUNKER"},
+				{"New Tier", resp.NewTier},
+			}))
 
 			return nil
 		},
@@ -303,30 +320,30 @@ func newProviderStakeWithdrawCmd() *cobra.Command {
 		Use:   "withdraw",
 		Short: "Initiate unstaking (7-day cooldown)",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running")
-			}
-			defer daemonClient.Close()
-
-			fmt.Println("Initiating Unstake")
-			fmt.Println("==================")
-			fmt.Println()
-			fmt.Println("WARNING: Unstaking has a 7-day cooldown period.")
-			fmt.Println("During this time:")
-			fmt.Println("  - You will stop receiving new jobs")
-			fmt.Println("  - Active jobs must complete or transfer")
-			fmt.Println("  - Your stake remains locked")
-			fmt.Println()
-
-			resp, err := daemonClient.ProviderStakeWithdraw()
+			c, err := GetClient()
 			if err != nil {
-				return fmt.Errorf("unstake initiation failed: %w", err)
+				return err
+			}
+			defer c.Close()
+
+			if err := c.RequireDaemon(); err != nil {
+				return err
 			}
 
-			fmt.Printf("Unstake initiated at:    %s\n", resp.InitiatedAt)
-			fmt.Printf("Available for withdrawal: %s\n", resp.AvailableAt)
-			fmt.Printf("Amount:                   %s BUNKER\n", resp.Amount)
+			Warning("Unstaking has a 7-day cooldown period.")
+			fmt.Println(Hint("During cooldown: no new jobs, active jobs must complete"))
+
+			dc := c.DaemonClient()
+			resp, err := dc.ProviderStakeWithdraw()
+			if err != nil {
+				return fmt.Errorf("unstake failed: %w", err)
+			}
+
+			fmt.Println(StatusBox("Unstake Initiated", [][2]string{
+				{"Initiated", resp.InitiatedAt},
+				{"Available", resp.AvailableAt},
+				{"Amount", resp.Amount + " BUNKER"},
+			}))
 
 			return nil
 		},
@@ -337,186 +354,159 @@ func newProviderStakeInfoCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "info",
 		Short: "View staking tiers and requirements",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println("Staking Tiers")
-			fmt.Println("=============")
+		Run: func(cmd *cobra.Command, args []string) {
+			fmt.Println(SectionHeader("Staking Tiers"))
 			fmt.Println()
-
-			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "Tier\tMin Stake\tMax Jobs\tMultiplier\tPriority\tGovernance")
-			fmt.Fprintln(w, "----\t---------\t--------\t----------\t--------\t----------")
-			fmt.Fprintln(w, "Starter\t500 BUNKER\t3\t1.0x\tNo\tNo")
-			fmt.Fprintln(w, "Bronze\t2,000 BUNKER\t10\t1.0x\tNo\tNo")
-			fmt.Fprintln(w, "Silver\t10,000 BUNKER\t50\t1.05x\tYes\tNo")
-			fmt.Fprintln(w, "Gold\t50,000 BUNKER\t200\t1.1x\tYes\tYes")
-			fmt.Fprintln(w, "Platinum\t250,000 BUNKER\tUnlimited\t1.2x\tYes\tYes")
-			w.Flush()
-
-			fmt.Println()
-			fmt.Println("Note: Higher tiers earn more per job and have access to premium features.")
-
-			return nil
+			fmt.Println(RenderTable(
+				[]string{"Tier", "Min Stake", "Max Jobs", "Multiplier", "Priority"},
+				[][]string{
+					{"Starter", "1,000,000 BUNKER", "3", "1.0x", "No"},
+					{"Bronze", "5,000,000 BUNKER", "10", "1.0x", "No"},
+					{"Silver", "10,000,000 BUNKER", "50", "1.05x", "Yes"},
+					{"Gold", "100,000,000 BUNKER", "200", "1.1x", "Yes"},
+					{"Platinum", "1,000,000,000 BUNKER", "Unlimited", "1.2x", "Yes"},
+				},
+			))
+			fmt.Println(Hint("Higher tiers earn more per job and access premium features."))
 		},
 	}
 }
 
-// newProviderEarningsCmd creates the earnings subcommand
+// --- earnings ---
+
 func newProviderEarningsCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "earnings",
-		Short: "View earnings summary and history",
-		Long: `Display earnings information for your provider node.
-
-Shows:
-- Total lifetime earnings
-- 30-day earnings
-- 7-day earnings
-- Pending payouts
-- Recent job payments
-
-Examples:
-  moltbunker provider earnings`,
-		RunE: runProviderEarnings,
+		Short: "View earnings summary",
+		RunE:  runProviderEarnings,
 	}
-
-	return cmd
 }
 
 func runProviderEarnings(cmd *cobra.Command, args []string) error {
-	daemonClient := client.NewDaemonClient(SocketPath)
-	if err := daemonClient.Connect(); err != nil {
-		return fmt.Errorf("daemon not running")
+	c, err := GetClient()
+	if err != nil {
+		return err
 	}
-	defer daemonClient.Close()
+	defer c.Close()
 
-	resp, err := daemonClient.ProviderEarnings()
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	dc := c.DaemonClient()
+	resp, err := dc.ProviderEarnings()
 	if err != nil {
 		return fmt.Errorf("failed to get earnings: %w", err)
 	}
 
-	fmt.Println("Earnings Summary")
-	fmt.Println("================")
-	fmt.Printf("Total Earnings:     %s BUNKER\n", resp.TotalEarnings)
-	fmt.Printf("30-Day Earnings:    %s BUNKER\n", resp.Earnings30Days)
-	fmt.Printf("7-Day Earnings:     %s BUNKER\n", resp.Earnings7Days)
-	fmt.Printf("Pending Payouts:    %s BUNKER\n", resp.PendingPayouts)
-	fmt.Println()
+	fmt.Println(StatusBox("Earnings", [][2]string{
+		{"Total", resp.TotalEarnings + " BUNKER"},
+		{"30 Days", resp.Earnings30Days + " BUNKER"},
+		{"7 Days", resp.Earnings7Days + " BUNKER"},
+		{"Pending", resp.PendingPayouts + " BUNKER"},
+	}))
 
 	if len(resp.RecentPayments) > 0 {
-		fmt.Println("Recent Payments")
-		fmt.Println("---------------")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "Date\tJob ID\tAmount\tTX Hash")
+		fmt.Println(SectionHeader("Recent Payments"))
+		var rows [][]string
 		for _, p := range resp.RecentPayments {
-			fmt.Fprintf(w, "%s\t%s\t%s BUNKER\t%s\n", p.Date, p.JobID, p.Amount, p.TxHash[:16]+"...")
+			rows = append(rows, []string{p.Date, FormatNodeID(p.JobID), p.Amount + " BUNKER", FormatNodeID(p.TxHash)})
 		}
-		w.Flush()
+		fmt.Println(RenderTable([]string{"Date", "Job", "Amount", "TX"}, rows))
 	}
 
 	return nil
 }
 
-// newProviderJobsCmd creates the jobs subcommand
+// --- jobs ---
+
 func newProviderJobsCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "jobs",
 		Short: "List active and recent jobs",
-		Long: `Display jobs running on your provider node.
-
-Shows:
-- Currently active jobs
-- Recent completed jobs
-- Job resource usage
-
-Examples:
-  moltbunker provider jobs`,
-		RunE: runProviderJobs,
+		RunE:  runProviderJobs,
 	}
-
-	return cmd
 }
 
 func runProviderJobs(cmd *cobra.Command, args []string) error {
-	daemonClient := client.NewDaemonClient(SocketPath)
-	if err := daemonClient.Connect(); err != nil {
-		return fmt.Errorf("daemon not running")
+	c, err := GetClient()
+	if err != nil {
+		return err
 	}
-	defer daemonClient.Close()
+	defer c.Close()
 
-	resp, err := daemonClient.ProviderJobs()
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	dc := c.DaemonClient()
+	resp, err := dc.ProviderJobs()
 	if err != nil {
 		return fmt.Errorf("failed to get jobs: %w", err)
 	}
 
 	if len(resp.ActiveJobs) > 0 {
-		fmt.Println("Active Jobs")
-		fmt.Println("===========")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tImage\tCPU\tMemory\tRunning Since")
+		fmt.Println(SectionHeader("Active Jobs"))
+		var rows [][]string
 		for _, j := range resp.ActiveJobs {
-			fmt.Fprintf(w, "%s\t%s\t%.1f%%\t%.1f%%\t%s\n",
-				j.ID[:12], j.Image, j.CPUUsage, j.MemoryUsage, j.StartedAt)
+			rows = append(rows, []string{
+				FormatNodeID(j.ID),
+				j.Image,
+				fmt.Sprintf("%.1f%%", j.CPUUsage),
+				fmt.Sprintf("%.1f%%", j.MemoryUsage),
+				j.StartedAt,
+			})
 		}
-		w.Flush()
-		fmt.Println()
+		fmt.Println(RenderTable([]string{"ID", "Image", "CPU", "Memory", "Started"}, rows))
 	} else {
-		fmt.Println("No active jobs.")
-		fmt.Println()
+		Info("No active jobs.")
 	}
 
 	if len(resp.RecentJobs) > 0 {
-		fmt.Println("Recent Jobs (Last 24h)")
-		fmt.Println("======================")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "ID\tStatus\tDuration\tEarned")
+		fmt.Println(SectionHeader("Recent Jobs (24h)"))
+		var rows [][]string
 		for _, j := range resp.RecentJobs {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s BUNKER\n",
-				j.ID[:12], j.Status, j.Duration, j.Earned)
+			rows = append(rows, []string{
+				FormatNodeID(j.ID),
+				StatusBadge(j.Status),
+				j.Duration,
+				j.Earned + " BUNKER",
+			})
 		}
-		w.Flush()
+		fmt.Println(RenderTable([]string{"ID", "Status", "Duration", "Earned"}, rows))
 	}
 
 	return nil
 }
 
-// newProviderMaintenanceCmd creates the maintenance subcommand
+// --- maintenance ---
+
 func newProviderMaintenanceCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "maintenance",
 		Short: "Enter or exit maintenance mode",
-		Long: `Control maintenance mode for your provider node.
-
-In maintenance mode:
-- No new jobs are accepted
-- Existing jobs continue running
-- Your reputation is not affected by not accepting new jobs
-
-Subcommands:
-  maintenance enter    - Enter maintenance mode
-  maintenance exit     - Exit maintenance mode
-  maintenance status   - Check current mode
-
-Examples:
-  moltbunker provider maintenance enter
-  moltbunker provider maintenance exit`,
 	}
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "enter",
 		Short: "Enter maintenance mode",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running")
+			c, err := GetClient()
+			if err != nil {
+				return err
 			}
-			defer daemonClient.Close()
+			defer c.Close()
+			if err := c.RequireDaemon(); err != nil {
+				return err
+			}
 
-			if err := daemonClient.ProviderMaintenanceMode(true); err != nil {
+			dc := c.DaemonClient()
+			if err := dc.ProviderMaintenanceMode(true); err != nil {
 				return fmt.Errorf("failed to enter maintenance mode: %w", err)
 			}
 
-			fmt.Println("Maintenance mode ENABLED")
-			fmt.Println("Your node will no longer accept new jobs.")
+			Success("Maintenance mode enabled")
+			fmt.Println(Hint("Your node will no longer accept new jobs."))
 			return nil
 		},
 	})
@@ -525,18 +515,22 @@ Examples:
 		Use:   "exit",
 		Short: "Exit maintenance mode",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running")
+			c, err := GetClient()
+			if err != nil {
+				return err
 			}
-			defer daemonClient.Close()
+			defer c.Close()
+			if err := c.RequireDaemon(); err != nil {
+				return err
+			}
 
-			if err := daemonClient.ProviderMaintenanceMode(false); err != nil {
+			dc := c.DaemonClient()
+			if err := dc.ProviderMaintenanceMode(false); err != nil {
 				return fmt.Errorf("failed to exit maintenance mode: %w", err)
 			}
 
-			fmt.Println("Maintenance mode DISABLED")
-			fmt.Println("Your node is now accepting new jobs.")
+			Success("Maintenance mode disabled")
+			fmt.Println(Hint("Your node is now accepting new jobs."))
 			return nil
 		},
 	})

@@ -2,10 +2,15 @@ package metrics
 
 import (
 	"encoding/json"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// GoroutineAlertThreshold is the maximum healthy goroutine count.
+// Above this threshold, CheckGoroutineHealth reports unhealthy.
+const GoroutineAlertThreshold = 10000
 
 // Collector collects and aggregates metrics for the daemon
 type Collector struct {
@@ -25,6 +30,9 @@ type Collector struct {
 
 	// Peer count gauge
 	peerCount int64
+
+	// Goroutine count gauge
+	goroutineCount int64
 
 	// Start time for uptime calculation
 	startTime time.Time
@@ -120,6 +128,26 @@ func (c *Collector) SetPeerCount(count int) {
 	atomic.StoreInt64(&c.peerCount, int64(count))
 }
 
+// UpdateGoroutineCount snapshots the current goroutine count.
+// This should be called on each metrics collection cycle.
+func (c *Collector) UpdateGoroutineCount() {
+	atomic.StoreInt64(&c.goroutineCount, int64(runtime.NumGoroutine()))
+}
+
+// GoroutineCount returns the last recorded goroutine count.
+func (c *Collector) GoroutineCount() int64 {
+	return atomic.LoadInt64(&c.goroutineCount)
+}
+
+// CheckGoroutineHealth returns the current goroutine count and whether it is
+// healthy (below GoroutineAlertThreshold). It updates the stored count before
+// returning.
+func (c *Collector) CheckGoroutineHealth() (int, bool) {
+	count := runtime.NumGoroutine()
+	atomic.StoreInt64(&c.goroutineCount, int64(count))
+	return count, count < GoroutineAlertThreshold
+}
+
 // Metrics represents the current state of all metrics
 type Metrics struct {
 	Uptime            string                     `json:"uptime"`
@@ -129,6 +157,7 @@ type Metrics struct {
 	ActiveConnections int64                      `json:"active_connections"`
 	ContainerCount    int64                      `json:"container_count"`
 	PeerCount         int64                      `json:"peer_count"`
+	GoroutineCount    int64                      `json:"goroutine_count"`
 	CollectedAt       time.Time                  `json:"collected_at"`
 }
 
@@ -181,6 +210,9 @@ func (c *Collector) GetMetrics() *Metrics {
 	}
 	c.latenciesMu.RUnlock()
 
+	// Update goroutine count on each collection cycle
+	c.UpdateGoroutineCount()
+
 	return &Metrics{
 		Uptime:            uptime.Round(time.Second).String(),
 		UptimeSeconds:     uptime.Seconds(),
@@ -189,6 +221,7 @@ func (c *Collector) GetMetrics() *Metrics {
 		ActiveConnections: atomic.LoadInt64(&c.activeConnections),
 		ContainerCount:    atomic.LoadInt64(&c.containerCount),
 		PeerCount:         atomic.LoadInt64(&c.peerCount),
+		GoroutineCount:    atomic.LoadInt64(&c.goroutineCount),
 		CollectedAt:       time.Now(),
 	}
 }
@@ -212,5 +245,6 @@ func (c *Collector) Reset() {
 	atomic.StoreInt64(&c.activeConnections, 0)
 	atomic.StoreInt64(&c.containerCount, 0)
 	atomic.StoreInt64(&c.peerCount, 0)
+	atomic.StoreInt64(&c.goroutineCount, 0)
 	c.startTime = time.Now()
 }

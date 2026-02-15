@@ -1,0 +1,73 @@
+# Version control
+.git
+.gitignore
+
+# Smart contract build artifacts
+contracts/lib
+contracts/cache
+contracts/out
+contracts/broadcast
+
+# Node modules (SDK dependencies)
+node_modules
+
+# Test binaries and coverage
+*.test
+coverage/
+coverage.html
+coverage.txt
+*.out
+*.prof
+*.pprof
+
+# Documentation directory
+moltbunker/
+
+# IDE and editor files
+.idea/
+.cursor/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment and secrets
+.env
+.env.*
+*.key
+*.pem
+*.secret
+secrets/
+.secrets/
+keystore/
+
+# Local data
+.moltbunker/
+data/
+logs/
+tmp/
+temp/
+debug/
+plans/
+notes/
+research/
+
+# Build output
+bin/
+dist/
+build/
+
+# Test data
+.e2e-test-data/
+test-data/
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+deployment/ 

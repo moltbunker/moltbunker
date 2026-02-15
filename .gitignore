@@ -1,17 +1,17 @@
-# Binaries
+# ===================
+# GO BINARIES
+# ===================
 bin/
-api
-sdk/
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
 
-# Test binary
+# Test binaries
 *.test
 
-# Output of the go coverage tool
+# Go coverage output
 *.out
 coverage.html
 coverage.txt
@@ -19,11 +19,13 @@ coverage.txt
 # Dependency directories
 vendor/
 
-# Go workspace file
+# Go workspace
 go.work
 go.work.sum
 
-# IDE
+# ===================
+# IDE & EDITOR
+# ===================
 .idea/
 .cursor/
 .vscode/
@@ -31,7 +33,9 @@ go.work.sum
 *.swo
 *~
 
-# OS
+# ===================
+# OS FILES
+# ===================
 .DS_Store
 Thumbs.db
 ehthumbs.db
@@ -67,11 +71,9 @@ id_dsa*
 id_ecdsa*
 id_ed25519*
 
-# Secrets and credentials
+# Secrets and credentials (files, not source code)
 *.secret
 *.secrets
-*credentials*
-*secret*
 !*.secret.example
 secrets/
 .secrets/
@@ -82,8 +84,7 @@ keystore/
 wallets/
 *.json.enc
 
-# Tor hidden service keys
-hostname
+# Tor hidden service keys (specific files, not generic "hostname")
 hs_ed25519_secret_key
 hs_ed25519_public_key
 
@@ -133,23 +134,82 @@ temp/
 *.backup
 
 # ===================
-# MISC
+# FOUNDRY (Solidity)
 # ===================
 
-# Plans and notes (local only)
-plans/
-notes/
-TODO.local.md
+# Foundry build artifacts
+contracts/broadcast/
+contracts/cache/
+contracts/out/
 
-# Debug
+
+# Foundry dependencies (re-install with `forge install`)
+contracts/lib/
+
+# ===================
+# PYTHON SDK
+# ===================
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+*.egg
+.pytest_cache/
+.mypy_cache/
+
+# ===================
+# DEBUG & PROFILING
+# ===================
 debug/
 *.debug
-
-# Profiling
 *.prof
 *.pprof
 cpu.out
 mem.out
 
+# ===================
+# LOCAL-ONLY FILES
+# ===================
+
+# Local planning and research docs
 plans/
+notes/
+research/
+TODO.local.md
+
+# Deploy scripts and keys (contain private keys)
+scripts/
+secrets/
+
+# Deployment config (local/generated, do not commit)
+deployment/
+
+research/
+
+# Local planning docs (project-specific)
+moltbunker/
+
+# Infrastructure management (contains secrets, SSH keys, credentials)
+management/
+
+configs/
+
+docs/
+
+# ===================
+# ROOT-LEVEL BINARIES
+# ===================
+# Built binaries outside bin/ (dev builds)
+/daemon
+/exec-agent
+/moltbunker
+/moltbunkerd
+/moltbunker-api
+
+# ===================
+# AI AGENT CONTEXT
+# ===================
 CLAUDE.md
+AGENTS.md
+.claude/

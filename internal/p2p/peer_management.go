@@ -1,11 +1,50 @@
 package p2p
 
 import (
+	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
+
+// subnetFromAddress extracts a /16 subnet prefix from a peer address string.
+// Handles multiaddr, host:port, and bare IP formats.
+func subnetFromAddress(address string) string {
+	if address == "" {
+		return ""
+	}
+
+	// Extract IP from multiaddr (e.g. /ip4/1.2.3.4/tcp/9000)
+	ip := address
+	if strings.HasPrefix(address, "/ip4/") || strings.HasPrefix(address, "/ip6/") {
+		parts := strings.Split(address, "/")
+		if len(parts) > 2 {
+			ip = parts[2]
+		}
+	} else {
+		// host:port format
+		host, _, err := net.SplitHostPort(address)
+		if err == nil {
+			ip = host
+		}
+	}
+
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ""
+	}
+
+	v4 := parsed.To4()
+	if v4 != nil {
+		return fmt.Sprintf("%d.%d.0.0/16", v4[0], v4[1])
+	}
+
+	// IPv6: /48 prefix
+	return fmt.Sprintf("%x:%x:%x::/48", parsed[0:2], parsed[2:4], parsed[4:6])
+}
 
 // GetPeers returns all known peers
 func (r *Router) GetPeers() []*types.Node {
@@ -39,8 +78,8 @@ func (r *Router) GetPeersByRegion(region string) []*types.Node {
 	return peers
 }
 
-// AddPeer adds a peer to the routing table
-// Returns true if the peer was added, false if at capacity
+// AddPeer adds a peer to the routing table.
+// Returns true if the peer was added, false if at capacity or rejected by diversity check.
 func (r *Router) AddPeer(node *types.Node) bool {
 	r.peersMu.Lock()
 	defer r.peersMu.Unlock()
@@ -54,6 +93,20 @@ func (r *Router) AddPeer(node *types.Node) bool {
 		return true
 	}
 
+	// Eclipse prevention: check region/subnet diversity before adding
+	if r.diversityEnforcer != nil {
+		subnet := subnetFromAddress(node.Address)
+		region := node.Region
+		if !r.diversityEnforcer.AllowPeer(region, subnet) {
+			logging.Debug("peer rejected by diversity enforcer",
+				logging.NodeID(node.ID.String()[:16]),
+				"region", region,
+				"subnet", subnet,
+				logging.Component("router"))
+			return false
+		}
+	}
+
 	// Check if we're at capacity
 	if len(r.peers) >= r.maxPeers {
 		// Try to evict the oldest idle peer
@@ -65,6 +118,12 @@ func (r *Router) AddPeer(node *types.Node) bool {
 				logging.Component("router"))
 			return false
 		}
+	}
+
+	// Track in diversity enforcer
+	if r.diversityEnforcer != nil {
+		subnet := subnetFromAddress(node.Address)
+		r.diversityEnforcer.RecordPeer(node.Region, subnet)
 	}
 
 	r.peers[node.ID] = &PeerConnection{
@@ -100,6 +159,17 @@ func (r *Router) evictOldestIdlePeerLocked() bool {
 
 	if found {
 		if peer, exists := r.peers[oldestID]; exists {
+			// Clean diversity, scorer, and stake verifier before eviction
+			if r.diversityEnforcer != nil {
+				subnet := subnetFromAddress(peer.Node.Address)
+				r.diversityEnforcer.RemovePeer(peer.Node.Region, subnet)
+			}
+			if r.peerScorer != nil {
+				r.peerScorer.RemovePeer(oldestID)
+			}
+			if r.stakeVerifier != nil {
+				r.stakeVerifier.RemovePeer(oldestID)
+			}
 			peer.mu.Lock()
 			if peer.Conn != nil {
 				peer.Conn.Close()
@@ -122,6 +192,19 @@ func (r *Router) RemovePeer(nodeID types.NodeID) {
 	defer r.peersMu.Unlock()
 
 	if peerConn, exists := r.peers[nodeID]; exists {
+		// Remove from diversity tracking
+		if r.diversityEnforcer != nil {
+			subnet := subnetFromAddress(peerConn.Node.Address)
+			r.diversityEnforcer.RemovePeer(peerConn.Node.Region, subnet)
+		}
+		// Remove from peer scorer to prevent stale entry accumulation
+		if r.peerScorer != nil {
+			r.peerScorer.RemovePeer(nodeID)
+		}
+		// Remove from stake verifier to prevent peerWallets leak
+		if r.stakeVerifier != nil {
+			r.stakeVerifier.RemovePeer(nodeID)
+		}
 		if peerConn.Conn != nil {
 			peerConn.Conn.Close()
 		}
@@ -148,6 +231,17 @@ func (r *Router) CleanupStaleConnections(maxAge time.Duration) {
 	now := time.Now()
 	for nodeID, peer := range r.peers {
 		if now.Sub(peer.LastSeen) > maxAge {
+			// Clean diversity, scorer, and stake verifier before removing
+			if r.diversityEnforcer != nil {
+				subnet := subnetFromAddress(peer.Node.Address)
+				r.diversityEnforcer.RemovePeer(peer.Node.Region, subnet)
+			}
+			if r.peerScorer != nil {
+				r.peerScorer.RemovePeer(nodeID)
+			}
+			if r.stakeVerifier != nil {
+				r.stakeVerifier.RemovePeer(nodeID)
+			}
 			if peer.Conn != nil {
 				peer.Conn.Close()
 			}

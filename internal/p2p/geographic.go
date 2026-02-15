@@ -18,24 +18,39 @@ func NewGeographicRouter(geolocator *GeoLocator) *GeographicRouter {
 	}
 }
 
-// SelectNodesForReplication selects 3 nodes in different regions
-func (gr *GeographicRouter) SelectNodesForReplication(nodes []*types.Node) ([]*types.Node, error) {
-	if len(nodes) < 3 {
-		return nil, fmt.Errorf("need at least 3 nodes for replication")
+// SelectNodesForReplication selects up to 3 nodes in different regions.
+// If minTier is non-empty, only nodes meeting the tier requirement are considered.
+// Returns as many distinct-region nodes as available (1-3).
+// Returns error only if no eligible nodes remain after filtering.
+func (gr *GeographicRouter) SelectNodesForReplication(nodes []*types.Node, minTier ...types.ProviderTier) ([]*types.Node, error) {
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("no nodes available for replication")
 	}
 
-	// Group nodes by region
-	regions := make(map[string][]*types.Node)
-	for _, node := range nodes {
-		region := GetRegionFromCountry(node.Country)
-		regions[region] = append(regions[region], node)
+	// Filter by minimum tier if specified
+	var tier types.ProviderTier
+	if len(minTier) > 0 {
+		tier = minTier[0]
 	}
 
-	// Select one node from each of 3 different regions
+	eligible := nodes
+	if tier != "" {
+		eligible = make([]*types.Node, 0, len(nodes))
+		for _, node := range nodes {
+			if node.ProviderTier.MeetsTierRequirement(tier) {
+				eligible = append(eligible, node)
+			}
+		}
+		if len(eligible) == 0 {
+			return nil, fmt.Errorf("no nodes meet minimum tier requirement: %s", tier)
+		}
+	}
+
+	// Select one node from each distinct region (up to 3)
 	selected := make([]*types.Node, 0, 3)
 	usedRegions := make(map[string]bool)
 
-	for _, node := range nodes {
+	for _, node := range eligible {
 		region := GetRegionFromCountry(node.Country)
 		if !usedRegions[region] && len(selected) < 3 {
 			selected = append(selected, node)
@@ -43,8 +58,21 @@ func (gr *GeographicRouter) SelectNodesForReplication(nodes []*types.Node) ([]*t
 		}
 	}
 
+	// If we have fewer than 3 distinct regions, fill remaining slots
+	// with nodes from already-used regions for redundancy
 	if len(selected) < 3 {
-		return nil, fmt.Errorf("could not find 3 nodes in different regions")
+		for _, node := range eligible {
+			alreadySelected := false
+			for _, s := range selected {
+				if s.ID == node.ID {
+					alreadySelected = true
+					break
+				}
+			}
+			if !alreadySelected && len(selected) < 3 {
+				selected = append(selected, node)
+			}
+		}
 	}
 
 	return selected, nil

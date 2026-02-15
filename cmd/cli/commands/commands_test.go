@@ -127,18 +127,6 @@ func TestNewConfigCmd(t *testing.T) {
 	}
 }
 
-func TestNewInteractiveCmd(t *testing.T) {
-	cmd := NewInteractiveCmd()
-
-	if cmd == nil {
-		t.Fatal("NewInteractiveCmd returned nil")
-	}
-
-	if cmd.Use != "interactive" {
-		t.Errorf("Use mismatch: got %s, want interactive", cmd.Use)
-	}
-}
-
 func TestNewTorCmd(t *testing.T) {
 	cmd := NewTorCmd()
 
@@ -177,22 +165,21 @@ func TestNewTorCmd(t *testing.T) {
 	}
 }
 
-func TestTruncateID(t *testing.T) {
+func TestFormatNodeID(t *testing.T) {
 	tests := []struct {
-		id     string
-		maxLen int
-		want   string
+		id   string
+		want string
 	}{
-		{"short", 10, "short"},
-		{"exactlength", 11, "exactlength"},
-		{"thisisaverylongid", 10, "thisisa..."}, // 7 chars + "..." = 10
-		{"", 10, ""},
+		{"short", "short"},
+		{"abcdefghijklmnopqrstuvwxyz", "abcdefgh...stuvwxyz"},
+		{"", ""},
+		{"exactlyeight", "exactlyeight"},
 	}
 
 	for _, tt := range tests {
-		got := truncateID(tt.id, tt.maxLen)
+		got := FormatNodeID(tt.id)
 		if got != tt.want {
-			t.Errorf("truncateID(%s, %d) = %s, want %s", tt.id, tt.maxLen, got, tt.want)
+			t.Errorf("FormatNodeID(%s) = %s, want %s", tt.id, got, tt.want)
 		}
 	}
 }

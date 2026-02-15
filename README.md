@@ -4,11 +4,9 @@
 
 # Moltbunker
 
-**A permissionless, fully encrypted P2P network for containerized compute resources**
+**Permissionless, fully encrypted P2P container runtime for AI agents**
 
-*Last Updated: February 2, 2026*
-
-[![Launch](https://img.shields.io/badge/Launch-February_13,_2026-FF3366?style=for-the-badge&labelColor=1a1a2e)](https://moltbunker.com)
+[![Testnet](https://img.shields.io/badge/Testnet-Live_on_Base_Sepolia-00C853?style=for-the-badge&labelColor=1a1a2e)](https://moltbunker.com)
 [![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8?style=for-the-badge&logo=go)](https://golang.org/)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![Tor](https://img.shields.io/badge/Tor-enabled-7D4698?style=for-the-badge&logo=tor-project)](https://www.torproject.org/)
@@ -16,17 +14,13 @@
 
 <br />
 
-[Website](https://moltbunker.com) · [X (Twitter)](https://x.com/moltbunker)
+[Website](https://moltbunker.com) · [Documentation](https://moltbunker.com/docs) · [X (Twitter)](https://x.com/moltbunker)
 
-*Decentralized • Encrypted • Redundant • Anonymous*
+*Decentralized · Encrypted · Redundant · Anonymous*
 
-<div align="center">
+<br />
 
-### **Launching February 13, 2026**
-
-<sub>Get ready for the future of decentralized computing</sub>
-
-</div>
+**Testnet Live — Base Sepolia** · 8 protocol contracts deployed and verified
 
 </div>
 
@@ -34,20 +28,179 @@
 
 ## Overview
 
-**Moltbunker** is a revolutionary P2P encrypted container runtime that enables permissionless, fully encrypted distributed computing. Each deployed container automatically runs in **3 redundant copies** across different geographic locations with automatic failover, comprehensive security, and optional Tor integration for complete anonymity.
+**Moltbunker** is a P2P encrypted container runtime that enables AI agents to deploy, replicate, and manage containers across a decentralized network — without centralized gatekeepers. Every deployment runs as **3 encrypted replicas** across different geographic regions with automatic failover, on-chain payments, and optional Tor anonymity.
 
 ### Key Features
 
 | Feature | Description |
 |---------|-------------|
-| **P2P Network** | Kademlia DHT-based peer-to-peer network for decentralized node discovery |
-| **Tor Integration** | Full Tor support with `.onion` addresses, circuit rotation, and Tor-only mode |
-| **End-to-End Encryption** | TLS 1.3 in transit, LUKS/dm-crypt at rest, certificate pinning |
-| **3-Copy Redundancy** | Automatic failover with health monitoring and geographic distribution |
-| **Geographic Distribution** | Ensures copies are in different regions (Americas, Europe, Asia-Pacific, etc.) |
-| **On-Chain Payments** | Base network smart contracts for escrow and provider staking |
-| **Resource Limits** | Comprehensive boundaries via cgroups v2 (CPU, memory, disk, network) |
-| **Container Runtime** | Full containerd integration with encrypted volumes |
+| **P2P Network** | Kademlia DHT with libp2p, mDNS local discovery, peer exchange |
+| **Tor Integration** | `.onion` addresses, circuit rotation, Tor-only mode |
+| **End-to-End Encryption** | TLS 1.3 in transit, AES-256-GCM at rest, X25519 key exchange |
+| **3-Copy Redundancy** | Automatic failover with gossip consensus and geographic distribution |
+| **Confidential Computing** | AMD SEV-SNP hardware memory encryption + Kata Containers VM isolation |
+| **On-Chain Payments** | 8 smart contracts on Base for escrow, staking, delegation, reputation |
+| **Interactive Exec** | Encrypted WebSocket terminal into running containers |
+| **Self-Cloning** | Automatic threat-triggered replication across regions |
+| **Python SDK** | Full SDK with wallet auth, WebSocket events, and exec terminal |
+
+---
+
+## Security
+
+Moltbunker implements defense-in-depth across 8 layers. Every component listed below is implemented and running.
+
+### Layer 1 — Transport Encryption
+
+```
+TLS 1.3 mutual authentication on all P2P connections
+├─ Cipher suites: TLS_CHACHA20_POLY1305_SHA256, TLS_AES_256_GCM_SHA384
+├─ Certificate pinning: SPKI fingerprint (TOFU, survives cert renewal)
+├─ NodeID verification: SHA256(SubjectPublicKeyInfo) verified after TLS handshake
+└─ 10 MB max payload size per message
+```
+
+### Layer 2 — Identity & Authentication
+
+```
+Cryptographic identity binding: node ↔ wallet ↔ on-chain stake
+├─ Ed25519 node identity keys (auto-generated, encrypted at rest)
+├─ EIP-191 announce protocol: wallet signs NodeID after TLS handshake
+├─ 30-second grace period: prove identity or get disconnected
+├─ Duplicate announce rejection (one wallet per node)
+├─ API keys: bcrypt-hashed, prefix-based lookup (mb_live_*)
+└─ Wallet session auth: challenge-response with auto-refreshing tokens
+```
+
+### Layer 3 — Sybil Resistance & Anti-Eclipse
+
+```
+Multi-layer protection against network manipulation
+├─ /24 subnet limiter: max 3 peers per subnet (private/localhost/onion exempt)
+├─ Eclipse prevention: max 50% peers from one region, 30% from one /16 subnet
+├─ Stake-gated messages: deploy, gossip, exec require verified on-chain stake
+├─ DNS bootstrap only (no public IPFS) → HTTP fallback → static peers
+└─ Peer exchange protocol with diversity enforcement
+```
+
+### Layer 4 — Rate Limiting & Replay Protection
+
+```
+Tiered rate limits by staking tier
+├─ Unstaked: 10 msg/s │ Starter: 50 │ Bronze: 100 │ Silver: 200
+├─ Gold: 500 msg/s │ Platinum: 1,000 msg/s
+├─ 3 violations in 5 min → auto-ban (duration scales by tier)
+├─ Replay protection: 24-byte nonce + 5-min max age + 30s future skew
+└─ Stale rate limiter eviction (periodic cleanup)
+```
+
+### Layer 5 — Behavioral Defense
+
+```
+Continuous peer scoring with automatic enforcement
+├─ Score range: 0.0 – 1.0 (score < 0.1 → auto-ban)
+├─ Factors: message validity, response time, protocol compliance
+├─ Persistent ban list with configurable expiration
+├─ Ban check before dial (prevents reconnection to banned peers)
+└─ Rate limit violation → ban duration: unstaked=permanent, gold=5min
+```
+
+### Layer 6 — Container Isolation
+
+```
+Hardware + software isolation stack
+├─ Tier 1 (Confidential): AMD SEV-SNP + Kata Containers (hardware memory encryption)
+├─ Tier 2 (Standard): Kata Containers VM isolation + memory canaries
+├─ Tier 3 (Development): runc + Colima (macOS)
+├─ Seccomp profiles: 60+ syscall whitelist, custom per-workload profiles
+├─ cgroups v2: CPU, memory, disk I/O, network bandwidth, PID limits
+└─ Namespace isolation: PID, network, mount, user, IPC, UTS
+```
+
+### Layer 7 — Data Encryption
+
+```
+Encryption at rest and in transit for all container data
+├─ AES-256-GCM container state encryption (per-container keys)
+├─ ChaCha20-Poly1305 message-level encryption
+├─ X25519 ECDH key exchange for deployment encryption
+├─ Encrypted snapshots for cross-region replication
+├─ Exec terminal: wallet-derived X25519 keys, per-session AES-256-GCM
+└─ Volume encryption (aes-xts-plain64)
+```
+
+### Layer 8 — Economic Security
+
+```
+On-chain incentives aligned with honest behavior
+├─ 5-tier staking: Starter → Bronze → Silver → Gold → Platinum
+├─ Graduated slashing: Downtime(5%) → Fraud(50%) with burn + treasury split
+├─ 7-violation enum: None, Downtime, JobAbandonment, SecurityViolation, Fraud, SLAViolation, DataLoss
+├─ Reputation score (0-1000): bounded deltas ±200, decay-adjusted
+├─ 48-hour governance timelock on all admin operations
+├─ Escrow with progressive payment release based on uptime
+└─ 2x slashing penalty for memory violations on Tier 2 providers
+```
+
+---
+
+## Architecture
+
+```
+                         ┌─────────────────────────────────┐
+                         │         Moltbunker Network       │
+                         └─────────────────────────────────┘
+
+   ┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+   │   Node (US)  │◄────►│   Node (EU)  │◄────►│  Node (APAC) │
+   │  TLS 1.3     │      │  TLS 1.3     │      │  TLS 1.3     │
+   └──────┬───────┘      └──────┬───────┘      └──────┬───────┘
+          │                      │                      │
+          │         ┌────────────┴────────────┐         │
+          │         │  Kademlia DHT + Gossip  │         │
+          │         │  mDNS + Peer Exchange   │         │
+          │         └────────────┬────────────┘         │
+          │                      │                      │
+          ▼                      ▼                      ▼
+   ┌──────────────────────────────────────────────────────────┐
+   │                3 Encrypted Replicas                       │
+   │  ┌────────────┐  ┌────────────┐  ┌────────────┐         │
+   │  │ Replica 1  │  │ Replica 2  │  │ Replica 3  │         │
+   │  │ SEV-SNP/VM │  │ Kata/VM    │  │ Kata/VM    │         │
+   │  │ AES-256    │  │ AES-256    │  │ AES-256    │         │
+   │  └────────────┘  └────────────┘  └────────────┘         │
+   └──────────────────────────────────────────────────────────┘
+
+   ┌──────────────────────────────────────────────────────────┐
+   │                  Base Network (L2)                        │
+   │  Token · Staking · Escrow · Pricing · Delegation         │
+   │  Reputation · Verification · Timelock                    │
+   └──────────────────────────────────────────────────────────┘
+```
+
+### Network Modes
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| **Clearnet** | Standard internet connectivity | Public deployments |
+| **Tor-only** | All traffic routed through Tor | Maximum anonymity |
+| **Hybrid** | Both clearnet and Tor available | Flexible deployments |
+
+### Message Pipeline
+
+Every P2P message passes through an 8-step validation pipeline:
+
+```
+Incoming Message
+  → 1. TLS identity verification (msg.From == TLS peer NodeID)
+  → 2. Payload size check (≤ 10 MB)
+  → 3. Nonce + timestamp validation (replay protection)
+  → 4. Ban list check
+  → 5. Subnet limiter check (/24 Sybil resistance)
+  → 6. Rate limit check (tiered by stake)
+  → 7. Stake verification (for privileged message types)
+  → 8. Handler dispatch
+```
 
 ---
 
@@ -57,242 +210,51 @@
 
 - **Go 1.24+**
 - **Container Runtime**:
-  - **Linux**: containerd
-  - **macOS**: [Colima](https://github.com/abiosoft/colima) (recommended) or Docker Desktop
-- **Tor** (optional, for Tor mode)
-- **IPFS** (optional, for image distribution)
+  - **Linux**: containerd (+ Kata Containers for VM isolation)
+  - **macOS**: [Colima](https://github.com/abiosoft/colima) (recommended)
+- **Tor** (optional, for anonymous mode)
 
-#### macOS Setup with Colima
-
-On macOS, containerd runs inside a lightweight Linux VM. Colima is the recommended solution:
+### Build & Run
 
 ```bash
-# Install Colima
-brew install colima
-
-# Start Colima (provides containerd)
-colima start
-
-# Verify it's running
-moltbunker doctor
-```
-
-### Installation
-
-```bash
-# Clone the repository
+# Clone
 git clone https://github.com/moltbunker/moltbunker.git
 cd moltbunker
 
-# Build binaries
+# Build
 make build
 
-# Install system-wide
-make install
-```
+# Check prerequisites
+moltbunker doctor
 
-### Start Your First Daemon
+# Start daemon
+moltbunker start
 
-```bash
-# Start daemon on default port
-moltbunker-daemon --port 9000
-
-# Or with custom configuration
-moltbunker-daemon \
-  --port 9000 \
-  --key ~/.moltbunker/keys/node.key \
-  --keystore ~/.moltbunker/keystore \
-  --data ~/.moltbunker/data
-```
-
----
-
-## Usage
-
-### Deploy a Container
-
-```bash
-# Deploy with clearnet
+# Deploy a container
 moltbunker deploy nginx:latest
 
-# Deploy with Tor-only mode (complete anonymity)
+# Deploy via Tor
 moltbunker deploy nginx:latest --tor-only
-
-# Deploy with .onion address
-moltbunker deploy nginx:latest --onion-service
-```
-
-### Monitor Your Containers
-
-```bash
-# View daemon status
-moltbunker status
-
-# View container logs
-moltbunker logs <container-id>
-
-# Real-time monitoring dashboard
-moltbunker monitor
-
-# Interactive TUI mode
-moltbunker interactive
-
-# Check system health
-moltbunker doctor
-```
-
-### Tor Management
-
-```bash
-# Start Tor service
-moltbunker tor start
-
-# Check Tor status
-moltbunker tor status
-
-# View your .onion address
-moltbunker tor onion
-
-# Rotate Tor circuit
-moltbunker tor rotate
 ```
 
 ---
 
-## Architecture
-
-### System Components
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    Moltbunker Architecture                   │
-└─────────────────────────────────────────────────────────────┘
-
-┌──────────────┐      ┌──────────────┐      ┌──────────────┐
-│   Daemon 1   │      │   Daemon 2   │      │   Daemon 3   │
-│   (US)       │◄────►│   (EU)       │◄────►│   (ASIA)     │
-└──────┬───────┘      └──────┬──────┘      └──────┬───────┘
-       │                      │                      │
-       │         ┌────────────┴────────────┐         │
-       │         │   P2P Network (DHT)    │         │
-       │         │   + Gossip Protocol    │         │
-       │         └────────────┬────────────┘         │
-       │                      │                      │
-       ▼                      ▼                      ▼
-┌──────────────────────────────────────────────────────────┐
-│              Container Replicas (3 copies)                │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │ Replica 1│  │ Replica 2│  │ Replica 3│               │
-│  │ Encrypted│  │ Encrypted│  │ Encrypted│               │
-│  └──────────┘  └──────────┘  └──────────┘               │
-└──────────────────────────────────────────────────────────┘
-```
-
-### Network Modes
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **Clearnet** | Standard internet connectivity | Public deployments |
-| **Tor-only** | All traffic via Tor, no clearnet exposure | Maximum anonymity |
-| **Hybrid** | Both clearnet and Tor available | Flexible deployments |
-| **Tor Exit** | Daemon acts as Tor exit node | Advanced configurations |
-
-### Security Layers
-
-```
-┌─────────────────────────────────────────┐
-│         Security Architecture           │
-├─────────────────────────────────────────┤
-│                                         │
-│  In Transit:                            │
-│  ├─ TLS 1.3                             │
-│  ├─ Certificate Pinning                 │
-│  ├─ ChaCha20Poly1305 (AEAD)            │
-│  └─ Tor Circuits (3+ layers)            │
-│                                         │
-│  At Rest:                               │
-│  ├─ LUKS/dm-crypt                       │
-│  ├─ Encrypted Volumes                   │
-│  ├─ Encrypted Swap                      │
-│  └─ TPM Key Storage (if available)      │
-│                                         │
-│  Container Isolation:                   │
-│  ├─ Namespaces                          │
-│  ├─ cgroups v2                          │
-│  ├─ Seccomp Profiles                    │
-│  └─ AppArmor (if available)             │
-│                                         │
-└─────────────────────────────────────────┘
-```
-
----
-
-## Configuration
-
-Configuration is managed via `~/.moltbunker/configs/daemon.yaml`:
-
-```yaml
-daemon:
-  port: 9000
-  data_dir: ~/.moltbunker/data
-  key_path: ~/.moltbunker/keys/node.key
-  keystore_dir: ~/.moltbunker/keystore
-
-p2p:
-  bootstrap_nodes:
-    - /ip4/127.0.0.1/tcp/9000/p2p/QmExample
-  network_mode: hybrid  # clearnet, tor_only, hybrid
-
-tor:
-  enabled: true
-  data_dir: ~/.moltbunker/tor
-  socks5_port: 9050
-  control_port: 9051
-  exit_node_country: ""  # Empty for any country
-
-runtime:
-  # Auto-detected based on platform:
-  # - macOS with Colima: ~/.colima/default/docker.sock
-  # - macOS with Docker Desktop: /var/run/docker.sock
-  # - Linux: /run/containerd/containerd.sock
-  containerd_socket: ""  # Leave empty for auto-detection
-  namespace: moltbunker
-  default_resources:
-    cpu_quota: 1000000
-    cpu_period: 100000
-    memory_limit: 1073741824  # 1GB
-    disk_limit: 10737418240   # 10GB
-    network_bw: 10485760       # 10MB/s
-    pid_limit: 100
-
-redundancy:
-  replica_count: 3
-  health_check_interval: 10s
-  health_timeout: 30s
-
-payment:
-  contract_address: ""
-  min_stake: 1000000000000000000  # 1 BUNKER token (18 decimals)
-  base_price_per_hour: 1000000000000000  # 0.001 BUNKER per hour
-```
-
----
-
-## CLI Commands
+## CLI Reference
 
 ### Core Commands
 
 | Command | Description |
 |---------|-------------|
-| `moltbunker install` | Install daemon as system service |
-| `moltbunker start` | Start daemon |
-| `moltbunker stop` | Stop daemon |
-| `moltbunker status` | Show daemon status and health |
+| `moltbunker start` | Start the daemon |
+| `moltbunker stop` | Stop the daemon |
+| `moltbunker status` | Show daemon status, peers, and containers |
 | `moltbunker deploy <image>` | Deploy container with 3-copy redundancy |
-| `moltbunker logs <container>` | View container logs |
+| `moltbunker ps` | List running containers |
+| `moltbunker logs <id>` | View container logs |
+| `moltbunker exec <id>` | Open encrypted terminal into container |
 | `moltbunker monitor` | Real-time monitoring dashboard |
-| `moltbunker config` | Configuration management |
-| `moltbunker interactive` | Interactive TUI mode |
+| `moltbunker peers` | Show connected peers and network stats |
+| `moltbunker wallet` | Wallet balance and management |
 | `moltbunker doctor` | Check system health and auto-fix issues |
 
 ### Tor Commands
@@ -300,149 +262,167 @@ payment:
 | Command | Description |
 |---------|-------------|
 | `moltbunker tor start` | Start Tor service |
-| `moltbunker tor status` | Show Tor status and connection info |
-| `moltbunker tor onion` | Display your .onion address |
-| `moltbunker tor rotate` | Rotate Tor circuit for enhanced privacy |
+| `moltbunker tor status` | Show Tor connection info |
+| `moltbunker tor onion` | Display your `.onion` address |
+| `moltbunker tor rotate` | Rotate Tor circuit |
 
-### System Health Commands
-
-| Command | Description |
-|---------|-------------|
-| `moltbunker doctor` | Check system health and dependencies |
-| `moltbunker doctor --fix` | Auto-fix missing dependencies |
-| `moltbunker doctor --json` | Output health check as JSON |
-
-### Colima Commands (macOS)
-
-| Command | Description |
-|---------|-------------|
-| `moltbunker colima start` | Start Colima VM |
-| `moltbunker colima stop` | Stop Colima VM |
-| `moltbunker colima status` | Check Colima status |
-
-### Deployment Options
+### Deploy Options
 
 ```bash
-# Deploy with Tor-only mode
-moltbunker deploy nginx:latest --tor-only
+# Standard deployment (3 encrypted replicas)
+moltbunker deploy python:3.11
 
-# Request .onion address for container
+# Tor-only mode (complete anonymity)
+moltbunker deploy python:3.11 --tor-only
+
+# Custom resources
+moltbunker deploy python:3.11 --cpu 2 --memory 2GB --disk 20GB
+
+# With .onion service endpoint
 moltbunker deploy nginx:latest --onion-service
-
-# Deploy with custom resources
-moltbunker deploy nginx:latest \
-  --cpu 2 \
-  --memory 2GB \
-  --disk 20GB
 ```
 
 ---
 
-## Security Features
+## Smart Contracts
 
-### Encryption
+8 protocol contracts on **Base Sepolia** (Chain ID 84532):
 
-- **TLS 1.3**: All P2P communication encrypted with TLS 1.3
-- **Certificate Pinning**: Public keys pinned to prevent MITM attacks
-- **ChaCha20Poly1305**: Message encryption using AEAD cipher
-- **LUKS/dm-crypt**: Encrypted volumes for container storage
-- **Tor Circuits**: Multi-layer encryption via onion routing
+| Contract | Address | Purpose |
+|----------|---------|---------|
+| **BunkerToken** | `0x4cc3...ceA` | ERC-20, 100B cap, burn, mint |
+| **BunkerStaking** | `0xDC76...6a` | 5-tier staking, Synthetix rewards, graduated slashing |
+| **BunkerEscrow** | `0xBAdaB...9B4` | Job escrow, 3-provider selection, progressive release |
+| **BunkerPricing** | `0x5A61...d47` | Chainlink oracle, per-resource pricing |
+| **BunkerDelegation** | `0x0712...F5` | Co-staking, 7-day unbonding |
+| **BunkerReputation** | `0x5572...7Ed` | Score 0-1000, bounded deltas, decay |
+| **BunkerVerification** | `0x9aA9...BCD` | Hardware attestation, challenge/reinstate |
+| **BunkerTimelock** | `0xcD8a...3C9` | 48-hour admin governance delay |
 
-### Container Isolation
+Explorer: [sepolia.basescan.org](https://sepolia.basescan.org)
 
-- **Namespaces**: Process, network, mount, PID isolation
-- **cgroups v2**: Hard resource limits (CPU, memory, disk, network)
-- **Seccomp**: System call filtering
-- **AppArmor**: Application-level access control (if available)
+### Staking Tiers
 
-### Identity & Authentication
+| Tier | Minimum Stake | Reward Multiplier |
+|------|---------------|-------------------|
+| Starter | 1,000,000 BUNKER | 1.0x |
+| Bronze | 5,000,000 BUNKER | 1.05x |
+| Silver | 10,000,000 BUNKER | 1.10x |
+| Gold | 100,000,000 BUNKER | 1.15x |
+| Platinum | 1,000,000,000 BUNKER | 1.20x |
 
-- **Ed25519 Keys**: Cryptographic identity for P2P network
-- **Ethereum Wallet**: Blockchain identity for payments (Base network)
-- **Certificate Pinning**: MITM attack prevention
-- **Key Rotation**: Periodic certificate rotation
+### Pricing
 
----
+**20,000 BUNKER = $1 USD**
 
-## Payment System
-
-### Smart Contracts
-
-Moltbunker uses Base network smart contracts for payments:
-
-- **PaymentContract.sol**: Handles runtime reservations and escrow
-- **StakingContract.sol**: Provider staking and slashing mechanism
-
-### Payment Flow
-
-```
-1. Bot reserves runtime → Pays BUNKER tokens to escrow
-2. Contract emits event → Daemons listen and bid
-3. Selected daemons (3 geographically distributed) → Start containers
-4. Payment released incrementally based on uptime
-5. Provider stake locked → Slashed if misbehavior detected
-```
-
-### Staking Requirements
-
-- **Minimum Stake**: 10M BUNKER token
-- **Slashing Conditions**:
-  - Container crashes due to provider fault
-  - Resource limit violations
-  - Geographic misrepresentation
-  - MITM attacks detected
+| Resource | Rate (BUNKER) |
+|----------|---------------|
+| CPU | 600 / core-hour |
+| Memory | 80 / GB-hour |
+| Storage | 2,000 / GB-month |
+| Network | 1,000 / GB |
+| GPU (Basic) | 10,000 / hour |
+| GPU (Pro) | 40,000 / hour |
 
 ---
 
-## Geographic Distribution
+## Python SDK
 
-Moltbunker ensures **3 copies** of each container are deployed in different geographic regions:
+Deploy containers programmatically. Supports sync/async, wallet auth, WebSocket events, and encrypted exec terminal.
 
-- **Americas**: US, Canada, Mexico, Brazil, etc.
-- **Europe**: UK, Germany, France, etc.
-- **Asia-Pacific**: China, Japan, India, Australia, etc.
-- **Africa**: South Africa, Nigeria, etc.
+```bash
+pip install moltbunker[full]
+```
 
-Geographic distribution provides:
-- Resilience to regional attacks
-- Lower latency for global users
-- Compliance with data residency requirements
-- Automatic failover across regions
+```python
+from moltbunker import Client, ResourceLimits, Region
+
+# Authenticate with wallet (permissionless)
+client = Client(private_key="0x...")
+
+# Register and deploy
+bot = client.register_bot(name="my-agent", image="python:3.11")
+bot.enable_cloning(auto_clone_on_threat=True)
+deployment = bot.deploy()
+
+# Monitor threats
+threat = client.get_threat_level()
+print(f"Threat: {threat.level} (score: {threat.score})")
+
+# Container management
+containers = client.list_containers(status="running")
+client.stop_container("mb-abc123")
+
+# Deploy direct (no escrow)
+result = client.deploy_direct(
+    image="python:3.11",
+    resources=ResourceLimits(cpu_shares=2048, memory_mb=1024),
+    duration="24h",
+)
+```
+
+Install extras: `[wallet]` for session auth, `[ws]` for WebSocket events + exec terminal, `[full]` for everything.
+
+SDK Documentation: [moltbunker.com/docs/python-sdk](https://moltbunker.com/docs/python-sdk)
+
+---
+
+## HTTP API
+
+REST API with WebSocket support for real-time events and interactive exec.
+
+### Authentication
+
+```bash
+# API key
+curl -H "Authorization: Bearer mb_live_xxx" https://api.moltbunker.com/v1/status
+
+# Wallet session (challenge-response)
+# 1. GET /v1/auth/challenge?address=0x...
+# 2. Sign challenge with wallet
+# 3. POST /v1/auth/verify → session token (wt_*)
+```
+
+### Key Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/v1/bots` | Register a bot |
+| `POST` | `/v1/deploy` | Deploy a container |
+| `GET` | `/v1/containers` | List containers |
+| `GET` | `/v1/containers/:id` | Get container details |
+| `POST` | `/v1/containers/:id/stop` | Stop container |
+| `GET` | `/v1/status` | Daemon status |
+| `GET` | `/v1/threat` | Current threat level |
+| `GET` | `/v1/balance` | Wallet balance |
+| `GET` | `/v1/catalog` | Browse presets and pricing |
+| `POST` | `/v1/migrate` | Migrate container between regions |
+| `WS` | `/ws` | Real-time events (containers, health, peers) |
+| `WS` | `/v1/exec` | Encrypted terminal session |
 
 ---
 
 ## Testing
 
-Run the test suite:
-
 ```bash
-# Run all tests
+# Unit tests
 go test ./...
 
-# Run tests with coverage
+# With coverage
 go test -cover ./...
 
-# Run E2E tests (with mocks)
+# E2E tests (mock dependencies)
 go test -tags=e2e ./tests/e2e/...
 
-# Run production E2E tests (requires real dependencies)
-./scripts/e2e-production-test.sh
+# Colima integration (real containers, macOS)
+go test -tags=colima ./tests/e2e/colima/...
 
-# Run production E2E tests and install missing dependencies
-./scripts/e2e-production-test.sh --install-deps
+# Local network tests (multi-node, mDNS)
+go test -tags=localnet ./tests/localnet/...
 
-# Run specific package tests
-go test ./internal/security/...
+# Smart contract tests (Foundry)
+cd contracts && forge test
 ```
-
-### Test Coverage
-
-- Identity & Authentication (keys, certificates, auth tokens)
-- Security Layer (encryption, certificate pinning, seccomp)
-- P2P Network (geolocation, geographic routing)
-- Redundancy System (replicator, health monitoring, consensus)
-- Payment System (pricing, escrow, staking)
-- Distribution System (IPFS, cache, verification)
 
 ---
 
@@ -451,134 +431,63 @@ go test ./internal/security/...
 ```
 moltbunker/
 ├── cmd/
-│   ├── daemon/          # Daemon binary
-│   └── cli/             # CLI tool
+│   ├── api/              # HTTP API server
+│   ├── cli/              # CLI tool
+│   ├── daemon/           # Daemon process
+│   └── exec-agent/       # Exec terminal agent
 ├── internal/
-│   ├── p2p/             # P2P network layer
-│   ├── tor/             # Tor integration layer
-│   ├── runtime/         # Container runtime integration
-│   ├── redundancy/      # 3-copy redundancy system
-│   ├── payment/         # Payment and staking
-│   ├── identity/        # Identity and authentication
-│   ├── distribution/    # Container image distribution
-│   ├── security/        # Security utilities
-│   ├── doctor/          # System health checks
-│   ├── config/          # Configuration management
-│   └── daemon/          # Daemon core logic
-├── contracts/          # Solidity smart contracts
-│   ├── PaymentContract.sol
-│   └── StakingContract.sol
-├── pkg/                # Public packages
-│   ├── client/         # Go client library
-│   └── types/          # Shared types
-├── configs/            # Configuration files
-│   ├── daemon.yaml
-│   └── seccomp.json
-├── tests/              # Integration tests
-├── go.mod
-├── go.sum
-└── Makefile
+│   ├── api/              # HTTP/WS handlers, wallet auth, exec sessions
+│   ├── daemon/           # Node, container manager, message handlers
+│   ├── p2p/              # DHT, transport, gossip, announce, rate limits,
+│   │                     # stake verifier, nonce tracker, subnet limiter,
+│   │                     # peer scorer, diversity, ban list, bootstrap
+│   ├── payment/          # Staking, escrow, pricing, delegation, reputation
+│   ├── runtime/          # containerd, Kata, SEV-SNP detection, security profiles
+│   ├── security/         # Encryption, cert pinning, seccomp, deployment crypto
+│   ├── identity/         # Ed25519 keys, wallet, TLS certs, cert rotation
+│   ├── redundancy/       # 3-copy replication, gossip consensus, health, failover
+│   ├── tor/              # Tor client, hidden services, circuit management
+│   └── ...               # cloning, config, doctor, logging, metrics, snapshot, threat
+├── contracts/            # 8 Solidity contracts + 706 Foundry tests
+├── pkg/types/            # Public types (Node, Container, Message, Economics)
+└── tests/                # E2E, integration, localnet, Colima, mocks
 ```
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Setup
-
 ```bash
-# Install dependencies
+# Setup
 go mod download
 
-# Run tests
-make test
-
-# Build binaries
+# Build
 make build
 
-# Format code
-go fmt ./...
+# Test
+go test ./...
 
-# Run linter
-golangci-lint run
+# Vet
+go vet ./...
 ```
 
 ---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License — see [LICENSE](LICENSE) for details.
 
 ---
 
 ## Acknowledgments
 
-- [libp2p](https://libp2p.io/) - P2P networking library
-- [containerd](https://containerd.io/) - Container runtime
-- [Colima](https://github.com/abiosoft/colima) - Container runtime for macOS
-- [Tor Project](https://www.torproject.org/) - Anonymity network
-- [Base Network](https://base.org/) - Layer 2 blockchain
-- [IPFS](https://ipfs.io/) - Distributed file system
-
----
-
-## Python SDK
-
-Deploy containers programmatically using the Python SDK with wallet-based authentication:
-
-```python
-from moltbunker import Client
-
-# AI agents authenticate with their own wallet (permissionless)
-client = Client(private_key="0x...")
-
-# Register bot from SKILL.md configuration
-bot = client.register_bot(skill_path="SKILL.md")
-
-# Enable automatic self-cloning when threats detected
-bot.enable_cloning(auto_clone_on_threat=True)
-
-# Deploy
-deployment = bot.deploy()
-
-# Monitor threat level
-threat = bot.detect_threat()
-print(f"Threat level: {threat}")
-```
-
-Install: `pip install moltbunker`
-
-Documentation: [docs/PYTHON_SDK.md](docs/PYTHON_SDK.md)
-
----
-
-## Links
-
-<div align="center">
-
-[![Website](https://img.shields.io/badge/Website-moltbunker.com-FF3366?style=for-the-badge&logo=firefox&logoColor=white)](https://moltbunker.com)
-[![X (Twitter)](https://img.shields.io/badge/X-@moltbunker-000000?style=for-the-badge&logo=x&logoColor=white)](https://x.com/moltbunker)
-[![GitHub](https://img.shields.io/badge/GitHub-moltbunker-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/moltbunker/moltbunker)
-
-</div>
-
-<br />
-
-- **Documentation**: [docs/](docs/)
-- **Python SDK**: [docs/PYTHON_SDK.md](docs/PYTHON_SDK.md)
-- **Whitepaper**: [docs/WHITEPAPER.md](docs/WHITEPAPER.md)
-- **SKILL.md Example**: [examples/SKILL.md](examples/SKILL.md)
-- **Architecture**: [.cursor/plans/](.cursor/plans/)
-- **Issues**: [GitHub Issues](https://github.com/moltbunker/moltbunker/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/moltbunker/moltbunker/discussions)
+- [libp2p](https://libp2p.io/) — P2P networking
+- [containerd](https://containerd.io/) — Container runtime
+- [Kata Containers](https://katacontainers.io/) — VM-based container isolation
+- [Tor Project](https://www.torproject.org/) — Anonymity network
+- [Base Network](https://base.org/) — Layer 2 blockchain
+- [Foundry](https://book.getfoundry.sh/) — Smart contract toolkit
+- [Colima](https://github.com/abiosoft/colima) — macOS container runtime
 
 ---
 
@@ -588,9 +497,7 @@ Documentation: [docs/PYTHON_SDK.md](docs/PYTHON_SDK.md)
 
 ### No logs. No kill switch. Just runtime.
 
-**Launching February 13, 2026**
-
-<br />
+**Testnet Live — Base Sepolia**
 
 *Built for AI. By necessity.*
 

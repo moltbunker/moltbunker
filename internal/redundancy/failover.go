@@ -10,15 +10,20 @@ import (
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
+// VerifyProviderFunc checks whether a candidate provider is eligible for failover.
+// Returns true if the provider has sufficient stake and reputation.
+type VerifyProviderFunc func(ctx context.Context, containerID string, region string) bool
+
 // FailoverManager handles automatic failover for failed replicas
 type FailoverManager struct {
-	replicator    *Replicator
-	healthMonitor *HealthMonitor
-	onFailover    func(ctx context.Context, containerID string, replicaIndex int, region string) (*types.Container, error)
-	checkInterval time.Duration
-	running       bool
-	mu            sync.Mutex
-	stopCh        chan struct{}
+	replicator     *Replicator
+	healthMonitor  *HealthMonitor
+	onFailover     func(ctx context.Context, containerID string, replicaIndex int, region string) (*types.Container, error)
+	verifyProvider VerifyProviderFunc
+	checkInterval  time.Duration
+	running        bool
+	mu             sync.Mutex
+	stopCh         chan struct{}
 }
 
 // NewFailoverManager creates a new failover manager
@@ -41,6 +46,12 @@ func (fm *FailoverManager) SetFailoverCallback(callback func(ctx context.Context
 	fm.onFailover = callback
 }
 
+// SetVerifyProvider sets the callback for verifying failover candidates.
+// When set, failover will skip regions where no verified provider is available.
+func (fm *FailoverManager) SetVerifyProvider(verify VerifyProviderFunc) {
+	fm.verifyProvider = verify
+}
+
 // CheckAndFailover checks for failed replicas and triggers failover
 func (fm *FailoverManager) CheckAndFailover(ctx context.Context, containerID string) error {
 	// Get unhealthy replicas
@@ -59,16 +70,18 @@ func (fm *FailoverManager) CheckAndFailover(ctx context.Context, containerID str
 	// Replace unhealthy replicas
 	for _, replicaIndex := range unhealthy {
 		// Determine region for replacement
-		var region string
-		switch replicaIndex {
-		case 0:
-			region = replicaSet.Region1
-		case 1:
-			region = replicaSet.Region2
-		case 2:
-			region = replicaSet.Region3
-		default:
-			return fmt.Errorf("invalid replica index: %d", replicaIndex)
+		if replicaIndex < 0 || replicaIndex >= len(replicaSet.Regions) {
+			return fmt.Errorf("invalid replica index: %d (max: %d)", replicaIndex, len(replicaSet.Regions)-1)
+		}
+		region := replicaSet.Regions[replicaIndex]
+
+		// P2-10: Verify that a qualified provider exists in the target region
+		if fm.verifyProvider != nil && !fm.verifyProvider(ctx, containerID, region) {
+			logging.Warn("no verified provider available for failover",
+				logging.ContainerID(containerID),
+				"replica_index", replicaIndex,
+				"region", region)
+			continue
 		}
 
 		// Trigger failover

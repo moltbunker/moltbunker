@@ -70,7 +70,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 	return map[StakingTier]*StakingTierConfig{
 		StakingTierStarter: {
 			Name:              StakingTierStarter,
-			MinStakeString:    "500000000000000000000",    // 500 BUNKER (18 decimals)
+			MinStakeString:    "1000000000000000000000000",      // 1,000,000 BUNKER (18 decimals)
 			MaxConcurrentJobs: 3,
 			RewardMultiplier:  1.0,
 			PriorityQueue:     false,
@@ -79,7 +79,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierBronze: {
 			Name:              StakingTierBronze,
-			MinStakeString:    "2000000000000000000000",   // 2,000 BUNKER
+			MinStakeString:    "5000000000000000000000000",      // 5,000,000 BUNKER
 			MaxConcurrentJobs: 10,
 			RewardMultiplier:  1.0,
 			PriorityQueue:     false,
@@ -88,7 +88,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierSilver: {
 			Name:              StakingTierSilver,
-			MinStakeString:    "10000000000000000000000",  // 10,000 BUNKER
+			MinStakeString:    "10000000000000000000000000",     // 10,000,000 BUNKER
 			MaxConcurrentJobs: 50,
 			RewardMultiplier:  1.05,
 			PriorityQueue:     true,
@@ -97,7 +97,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierGold: {
 			Name:              StakingTierGold,
-			MinStakeString:    "50000000000000000000000",  // 50,000 BUNKER
+			MinStakeString:    "100000000000000000000000000",    // 100,000,000 BUNKER
 			MaxConcurrentJobs: 200,
 			RewardMultiplier:  1.1,
 			PriorityQueue:     true,
@@ -106,8 +106,8 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierPlatinum: {
 			Name:              StakingTierPlatinum,
-			MinStakeString:    "250000000000000000000000", // 250,000 BUNKER
-			MaxConcurrentJobs: -1,                         // Unlimited
+			MinStakeString:    "1000000000000000000000000000",   // 1,000,000,000 BUNKER
+			MaxConcurrentJobs: -1,                               // Unlimited
 			RewardMultiplier:  1.2,
 			PriorityQueue:     true,
 			Governance:        true,

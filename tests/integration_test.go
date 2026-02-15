@@ -625,8 +625,8 @@ func TestIntegration_ReplicationSystem(t *testing.T) {
 			t.Errorf("ContainerID mismatch: got %s, want %s", replicaSet.ContainerID, containerID)
 		}
 
-		if replicaSet.Region1 != "Americas" {
-			t.Errorf("Region1 mismatch: got %s, want Americas", replicaSet.Region1)
+		if len(replicaSet.Regions) < 1 || replicaSet.Regions[0] != "Americas" {
+			t.Errorf("Regions[0] mismatch: got %v, want Americas", replicaSet.Regions)
 		}
 	}
 
@@ -690,10 +690,10 @@ func TestIntegration_GeographicDistribution(t *testing.T) {
 		{"IN", "Asia-Pacific"},
 		{"ZA", "Africa"},
 		{"NG", "Africa"},
-		// Fallback based on first char (S -> Africa in impl)
-		{"SG", "Africa"}, // S is in N-S range which maps to Africa
-		// Unknown countries based on first char
-		{"ZZ", "Other"}, // Z -> Other in the fallback
+		// SG is properly mapped to Asia-Pacific
+		{"SG", "Asia-Pacific"},
+		// Unknown country codes return "Unknown"
+		{"ZZ", "Unknown"},
 	}
 
 	for _, tc := range testCases {

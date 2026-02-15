@@ -51,8 +51,8 @@ type MockNode struct {
 }
 
 func NewMockNode() *MockNode {
-	// Create a minimal router without DHT
-	router := p2p.NewRouter(nil)
+	// Create a minimal router without DHT or key manager
+	router := p2p.NewRouter(nil, nil)
 
 	nodeID := types.NodeID{}
 	copy(nodeID[:], []byte("test-node-id-123456789012345"))
@@ -239,7 +239,7 @@ func (ts *TestAPIServer) handleStatusMock(ctx context.Context, req *APIRequest) 
 		NodeID:     ts.node.nodeInfo.ID.String(),
 		Running:    ts.node.IsRunning(),
 		Port:       ts.node.nodeInfo.Port,
-		PeerCount:  len(peers),
+		NetworkNodes: len(peers) + 1,
 		Uptime:     uptime.String(),
 		Version:    "0.1.0",
 		TorEnabled: torRunning,

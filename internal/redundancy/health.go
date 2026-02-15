@@ -8,6 +8,11 @@ import (
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
+const (
+	// maxTrackedContainers is the maximum number of containers tracked by the health monitor
+	maxTrackedContainers = 10000
+)
+
 // HealthProbeFunc is a function that performs actual health probe on a container
 type HealthProbeFunc func(ctx context.Context, containerID string) (bool, error)
 
@@ -91,6 +96,8 @@ func (hm *HealthMonitor) Stop() {
 		return
 	}
 
+	hm.running = false
+
 	// Signal stop
 	select {
 	case <-hm.stopCh:
@@ -171,7 +178,15 @@ func (hm *HealthMonitor) UpdateHealth(containerID string, replicaIndex int, heal
 	hm.mu.Lock()
 	defer hm.mu.Unlock()
 
+	// If this is a new container and we are at capacity, clean stale entries first
 	if hm.replicas[containerID] == nil {
+		if len(hm.replicas) >= maxTrackedContainers {
+			hm.cleanStaleLocked(hm.timeout)
+		}
+		// If still at capacity after cleaning, reject the update
+		if len(hm.replicas) >= maxTrackedContainers {
+			return
+		}
 		hm.replicas[containerID] = make(map[int]*ReplicaHealth)
 	}
 
@@ -229,4 +244,35 @@ func (hm *HealthMonitor) GetUnhealthyReplicas(containerID string) []int {
 	}
 
 	return unhealthy
+}
+
+// RemoveContainer removes all tracked replicas for a container
+func (hm *HealthMonitor) RemoveContainer(containerID string) {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+	delete(hm.replicas, containerID)
+}
+
+// CleanStale removes all containers where every replica's LastHeartbeat is older than maxAge
+func (hm *HealthMonitor) CleanStale(maxAge time.Duration) {
+	hm.mu.Lock()
+	defer hm.mu.Unlock()
+	hm.cleanStaleLocked(maxAge)
+}
+
+// cleanStaleLocked removes stale containers. Must be called with mu held for writing.
+func (hm *HealthMonitor) cleanStaleLocked(maxAge time.Duration) {
+	cutoff := time.Now().Add(-maxAge)
+	for containerID, replicas := range hm.replicas {
+		allStale := true
+		for _, health := range replicas {
+			if health.LastHeartbeat.After(cutoff) {
+				allStale = false
+				break
+			}
+		}
+		if allStale {
+			delete(hm.replicas, containerID)
+		}
+	}
 }

@@ -22,7 +22,7 @@ func NewStopCmd() *cobra.Command {
 }
 
 func runStop(cmd *cobra.Command, args []string) error {
-	fmt.Println("Stopping moltbunker daemon...")
+	Info("Stopping moltbunker daemon...")
 
 	// Check for systemd/launchd first
 	switch runtime.GOOS {
@@ -68,7 +68,7 @@ func stopDaemonProcess() error {
 	// Remove PID file
 	os.Remove(pidFile)
 
-	fmt.Printf("Daemon stopped (PID: %d)\n", pid)
+	Success(fmt.Sprintf("Daemon stopped (PID: %d)", pid))
 	return nil
 }
 
@@ -84,25 +84,25 @@ func isLaunchdServiceRunning() bool {
 }
 
 func stopWithSystemd() error {
-	fmt.Println("Stopping via systemd...")
+	Info("Stopping via systemd...")
 	cmd := exec.Command("systemctl", "stop", "moltbunker")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("systemctl stop failed: %w", err)
 	}
-	fmt.Println("Daemon stopped via systemd")
+	Success("Daemon stopped via systemd")
 	return nil
 }
 
 func stopWithLaunchd() error {
-	fmt.Println("Stopping via launchd...")
+	Info("Stopping via launchd...")
 	cmd := exec.Command("launchctl", "stop", "com.moltbunker.daemon")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("launchctl stop failed: %w", err)
 	}
-	fmt.Println("Daemon stopped via launchd")
+	Success("Daemon stopped via launchd")
 	return nil
 }

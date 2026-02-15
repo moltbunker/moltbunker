@@ -52,18 +52,28 @@ func TestGeographicRouter_SelectNodesForReplication(t *testing.T) {
 	}
 }
 
-func TestGeographicRouter_SelectNodesForReplication_InsufficientNodes(t *testing.T) {
+func TestGeographicRouter_SelectNodesForReplication_FewNodes(t *testing.T) {
 	geolocator := NewGeoLocator()
 	gr := NewGeographicRouter(geolocator)
 
+	// 2 nodes in different regions → should return 2 nodes
 	nodes := []*types.Node{
 		createTestNode("node1", "US"),
 		createTestNode("node2", "GB"),
 	}
 
-	_, err := gr.SelectNodesForReplication(nodes)
+	selected, err := gr.SelectNodesForReplication(nodes)
+	if err != nil {
+		t.Fatalf("Should succeed with 2 nodes: %v", err)
+	}
+	if len(selected) != 2 {
+		t.Errorf("Should select 2 nodes, got %d", len(selected))
+	}
+
+	// 0 nodes → should fail
+	_, err = gr.SelectNodesForReplication([]*types.Node{})
 	if err == nil {
-		t.Error("Should fail with insufficient nodes")
+		t.Error("Should fail with 0 nodes")
 	}
 }
 
@@ -71,15 +81,19 @@ func TestGeographicRouter_SelectNodesForReplication_SameRegion(t *testing.T) {
 	geolocator := NewGeoLocator()
 	gr := NewGeographicRouter(geolocator)
 
+	// All same region → should return up to 3 nodes for redundancy
 	nodes := []*types.Node{
 		createTestNode("node1", "US"),
 		createTestNode("node2", "CA"),
 		createTestNode("node3", "MX"),
 	}
 
-	_, err := gr.SelectNodesForReplication(nodes)
-	if err == nil {
-		t.Error("Should fail when all nodes are in same region")
+	selected, err := gr.SelectNodesForReplication(nodes)
+	if err != nil {
+		t.Fatalf("Should succeed with same-region nodes: %v", err)
+	}
+	if len(selected) != 3 {
+		t.Errorf("Should select 3 nodes for redundancy, got %d", len(selected))
 	}
 }
 

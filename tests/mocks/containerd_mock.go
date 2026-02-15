@@ -157,6 +157,12 @@ func (m *MockContainerdClient) CreateContainer(ctx context.Context, id string, i
 	return container, nil
 }
 
+// CreateSecureContainer creates a mock container with security profile (delegates to CreateContainer)
+func (m *MockContainerdClient) CreateSecureContainer(ctx context.Context, id string, imageRef string, resources types.ResourceLimits, profile *types.ContainerSecurityProfile) (*MockContainer, error) {
+	m.recordCall("CreateSecureContainer", id, imageRef, resources, profile)
+	return m.CreateContainer(ctx, id, imageRef, resources)
+}
+
 // StartContainer starts a mock container
 func (m *MockContainerdClient) StartContainer(ctx context.Context, id string) error {
 	m.recordCall("StartContainer", id)

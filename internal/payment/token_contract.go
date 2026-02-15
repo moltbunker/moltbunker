@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
 // TokenContract provides interface to the BUNKER ERC20 token contract
@@ -36,10 +37,12 @@ func NewTokenContract(baseClient *BaseClient, contractAddr common.Address) (*Tok
 		mockAllowances: make(map[common.Address]map[common.Address]*big.Int),
 	}
 
-	// If no base client, use mock mode
-	if baseClient == nil || !baseClient.IsConnected() {
-		tc.mockMode = true
-		return tc, nil
+	// Require a connected base client; use NewMockTokenContract() for testing
+	if baseClient == nil {
+		return nil, fmt.Errorf("base client is required (use NewMockTokenContract for testing)")
+	}
+	if !baseClient.IsConnected() {
+		return nil, fmt.Errorf("base client not connected to RPC")
 	}
 
 	parsedABI, err := abi.JSON(strings.NewReader(BunkerTokenABI))
@@ -156,8 +159,7 @@ func (tc *TokenContract) mockApprove(_ context.Context, spender common.Address, 
 	}
 	tc.mockAllowances[owner][spender] = new(big.Int).Set(amount)
 
-	fmt.Printf("[MOCK] Approved %s to spend %s BUNKER tokens for %s\n",
-		spender.Hex(), amount.String(), owner.Hex())
+	logging.Info("approved token spend", "spender", spender.Hex(), "amount", amount.String(), "owner", owner.Hex())
 
 	return nil, nil
 }
@@ -218,8 +220,7 @@ func (tc *TokenContract) mockTransfer(_ context.Context, to common.Address, amou
 		tc.mockBalances[to] = new(big.Int).Add(toBalance, amount)
 	}
 
-	fmt.Printf("[MOCK] Transferred %s BUNKER from %s to %s\n",
-		amount.String(), from.Hex(), to.Hex())
+	logging.Info("transferred tokens", "amount", amount.String(), "from", from.Hex(), "to", to.Hex())
 
 	return nil, nil
 }
@@ -295,8 +296,7 @@ func (tc *TokenContract) mockTransferFrom(_ context.Context, from, to common.Add
 		tc.mockBalances[to] = new(big.Int).Add(toBalance, amount)
 	}
 
-	fmt.Printf("[MOCK] TransferFrom %s BUNKER from %s to %s (spender: %s)\n",
-		amount.String(), from.Hex(), to.Hex(), spender.Hex())
+	logging.Info("transferred tokens from", "amount", amount.String(), "from", from.Hex(), "to", to.Hex(), "spender", spender.Hex())
 
 	return nil, nil
 }

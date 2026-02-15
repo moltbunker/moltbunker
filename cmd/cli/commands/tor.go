@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 
-	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/spf13/cobra"
 )
 
@@ -11,13 +10,7 @@ func NewTorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "tor",
 		Short: "Tor management commands",
-		Long: `Manage Tor integration for anonymous networking.
-
-Subcommands:
-  start   - Start the Tor service
-  status  - Show Tor service status
-  onion   - Display .onion address
-  rotate  - Rotate Tor circuit for new identity`,
+		Long:  "Manage Tor integration for anonymous networking.",
 	}
 
 	cmd.AddCommand(NewTorStartCmd())
@@ -34,46 +27,40 @@ func NewTorStartCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start Tor service",
-		Long: `Start the Tor service for anonymous networking.
-
-This will:
-- Initialize Tor daemon
-- Create onion service for inbound connections
-- Configure SOCKS5 proxy for outbound traffic`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
+			c, err := GetClient()
+			if err != nil {
+				return err
 			}
-			defer daemonClient.Close()
+			defer c.Close()
 
-			fmt.Println("Starting Tor service...")
-
-			result, err := daemonClient.TorStart()
+			var result map[string]interface{}
+			err = WithSpinner("Starting Tor service", func() error {
+				var e error
+				result, e = c.TorStart()
+				return e
+			})
 			if err != nil {
 				return fmt.Errorf("failed to start Tor: %w", err)
 			}
 
-			status, ok := result["status"].(string)
-			if ok {
-				switch status {
-				case "started":
-					fmt.Println("Tor service started successfully")
-				case "already_running":
-					fmt.Println("Tor service is already running")
-				}
+			status, _ := result["status"].(string)
+			switch status {
+			case "started":
+				Success("Tor service started")
+			case "already_running":
+				Info("Tor service is already running")
 			}
 
 			if addr, ok := result["address"].(string); ok && addr != "" {
-				fmt.Printf("Onion address: %s\n", addr)
+				fmt.Println(KeyValue("Onion", addr))
 			}
 
 			return nil
 		},
 	}
 
-	cmd.Flags().StringVar(&exitCountry, "exit-country", "", "Preferred exit node country code (e.g., US, DE)")
-
+	cmd.Flags().StringVar(&exitCountry, "exit-country", "", "Preferred exit node country (e.g., US, DE)")
 	return cmd
 }
 
@@ -81,140 +68,89 @@ func NewTorStatusCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show Tor status",
-		Long:  "Display the current status of the Tor service.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
+			c, err := GetClient()
+			if err != nil {
+				return err
 			}
-			defer daemonClient.Close()
+			defer c.Close()
 
-			status, err := daemonClient.TorStatus()
+			status, err := c.TorStatus()
 			if err != nil {
 				return fmt.Errorf("failed to get Tor status: %w", err)
 			}
 
-			fmt.Println("Tor Service Status")
-			fmt.Println("==================")
-
+			fields := [][2]string{}
 			if status.Running {
-				fmt.Println("Status:   RUNNING")
+				fields = append(fields, [2]string{"Status", StatusBadge("running")})
 				if status.OnionAddress != "" {
-					fmt.Printf("Onion:    %s\n", status.OnionAddress)
+					fields = append(fields, [2]string{"Onion", status.OnionAddress})
 				}
 				if !status.StartedAt.IsZero() {
-					fmt.Printf("Started:  %s\n", status.StartedAt.Format("2006-01-02 15:04:05"))
+					fields = append(fields, [2]string{"Started", status.StartedAt.Format("2006-01-02 15:04:05")})
 				}
-				fmt.Printf("Circuits: %d\n", status.CircuitCount)
+				fields = append(fields, [2]string{"Circuits", fmt.Sprintf("%d", status.CircuitCount)})
 			} else {
-				fmt.Println("Status:   NOT RUNNING")
-				fmt.Println("\nStart Tor with: moltbunker tor start")
+				fields = append(fields, [2]string{"Status", StatusBadge("stopped")})
+				fields = append(fields, [2]string{"", Hint("Start with: moltbunker tor start")})
 			}
 
+			fmt.Println(StatusBox("Tor Service", fields))
 			return nil
 		},
 	}
 }
 
 func NewTorOnionCmd() *cobra.Command {
-	var showQR bool
-
-	cmd := &cobra.Command{
+	return &cobra.Command{
 		Use:   "onion",
 		Short: "Show .onion address",
-		Long:  "Display the node's .onion address for inbound Tor connections.",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
+			c, err := GetClient()
+			if err != nil {
+				return err
 			}
-			defer daemonClient.Close()
+			defer c.Close()
 
-			status, err := daemonClient.TorStatus()
+			status, err := c.TorStatus()
 			if err != nil {
 				return fmt.Errorf("failed to get Tor status: %w", err)
 			}
-
 			if !status.Running {
 				return fmt.Errorf("Tor is not running. Start with: moltbunker tor start")
 			}
-
 			if status.OnionAddress == "" {
 				return fmt.Errorf("no onion address available")
 			}
 
-			fmt.Println("Onion Address")
-			fmt.Println("=============")
-			fmt.Println(status.OnionAddress)
-
-			if showQR {
-				fmt.Println("\nQR Code:")
-				printSimpleQR(status.OnionAddress)
-			}
-
+			fmt.Println(StatusBox("Onion Address", [][2]string{
+				{"Address", status.OnionAddress},
+			}))
 			return nil
 		},
 	}
-
-	cmd.Flags().BoolVar(&showQR, "qr", false, "Display QR code for onion address")
-
-	return cmd
 }
 
 func NewTorRotateCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "rotate",
 		Short: "Rotate Tor circuit",
-		Long: `Request a new Tor circuit for a fresh identity.
-
-This creates new paths through the Tor network, giving you:
-- New exit IP address
-- Fresh circuit for improved anonymity`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			daemonClient := client.NewDaemonClient(SocketPath)
-			if err := daemonClient.Connect(); err != nil {
-				return fmt.Errorf("daemon not running. Start with 'moltbunker start'")
-			}
-			defer daemonClient.Close()
-
-			// Check if Tor is running
-			status, err := daemonClient.TorStatus()
+			c, err := GetClient()
 			if err != nil {
-				return fmt.Errorf("failed to get Tor status: %w", err)
+				return err
 			}
+			defer c.Close()
 
-			if !status.Running {
-				return fmt.Errorf("Tor is not running. Start with: moltbunker tor start")
-			}
-
-			fmt.Println("Rotating Tor circuit...")
-
-			if err := daemonClient.TorRotate(); err != nil {
+			err = WithSpinner("Rotating Tor circuit", func() error {
+				return c.TorRotate()
+			})
+			if err != nil {
 				return fmt.Errorf("failed to rotate circuit: %w", err)
 			}
 
-			fmt.Println("Circuit rotated successfully")
-			fmt.Println("You now have a new identity on the Tor network")
-
+			Success("Tor circuit rotated — new identity active")
 			return nil
 		},
 	}
-}
-
-// printSimpleQR prints a simple ASCII representation for the onion address
-func printSimpleQR(address string) {
-	// Simple box representation - actual QR would require a library
-	fmt.Println("┌────────────────────────────────┐")
-	fmt.Println("│ ▄▄▄▄▄ █▀▄▄▀█▄█▀█▄▀█ ▄▄▄▄▄ │")
-	fmt.Println("│ █   █ █▀▄ ▀▀▄▀▄▄▀██ █   █ │")
-	fmt.Println("│ █▄▄▄█ █▀▄▀█▀█ ▄▀▄▄█ █▄▄▄█ │")
-	fmt.Println("│▄▄▄▄▄▄▄█▄█▄█ █▄█ █▄█▄▄▄▄▄▄▄│")
-	fmt.Println("│ ▄▀▄▀█▄  ▄▀▀▄▄▀█▀▄█▄█▄▀▀▀▀ │")
-	fmt.Println("│▄█▄█▄█▄▄▄ █▄▄▀▀ █▀▄ ▄▄▄ ▀█ │")
-	fmt.Println("│ ▄▄▄▄▄ █▄▄█▀▄ ▄▀▄▀ █▄█ ▄▀▄│")
-	fmt.Println("│ █   █ █ ▀█▄▄▀▄▄█▀▄▄▄  █▀▄│")
-	fmt.Println("│ █▄▄▄█ █ ▄▀▀▄█▀▄▀▀█▄█▀██▄▀│")
-	fmt.Println("│▄▄▄▄▄▄▄█▄█▄██▄█▄█▄████▄███│")
-	fmt.Println("└────────────────────────────────┘")
-	fmt.Println("(Note: Use a proper QR library for production)")
 }

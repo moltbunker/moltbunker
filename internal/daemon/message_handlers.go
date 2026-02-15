@@ -142,17 +142,30 @@ func (cm *ContainerManager) handleDeployAck(ctx context.Context, msg *types.Mess
 		}
 		pending.acks = append(pending.acks, replicaAckData)
 
-		// Non-blocking send to ack channel only if not closed
-		// Use a local copy of closed status under the lock
-		isClosed := pending.closed
-		pending.mu.Unlock()
+		// Activate escrow once on first successful ack (transition Created → Active)
+		shouldActivate := ack.Success && !pending.escrowActivated
+		var acksSnapshot []replicaAck
+		if shouldActivate {
+			pending.escrowActivated = true
+			acksSnapshot = make([]replicaAck, len(pending.acks))
+			copy(acksSnapshot, pending.acks)
+		}
 
-		if !isClosed {
+		// Non-blocking send to ack channel under the same lock that
+		// protects close(). This prevents a TOCTOU race where close()
+		// could close the channel between our check and send.
+		if !pending.closed {
 			select {
 			case pending.ackChan <- replicaAckData:
 			default:
 				// Channel full, ack is still recorded in the slice
 			}
+		}
+		pending.mu.Unlock()
+
+		// Call SelectProviders outside the lock to avoid blocking ack processing
+		if shouldActivate {
+			cm.activateEscrow(ctx, ack.ContainerID, acksSnapshot)
 		}
 	}
 
@@ -172,15 +185,31 @@ func (cm *ContainerManager) handleReplicaSync(ctx context.Context, msg *types.Me
 		return err
 	}
 
-	// Update consensus state
-	cm.consensus.UpdateState(syncData.ContainerID, syncData.Status, [3]*types.Container{})
+	// Update consensus state with the specific replica's status
+	cm.consensus.UpdateReplicaStatus(syncData.ContainerID, syncData.ReplicaIdx, syncData.Status)
 
 	return nil
 }
 
-// handleRemoteStop handles remote container stop requests from peer nodes
+// handleRemoteStop handles remote container stop requests from peer nodes.
+// Only the originator of the deployment is authorized to stop it.
 func (cm *ContainerManager) handleRemoteStop(ctx context.Context, msg *types.Message, from *types.Node) error {
 	containerID := string(msg.Payload)
+
+	// Verify the sender is the deployment originator
+	cm.mu.RLock()
+	deployment, exists := cm.deployments[containerID]
+	cm.mu.RUnlock()
+	if !exists {
+		return nil // Unknown container, ignore
+	}
+	if deployment.OriginatorID != msg.From {
+		logging.Warn("rejecting remote stop: sender is not originator",
+			logging.ContainerID(containerID),
+			logging.NodeID(msg.From.String()[:16]),
+			logging.Component("message_handlers"))
+		return nil
+	}
 
 	logging.Info("received remote stop request",
 		logging.ContainerID(containerID),
@@ -198,9 +227,25 @@ func (cm *ContainerManager) handleRemoteStop(ctx context.Context, msg *types.Mes
 	return nil
 }
 
-// handleRemoteDelete handles remote container delete requests from peer nodes
+// handleRemoteDelete handles remote container delete requests from peer nodes.
+// Only the originator of the deployment is authorized to delete it.
 func (cm *ContainerManager) handleRemoteDelete(ctx context.Context, msg *types.Message, from *types.Node) error {
 	containerID := string(msg.Payload)
+
+	// Verify the sender is the deployment originator
+	cm.mu.RLock()
+	deployment, exists := cm.deployments[containerID]
+	cm.mu.RUnlock()
+	if !exists {
+		return nil // Unknown container, ignore
+	}
+	if deployment.OriginatorID != msg.From {
+		logging.Warn("rejecting remote delete: sender is not originator",
+			logging.ContainerID(containerID),
+			logging.NodeID(msg.From.String()[:16]),
+			logging.Component("message_handlers"))
+		return nil
+	}
 
 	logging.Info("received remote delete request",
 		logging.ContainerID(containerID),

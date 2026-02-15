@@ -2,14 +2,33 @@ package cloning
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
-	"math/rand"
 	"sort"
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
+
+// cryptoRandFloat64 returns a cryptographically secure random float64 in [0.0, 1.0).
+func cryptoRandFloat64() float64 {
+	var b [8]byte
+	_, _ = rand.Read(b[:])
+	// Use top 53 bits for a uniform float64 in [0, 1)
+	return float64(binary.BigEndian.Uint64(b[:])>>(64-53)) / (1 << 53)
+}
+
+// cryptoRandShuffle performs a Fisher-Yates shuffle using crypto/rand.
+func cryptoRandShuffle(n int, swap func(i, j int)) {
+	for i := n - 1; i > 0; i-- {
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		j := int(binary.BigEndian.Uint64(b[:]) % uint64(i+1))
+		swap(i, j)
+	}
+}
 
 // DHTNodeSelector implements NodeSelector using the P2P DHT
 type DHTNodeSelector struct {
@@ -151,13 +170,21 @@ func (s *DHTNodeSelector) scoreNode(node *types.Node, targetRegion string) float
 		score += 1.0
 	}
 
+	// Provider tier bonus (prefer stronger isolation)
+	switch node.ProviderTier {
+	case types.ProviderTierConfidential:
+		score += 5.0
+	case types.ProviderTierStandard:
+		score += 2.0
+	}
+
 	// Capability bonus
 	if node.Capabilities.TorSupport {
 		score += 1.0
 	}
 
 	// Add some randomness to prevent always selecting the same nodes
-	score += rand.Float64() * 0.5
+	score += cryptoRandFloat64() * 0.5
 
 	return score
 }
@@ -231,7 +258,7 @@ func (s *RandomNodeSelector) FindNodes(ctx context.Context, region string, exclu
 	}
 
 	// Shuffle and return up to 5
-	rand.Shuffle(len(candidates), func(i, j int) {
+	cryptoRandShuffle(len(candidates), func(i, j int) {
 		candidates[i], candidates[j] = candidates[j], candidates[i]
 	})
 

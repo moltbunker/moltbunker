@@ -47,6 +47,34 @@ func (cm *ConsensusManager) UpdateState(containerID string, status types.Contain
 	state.Version++
 }
 
+// UpdateReplicaStatus updates a single replica's status within an existing container state.
+// Used when receiving sync messages that only contain a replica index and status.
+func (cm *ConsensusManager) UpdateReplicaStatus(containerID string, replicaIdx int, status types.ContainerStatus) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	state, exists := cm.states[containerID]
+	if !exists {
+		state = &ContainerState{
+			ContainerID: containerID,
+		}
+		cm.states[containerID] = state
+	}
+
+	if replicaIdx >= 0 && replicaIdx < 3 {
+		if state.Replicas[replicaIdx] == nil {
+			state.Replicas[replicaIdx] = &types.Container{
+				ID:     containerID,
+				Status: status,
+			}
+		} else {
+			state.Replicas[replicaIdx].Status = status
+		}
+	}
+	state.Status = status
+	state.Version++
+}
+
 // GetState returns container state
 func (cm *ConsensusManager) GetState(containerID string) (*ContainerState, bool) {
 	cm.mu.RLock()
@@ -71,6 +99,13 @@ func (cm *ConsensusManager) MergeState(containerID string, otherState *Container
 	if otherState.Version > currentState.Version {
 		cm.states[containerID] = otherState
 	}
+}
+
+// RemoveState removes all tracked state for a container.
+func (cm *ConsensusManager) RemoveState(containerID string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+	delete(cm.states, containerID)
 }
 
 // GetConsensusStatus determines consensus status across replicas

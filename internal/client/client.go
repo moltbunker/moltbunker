@@ -34,19 +34,115 @@ type APIResponse struct {
 	ID     int             `json:"id"`
 }
 
+// AggregatedCapacity contains aggregated node resource capacity
+type AggregatedCapacity struct {
+	CPUTotal       int     `json:"cpu_total"`
+	MemoryTotalGB  int     `json:"memory_total_gb"`
+	StorageTotalGB int     `json:"storage_total_gb"`
+
+	CPUUsed       int     `json:"cpu_used"`
+	MemoryUsedGB  float64 `json:"memory_used_gb"`
+	StorageUsedGB float64 `json:"storage_used_gb"`
+
+	OnlineNodes int `json:"online_nodes"`
+	TotalNodes  int `json:"total_nodes"`
+}
+
+// NetworkCapacity is an alias for backward compatibility
+type NetworkCapacity = AggregatedCapacity
+
+// SecurityStatus contains security feature status
+type SecurityStatus struct {
+	TLSVersion          string `json:"tls_version"`
+	EncryptionAlgo      string `json:"encryption_algo"`
+	SEVSNPSupported     bool   `json:"sev_snp_supported"`
+	SEVSNPActive        bool   `json:"sev_snp_active"`
+	SeccompEnabled      bool   `json:"seccomp_enabled"`
+	TorEnabled          bool   `json:"tor_enabled"`
+	CertPinnedPeers     int    `json:"cert_pinned_peers"`
+	EncryptedContainers int    `json:"encrypted_containers"`
+	TotalContainers     int    `json:"total_containers"`
+}
+
+// NodeProfile represents a known node in the network
+type NodeProfile struct {
+	NodeID           string    `json:"node_id"`
+	Address          string    `json:"address,omitempty"`
+	WalletAddress    string    `json:"wallet_address,omitempty"`
+	Region           string    `json:"region"`
+	Country          string    `json:"country,omitempty"`
+	Online           bool      `json:"online"`
+	LastSeen         time.Time `json:"last_seen"`
+	Capacity         CapacityProfile `json:"capacity"`
+	Tier             string    `json:"tier"`
+	Role             string    `json:"role"`
+	ReputationScore  int       `json:"reputation_score"`
+	StakingAmount    uint64    `json:"staking_amount"`
+	ActiveContainers int       `json:"active_containers"`
+	EncryptedCount   int       `json:"encrypted_containers"`
+	Version          string    `json:"version,omitempty"`
+
+	// Admin-assigned metadata
+	Badges  []string `json:"badges,omitempty"`
+	Blocked bool     `json:"blocked,omitempty"`
+}
+
+// HardwareProfile contains detailed hardware information for a node
+type HardwareProfile struct {
+	CPUModel         string `json:"cpu_model"`
+	CPUArch          string `json:"cpu_arch"`
+	CPUThreads       int    `json:"cpu_threads"`
+	CPUCores         int    `json:"cpu_cores"`
+	CPUSockets       int    `json:"cpu_sockets"`
+	MemoryGB         int    `json:"memory_gb"`
+	MemoryType       string `json:"memory_type"`
+	MemoryECC        bool   `json:"memory_ecc"`
+	StorageGB        int    `json:"storage_gb"`
+	StorageType      string `json:"storage_type"`
+	StorageModel     string `json:"storage_model"`
+	BandwidthMbps    int    `json:"bandwidth_mbps"`
+	NetworkInterface string `json:"network_interface,omitempty"`
+	SEVSNPSupported  bool   `json:"sev_snp_supported"`
+	SEVSNPLevel      string `json:"sev_snp_level"`
+	TPMVersion       string `json:"tpm_version"`
+	OS               string `json:"os"`
+	OSVersion        string `json:"os_version"`
+	Kernel           string `json:"kernel"`
+	Hostname         string `json:"hostname"`
+}
+
+// CapacityProfile describes a node's declared resource capacity
+type CapacityProfile struct {
+	CPUCores      int              `json:"cpu_cores"`
+	MemoryGB      int              `json:"memory_gb"`
+	StorageGB     int              `json:"storage_gb"`
+	BandwidthMbps int              `json:"bandwidth_mbps"`
+	GPUCount      int              `json:"gpu_count,omitempty"`
+	GPUModel      string           `json:"gpu_model,omitempty"`
+	Hardware      *HardwareProfile `json:"hardware,omitempty"`
+}
+
 // StatusResponse contains node status information
 type StatusResponse struct {
-	NodeID      string  `json:"node_id"`
-	Running     bool    `json:"running"`
-	Port        int     `json:"port"`
-	PeerCount   int     `json:"peer_count"`
-	Uptime      string  `json:"uptime"`
-	Version     string  `json:"version"`
-	TorEnabled  bool    `json:"tor_enabled"`
-	TorAddress  string  `json:"tor_address,omitempty"`
-	Containers  int     `json:"containers"`
-	Region      string  `json:"region"`
-	ThreatLevel float64 `json:"threat_level,omitempty"`
+	NodeID       string  `json:"node_id"`
+	Running      bool    `json:"running"`
+	Port         int     `json:"port"`
+	NetworkNodes int     `json:"network_nodes"`
+	Uptime       string  `json:"uptime"`
+	Version      string  `json:"version"`
+	TorEnabled   bool    `json:"tor_enabled"`
+	TorAddress   string  `json:"tor_address,omitempty"`
+	Containers   int     `json:"containers"`
+	Region       string  `json:"region"`
+	ThreatLevel  float64 `json:"threat_level,omitempty"`
+
+	// Extended fields
+	NetworkCapacity *AggregatedCapacity `json:"network_capacity,omitempty"`
+	Security        *SecurityStatus     `json:"security,omitempty"`
+	NodeTier        string              `json:"node_tier,omitempty"`
+	NodeRole        string              `json:"node_role,omitempty"`
+	ReputationScore int                 `json:"reputation_score"`
+	KnownNodes      []NodeProfile       `json:"known_nodes,omitempty"`
 }
 
 // ResourceLimits for deployment
@@ -66,6 +162,9 @@ type DeployRequest struct {
 	OnionService    bool            `json:"onion_service"`
 	OnionPort       int             `json:"onion_port,omitempty"`        // Port to expose via Tor (default: 80)
 	WaitForReplicas bool            `json:"wait_for_replicas,omitempty"` // If true, wait for at least 1 replica ack before returning
+	ReservationID   string          `json:"reservation_id,omitempty"`    // On-chain escrow reservation ID (user-created)
+	Owner           string          `json:"owner,omitempty"`             // Wallet address of the deployer
+	MinProviderTier string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
 }
 
 // DeployResponse contains deployment result
@@ -81,14 +180,18 @@ type DeployResponse struct {
 
 // ContainerInfo contains container information
 type ContainerInfo struct {
-	ID           string    `json:"id"`
-	Image        string    `json:"image"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	StartedAt    time.Time `json:"started_at,omitempty"`
-	Encrypted    bool      `json:"encrypted"`
-	OnionAddress string    `json:"onion_address,omitempty"`
-	Regions      []string  `json:"regions"`
+	ID              string    `json:"id"`
+	Image           string    `json:"image"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
+	StartedAt       time.Time `json:"started_at,omitempty"`
+	Encrypted       bool      `json:"encrypted"`
+	OnionAddress    string    `json:"onion_address,omitempty"`
+	Regions         []string  `json:"regions"`
+	Owner           string    `json:"owner,omitempty"`
+	StoppedAt       time.Time `json:"stopped_at,omitempty"`
+	VolumeExpiresAt time.Time `json:"volume_expires_at,omitempty"`
+	HasVolume       bool      `json:"has_volume"`
 }
 
 // HealthResponse contains health information
@@ -155,7 +258,7 @@ func (c *DaemonClient) Connect() error {
 		return nil // Already connected
 	}
 
-	conn, err := net.Dial("unix", c.socketPath)
+	conn, err := net.DialTimeout("unix", c.socketPath, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
@@ -201,11 +304,22 @@ func (c *DaemonClient) call(method string, params interface{}) (*APIResponse, er
 	}
 
 	if err := c.encoder.Encode(req); err != nil {
+		// Connection is in an inconsistent state (partial write possible);
+		// close it so the next call reconnects cleanly.
+		c.conn.Close()
+		c.conn = nil
+		c.encoder = nil
+		c.decoder = nil
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 
 	var resp APIResponse
 	if err := c.decoder.Decode(&resp); err != nil {
+		// Connection is broken; close so subsequent calls reconnect.
+		c.conn.Close()
+		c.conn = nil
+		c.encoder = nil
+		c.decoder = nil
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
@@ -380,6 +494,12 @@ func (c *DaemonClient) Stop(containerID string) error {
 	return err
 }
 
+// Start restarts a stopped container
+func (c *DaemonClient) Start(containerID string) error {
+	_, err := c.call("start", map[string]string{"container_id": containerID})
+	return err
+}
+
 // Delete deletes a container
 func (c *DaemonClient) Delete(containerID string) error {
 	_, err := c.call("delete", map[string]string{"container_id": containerID})
@@ -410,4 +530,29 @@ func (c *DaemonClient) Health(containerID string) (*HealthResponse, error) {
 func (c *DaemonClient) TorStop() error {
 	_, err := c.call("tor_stop", nil)
 	return err
+}
+
+// ContainerDetail contains extended container information including provider details.
+type ContainerDetail struct {
+	ID              string `json:"id"`
+	Image           string `json:"image"`
+	Status          string `json:"status"`
+	ProviderNodeID  string `json:"provider_node_id"`
+	ProviderAddress string `json:"provider_address"`
+	Owner           string `json:"owner,omitempty"`
+}
+
+// GetContainerDetail retrieves detailed container info including provider location.
+func (c *DaemonClient) GetContainerDetail(containerID string) (*ContainerDetail, error) {
+	resp, err := c.call("container_detail", map[string]string{"container_id": containerID})
+	if err != nil {
+		return nil, err
+	}
+
+	var detail ContainerDetail
+	if err := json.Unmarshal(resp.Result, &detail); err != nil {
+		return nil, fmt.Errorf("failed to parse container detail: %w", err)
+	}
+
+	return &detail, nil
 }
