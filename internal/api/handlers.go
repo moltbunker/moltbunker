@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/moltbunker/moltbunker/internal/cloning"
 	"github.com/moltbunker/moltbunker/internal/logging"
@@ -2058,4 +2059,125 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, http.StatusOK, BootstrapResponse{Peers: peers})
+}
+
+// ── Subdomain HTTP handlers ──
+
+// handleSubdomains handles GET /v1/subdomains (list) and POST /v1/subdomains (register).
+func (s *Server) handleSubdomains(w http.ResponseWriter, r *http.Request) {
+	if s.daemonBridge == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "daemon not connected")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		result, err := s.daemonBridge.SubdomainList()
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.writeJSON(w, http.StatusOK, result)
+
+	case http.MethodPost:
+		var req struct {
+			Name         string `json:"name"`
+			DeploymentID string `json:"deployment_id"`
+		}
+		if err := s.readJSON(r, &req); err != nil {
+			s.writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if req.Name == "" || req.DeploymentID == "" {
+			s.writeError(w, http.StatusBadRequest, "name and deployment_id are required")
+			return
+		}
+		result, err := s.daemonBridge.SubdomainRegister(req.Name, req.DeploymentID)
+		if err != nil {
+			s.writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		s.writeJSON(w, http.StatusCreated, result)
+
+	default:
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+	}
+}
+
+// handleSubdomainByName handles GET/DELETE/PUT /v1/subdomains/{name}.
+func (s *Server) handleSubdomainByName(w http.ResponseWriter, r *http.Request) {
+	if s.daemonBridge == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "daemon not connected")
+		return
+	}
+
+	// Extract name from URL path: /v1/subdomains/{name}
+	// Take only the first path segment to prevent path traversal
+	name := strings.TrimPrefix(r.URL.Path, "/v1/subdomains/")
+	if idx := strings.IndexByte(name, '/'); idx != -1 {
+		name = name[:idx]
+	}
+	if name == "" {
+		s.writeError(w, http.StatusBadRequest, "subdomain name is required")
+		return
+	}
+
+	// Validate subdomain name format on all operations
+	if err := types.ValidateSubdomainName(name); err != nil {
+		s.writeError(w, http.StatusBadRequest, "invalid subdomain name")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		result, err := s.daemonBridge.SubdomainResolve(name)
+		if err != nil {
+			s.writeError(w, http.StatusNotFound, "subdomain not found")
+			return
+		}
+		s.writeJSON(w, http.StatusOK, result)
+
+	case http.MethodDelete:
+		// Ownership is verified by the daemon handler via on-chain resolve
+		if err := s.daemonBridge.SubdomainRelease(name); err != nil {
+			s.writeError(w, http.StatusForbidden, "release failed: permission denied or subdomain not found")
+			return
+		}
+		s.writeJSON(w, http.StatusOK, map[string]string{"status": "released", "name": name})
+
+	case http.MethodPut:
+		var req struct {
+			DeploymentID string `json:"deployment_id,omitempty"`
+			NewOwner     string `json:"new_owner,omitempty"`
+		}
+		if err := s.readJSON(r, &req); err != nil {
+			s.writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if req.NewOwner != "" {
+			// Validate Ethereum address format before forwarding
+			if !common.IsHexAddress(req.NewOwner) {
+				s.writeError(w, http.StatusBadRequest, "invalid new_owner: must be a valid Ethereum address")
+				return
+			}
+			// Ownership verified by daemon handler
+			if err := s.daemonBridge.SubdomainTransfer(name, req.NewOwner); err != nil {
+				s.writeError(w, http.StatusForbidden, "transfer failed: permission denied or subdomain not found")
+				return
+			}
+			s.writeJSON(w, http.StatusOK, map[string]string{"status": "transferred", "name": name})
+		} else if req.DeploymentID != "" {
+			// Ownership verified by daemon handler
+			if err := s.daemonBridge.SubdomainUpdate(name, req.DeploymentID); err != nil {
+				s.writeError(w, http.StatusForbidden, "update failed: permission denied or subdomain not found")
+				return
+			}
+			s.writeJSON(w, http.StatusOK, map[string]string{"status": "updated", "name": name})
+		} else {
+			s.writeError(w, http.StatusBadRequest, "deployment_id or new_owner is required")
+		}
+
+	default:
+		http.Error(w, `{"error": "method not allowed"}`, http.StatusMethodNotAllowed)
+	}
 }

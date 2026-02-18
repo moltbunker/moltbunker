@@ -15,7 +15,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
+	"github.com/moltbunker/moltbunker/internal/networking"
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/redundancy"
@@ -52,6 +54,8 @@ type ContainerManager struct {
 	// execRelays tracks requester-side exec relays (P2P → WebSocket forwarding)
 	execRelays   map[string]*ExecRelay
 	execRelaysMu sync.RWMutex
+
+	networkManager   *networking.NetworkManager
 
 	dataDir          string
 	containerdSocket string
@@ -134,6 +138,7 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		torService:         torService,
 		node:               node,
 		payment:            config.PaymentService,
+		networkManager:     networking.NewNetworkManager(),
 		deployments:        make(map[string]*Deployment),
 		pendingDeployments: make(map[string]*pendingDeployment),
 		execStreams:        NewExecStreamManager(),
@@ -586,6 +591,33 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 	// P1-10: Track deploy success
 	cm.deploysTotal.Add(1)
 
+	// Set up networking for exposed ports
+	if len(req.ExposePorts) > 0 && cm.networkManager != nil {
+		netPorts := convertExposedPorts(req.ExposePorts)
+		containerNet, err := cm.networkManager.SetupNetwork(deploymentID, netPorts)
+		if err != nil {
+			logging.Warn("network setup failed for exposed ports",
+				logging.ContainerID(deploymentID),
+				logging.Err(err))
+		} else {
+			deployment.ExposedPorts = req.ExposePorts
+			ingressDomain := "moltbunker.dev"
+			if cm.node != nil && cm.node.nodeInfo != nil {
+				// Could be overridden by config; use default for now
+			}
+			subdomain := deploymentID[len("dep-"):]
+			if len(subdomain) > 8 {
+				subdomain = subdomain[:8]
+			}
+			for _, p := range netPorts {
+				hostPort, _ := containerNet.ResolvePort(p.ContainerPort)
+				deployment.PublicURLs = append(deployment.PublicURLs,
+					fmt.Sprintf("https://%s.%s", subdomain, ingressDomain))
+				cm.publishServiceExposure(deploymentID, p.ContainerPort, hostPort)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -754,6 +786,15 @@ func (cm *ContainerManager) Stop(ctx context.Context, containerID string) error 
 		}
 	}
 
+	// Tear down networking for exposed ports
+	if cm.networkManager != nil {
+		if err := cm.networkManager.TeardownNetwork(containerID); err != nil {
+			logging.Warn("failed to teardown network on stop",
+				logging.ContainerID(containerID), logging.Err(err))
+		}
+	}
+	cm.removeServiceExposure(containerID)
+
 	// Close any active exec sessions for this container
 	if cm.execStreams != nil {
 		cm.execStreams.CloseAllForContainer(containerID)
@@ -901,6 +942,16 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 		delete(cm.pendingDeployments, containerID)
 	}
 	cm.pendingMu.Unlock()
+
+	// Tear down networking
+	if cm.networkManager != nil {
+		if err := cm.networkManager.TeardownNetwork(containerID); err != nil {
+			logging.Warn("failed to teardown network on delete",
+				logging.ContainerID(containerID),
+				logging.Err(err))
+		}
+	}
+	cm.removeServiceExposure(containerID)
 
 	// Delete container
 	if cm.containerd != nil {
@@ -1472,5 +1523,90 @@ func (cm *ContainerManager) markImageInUse(imageRef string) {
 func (cm *ContainerManager) unmarkImageInUse(imageRef string) {
 	if cm.imageGC != nil {
 		cm.imageGC.UnmarkInUse(imageRef)
+	}
+}
+
+// GossipProtocol returns the gossip protocol instance.
+func (cm *ContainerManager) GossipProtocol() *p2p.GossipProtocol {
+	return cm.gossip
+}
+
+// NetworkManager returns the network manager for port resolution.
+func (cm *ContainerManager) NetworkManager() *networking.NetworkManager {
+	return cm.networkManager
+}
+
+// convertExposedPorts converts daemon ExposedPort to networking ExposedPort.
+func convertExposedPorts(ports []ExposedPort) []networking.ExposedPort {
+	result := make([]networking.ExposedPort, len(ports))
+	for i, p := range ports {
+		proto := p.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+		result[i] = networking.ExposedPort{
+			ContainerPort: p.ContainerPort,
+			Protocol:      proto,
+		}
+	}
+	return result
+}
+
+// publishServiceExposure writes an exposed service entry to gossip state
+// so ingress nodes can discover and route traffic to this container.
+func (cm *ContainerManager) publishServiceExposure(deploymentID string, containerPort, hostPort int) {
+	if cm.gossip == nil {
+		return
+	}
+
+	nodeAddr := ""
+	if cm.node != nil && cm.node.nodeInfo != nil {
+		nodeAddr = fmt.Sprintf("%s:%d", cm.node.nodeInfo.Address, cm.node.nodeInfo.Port+2) // tunnel port
+	}
+
+	entry := &ingress.ServiceEntry{
+		DeploymentID:   deploymentID,
+		ProviderNodeID: cm.node.nodeInfo.ID.String(),
+		ProviderAddr:   nodeAddr,
+		ContainerPort:  containerPort,
+		HostPort:       hostPort,
+	}
+
+	// Validate deploymentID has no colons to prevent gossip key injection
+	for i := 0; i < len(deploymentID); i++ {
+		if deploymentID[i] == ':' {
+			logging.Error("deployment ID contains colon, refusing to publish gossip key",
+				logging.ContainerID(deploymentID))
+			return
+		}
+	}
+
+	key := fmt.Sprintf("expose:%s:%d", deploymentID, containerPort)
+	cm.gossip.UpdateState(key, entry)
+
+	logging.Info("published service exposure to gossip",
+		logging.ContainerID(deploymentID),
+		"container_port", containerPort,
+		"host_port", hostPort,
+		"key", key)
+}
+
+// removeServiceExposure removes all exposed service entries for a deployment from gossip.
+// Gossip has no DeleteState, so we set values to nil — the adapter filters these out.
+func (cm *ContainerManager) removeServiceExposure(containerID string) {
+	if cm.gossip == nil {
+		return
+	}
+
+	cm.mu.RLock()
+	dep, exists := cm.deployments[containerID]
+	cm.mu.RUnlock()
+	if !exists || len(dep.ExposedPorts) == 0 {
+		return
+	}
+
+	for _, p := range dep.ExposedPorts {
+		key := fmt.Sprintf("expose:%s:%d", containerID, p.ContainerPort)
+		cm.gossip.UpdateState(key, nil) // nil = removed
 	}
 }

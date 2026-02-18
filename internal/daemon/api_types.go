@@ -184,3 +184,48 @@ type ReadyzResponse struct {
 	Message   string    `json:"message,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
 }
+
+// SubdomainRegisterRequest contains subdomain registration parameters.
+type SubdomainRegisterRequest struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+}
+
+// SubdomainRegisterResponse contains the result of a subdomain registration.
+type SubdomainRegisterResponse struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+	URL          string `json:"url"`
+	TxHash       string `json:"tx_hash,omitempty"`
+}
+
+// SubdomainInfo contains subdomain details.
+type SubdomainInfo struct {
+	Name         string    `json:"name"`
+	DeploymentID string    `json:"deployment_id"`
+	Owner        string    `json:"owner"`
+	URL          string    `json:"url"`
+	RegisteredAt time.Time `json:"registered_at"`
+}
+
+// SubdomainReleaseRequest contains subdomain release parameters.
+type SubdomainReleaseRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainResolveRequest contains subdomain resolve parameters.
+type SubdomainResolveRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainTransferRequest contains subdomain transfer parameters.
+type SubdomainTransferRequest struct {
+	Name     string `json:"name"`
+	NewOwner string `json:"new_owner"`
+}
+
+// SubdomainUpdateRequest contains subdomain deployment update parameters.
+type SubdomainUpdateRequest struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+}

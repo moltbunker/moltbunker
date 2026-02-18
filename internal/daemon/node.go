@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"crypto/x509"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/moltbunker/moltbunker/internal/config"
@@ -39,6 +42,7 @@ const (
 type Node struct {
 	keyManager     *identity.KeyManager
 	walletManager  *identity.WalletManager
+	certManager    *identity.CertificateManager
 	paymentService *payment.PaymentService
 	dht            *p2p.DHT
 	router         *p2p.Router
@@ -129,6 +133,7 @@ func NewNode(ctx context.Context, keyPath string, keystoreDir string, port int) 
 	return &Node{
 		keyManager:         keyManager,
 		walletManager:      walletManager,
+		certManager:        certManager,
 		dht:                dht,
 		router:             router,
 		transport:          transport,
@@ -300,6 +305,7 @@ func NewNodeWithConfig(ctx context.Context, cfg *config.Config) (*Node, error) {
 	return &Node{
 		keyManager:         keyManager,
 		walletManager:      walletManager,
+		certManager:        certManager,
 		dht:                dht,
 		router:             router,
 		transport:          transport,
@@ -964,4 +970,71 @@ func (n *Node) BanList() *p2p.BanList {
 		return n.router.BanList()
 	}
 	return nil
+}
+
+// TLSServerConfig returns a TLS config suitable for the tunnel server.
+// Uses the same node certificate as P2P with mutual TLS (self-signed).
+// Computes the SPKI-based NodeID of connecting clients and logs unrecognized peers.
+func (n *Node) TLSServerConfig() *tls.Config {
+	baseCfg := n.certManager.TLSConfig()
+	return &tls.Config{
+		Certificates: baseCfg.Certificates,
+		MinVersion:   tls.VersionTLS13,
+		MaxVersion:   tls.VersionTLS13,
+		CipherSuites: []uint16{
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+			tls.TLS_AES_128_GCM_SHA256,
+		},
+		ClientAuth: tls.RequireAnyClientCert,
+		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return fmt.Errorf("client certificate required")
+			}
+			cert, err := x509.ParseCertificate(rawCerts[0])
+			if err != nil {
+				return fmt.Errorf("invalid client certificate: %w", err)
+			}
+			now := time.Now()
+			if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+				return fmt.Errorf("client certificate expired")
+			}
+
+			// Compute the SPKI-based NodeID of the connecting peer
+			spki := cert.RawSubjectPublicKeyInfo
+			fingerprint := sha256.Sum256(spki)
+			peerNodeID := hex.EncodeToString(fingerprint[:])
+
+			// Check if this peer is known (in our routing table)
+			if n.router != nil {
+				known := false
+				for _, p := range n.router.GetPeers() {
+					if p.ID.String() == peerNodeID {
+						known = true
+						break
+					}
+				}
+				if !known {
+					logging.Warn("tunnel client not in peer list — allowing but monitoring",
+						"peer_node_id", peerNodeID[:16],
+						logging.Component("tunnel"))
+				}
+			}
+
+			return nil
+		},
+	}
+}
+
+// TLSClientConfig returns a base TLS config for the tunnel client (ingress dialer).
+// Presents the node certificate. Per-connection SPKI verification is added by the
+// TLSTunnelDialer — do NOT set InsecureSkipVerify here without VerifyConnection.
+func (n *Node) TLSClientConfig() *tls.Config {
+	baseCfg := n.certManager.TLSConfig()
+	return &tls.Config{
+		Certificates:       baseCfg.Certificates,
+		MinVersion:         tls.VersionTLS13,
+		MaxVersion:         tls.VersionTLS13,
+		InsecureSkipVerify: true, // Overridden per-connection by TLSTunnelDialer.DialProvider with SPKI check
+	}
 }

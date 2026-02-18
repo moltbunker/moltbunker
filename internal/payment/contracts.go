@@ -1889,3 +1889,101 @@ type ResourceRequestData struct {
 	DurationHours uint32
 	GPUCount      uint8
 }
+
+// BunkerRegistryABI is the ABI for the BunkerRegistry subdomain name contract.
+const BunkerRegistryABI = `[
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "deploymentID", "type": "bytes32"}
+		],
+		"name": "register",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "release",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "newOwner", "type": "address"}
+		],
+		"name": "transfer",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "newDeploymentID", "type": "bytes32"}
+		],
+		"name": "updateDeployment",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "resolve",
+		"outputs": [
+			{"name": "owner", "type": "address"},
+			{"name": "deploymentID", "type": "bytes32"},
+			{"name": "registeredAt", "type": "uint256"}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "isAvailable",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "registrationFee",
+		"outputs": [{"name": "", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "owner", "type": "address"}],
+		"name": "nameCount",
+		"outputs": [{"name": "", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "owner", "type": "address"},
+			{"name": "index", "type": "uint256"}
+		],
+		"name": "ownedNameAt",
+		"outputs": [{"name": "", "type": "bytes32"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "", "type": "bytes32"}],
+		"name": "nameOf",
+		"outputs": [{"name": "", "type": "string"}],
+		"stateMutability": "view",
+		"type": "function"
+	}
+]`
+
+// SubdomainRegistration represents a resolved subdomain from the registry.
+type SubdomainRegistration struct {
+	Name         string
+	Owner        common.Address
+	DeploymentID [32]byte
+	RegisteredAt time.Time
+}

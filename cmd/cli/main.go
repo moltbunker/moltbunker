@@ -53,6 +53,7 @@ func main() {
 	addCmd(commands.NewPsCmd(), groupContainers)
 	addCmd(commands.NewLogsCmd(), groupContainers)
 	addCmd(commands.NewExecCmd(), groupContainers)
+	addCmd(commands.NewSubdomainCmd(), groupContainers)
 
 	// Wallet & Payments
 	addCmd(commands.NewWalletCmd(), groupWallet)

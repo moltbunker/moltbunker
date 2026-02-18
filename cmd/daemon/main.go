@@ -23,11 +23,13 @@ import (
 	"github.com/moltbunker/moltbunker/internal/config"
 	"github.com/moltbunker/moltbunker/internal/daemon"
 	"github.com/moltbunker/moltbunker/internal/identity"
+	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
 	"github.com/moltbunker/moltbunker/internal/threat"
+	"github.com/moltbunker/moltbunker/internal/tunnel"
 	"github.com/moltbunker/moltbunker/internal/util"
 )
 
@@ -275,6 +277,94 @@ func main() {
 		cm.StartDiskEnforcer(ctx, 60*time.Second)
 	}
 
+	// ── Ingress + Tunnel wiring ──
+
+	// Provider nodes: start tunnel server so ingress nodes can proxy traffic to containers
+	var tunnelSrv *tunnel.Server
+	if cfg.IsProvider() {
+		cm := apiServer.GetContainerManager()
+		if cm != nil && cm.NetworkManager() != nil {
+			tunnelPort := cfg.Node.Provider.TunnelPort
+			if tunnelPort == 0 {
+				tunnelPort = cfg.Daemon.Port + 2 // Convention: base+1=TLS P2P, base+2=tunnel
+			}
+			portResolver := daemon.NewDeploymentPortResolver(cm.NetworkManager())
+			tunnelListener, listenErr := tls.Listen("tcp", fmt.Sprintf(":%d", tunnelPort), node.TLSServerConfig())
+			if listenErr != nil {
+				logging.Warn("failed to start tunnel server",
+					"port", tunnelPort,
+					logging.Err(listenErr),
+					logging.Component("tunnel"))
+			} else {
+				tunnelSrv = tunnel.NewServer(tunnelListener, portResolver)
+				util.SafeGoWithName("tunnel-server", func() {
+					if srvErr := tunnelSrv.Serve(ctx); srvErr != nil && ctx.Err() == nil {
+						logging.Error("tunnel server error",
+							logging.Err(srvErr),
+							logging.Component("tunnel"))
+					}
+				})
+				logging.Info("tunnel server started",
+					"port", tunnelPort,
+					logging.Component("tunnel"))
+			}
+		}
+	}
+
+	// Ingress nodes: start HTTP reverse proxy for subdomain routing
+	var ingressProxy *ingress.Proxy
+	var ingressHealthChecker *ingress.HealthChecker
+	if cfg.Node.Provider.IngressEnabled {
+		cm := apiServer.GetContainerManager()
+		if cm != nil && cm.GossipProtocol() != nil {
+			ingressPort := cfg.Node.Provider.IngressPort
+			if ingressPort == 0 {
+				ingressPort = 9090
+			}
+			ingressDomain := cfg.Node.Provider.IngressDomain
+			if ingressDomain == "" {
+				ingressDomain = "moltbunker.dev"
+			}
+
+			// Set gossip state validator to prevent expose: key poisoning
+			cm.GossipProtocol().SetStateValidator(daemon.NewGossipStateValidator(node.NodeInfo().ID))
+			gossipAdapter := daemon.NewGossipServiceAdapter(cm.GossipProtocol())
+			tunnelDialer := daemon.NewTLSTunnelDialer(node.TLSClientConfig())
+			tunnelClient := tunnel.NewClient(tunnelDialer)
+			resolver := ingress.NewResolver(gossipAdapter, gossipAdapter) // implements both GossipReader and SubdomainResolver
+			ingressProxy = ingress.NewProxy(resolver, tunnelClient, ingressDomain)
+
+			// Use TLS for the public-facing ingress listener.
+			// Even behind Cloudflare Tunnel, TLS provides defense in depth.
+			ingressTLSCfg := node.TLSServerConfig()
+			ingressTLSCfg.ClientAuth = tls.NoClientCert // Public clients don't present certs
+			ingressListener, listenErr := tls.Listen("tcp", fmt.Sprintf(":%d", ingressPort), ingressTLSCfg)
+			if listenErr != nil {
+				logging.Warn("failed to start ingress proxy",
+					"port", ingressPort,
+					logging.Err(listenErr),
+					logging.Component("ingress"))
+			} else {
+				util.SafeGoWithName("ingress-proxy", func() {
+					if srvErr := ingressProxy.Serve(ingressListener); srvErr != nil && ctx.Err() == nil {
+						logging.Error("ingress proxy error",
+							logging.Err(srvErr),
+							logging.Component("ingress"))
+					}
+				})
+
+				// Start health checker for exposed services
+				ingressHealthChecker = ingress.NewHealthChecker(resolver, tunnelClient)
+				ingressHealthChecker.Start(ctx)
+
+				logging.Info("ingress proxy started",
+					"port", ingressPort,
+					"domain", ingressDomain,
+					logging.Component("ingress"))
+			}
+		}
+	}
+
 	// P1-5: Start certificate rotator for automatic TLS cert renewal
 	certDir := filepath.Join(cfg.Daemon.DataDir, "certs")
 	os.MkdirAll(certDir, 0700)
@@ -433,6 +523,26 @@ func main() {
 	shutdownDone := make(chan struct{})
 	go func() {
 		defer close(shutdownDone)
+
+		// Stop ingress proxy and health checker first (edge traffic)
+		if ingressHealthChecker != nil {
+			logging.Info("stopping ingress health checker...", logging.Component("daemon"))
+			ingressHealthChecker.Stop()
+		}
+		if ingressProxy != nil {
+			logging.Info("stopping ingress proxy...", logging.Component("daemon"))
+			if err := ingressProxy.Shutdown(shutdownCtx); err != nil {
+				logging.Error("error stopping ingress proxy", logging.Err(err), logging.Component("daemon"))
+			}
+		}
+
+		// Stop tunnel server (provider-side)
+		if tunnelSrv != nil {
+			logging.Info("stopping tunnel server...", logging.Component("daemon"))
+			if err := tunnelSrv.Close(); err != nil {
+				logging.Error("error stopping tunnel server", logging.Err(err), logging.Component("daemon"))
+			}
+		}
 
 		// Stop HTTP API server first (stop accepting web requests)
 		if httpAPIServer != nil {

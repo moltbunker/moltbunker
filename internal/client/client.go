@@ -153,6 +153,12 @@ type ResourceLimits struct {
 	NetworkMbps int   `json:"network_mbps,omitempty"`
 }
 
+// ExposedPort describes a container port to expose via ingress.
+type ExposedPort struct {
+	ContainerPort int    `json:"container_port"`
+	Protocol      string `json:"protocol,omitempty"` // "tcp" (default) or "udp"
+}
+
 // DeployRequest contains deployment parameters
 type DeployRequest struct {
 	Image           string          `json:"image"`
@@ -167,6 +173,7 @@ type DeployRequest struct {
 	MinProviderTier  string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
 	EncryptedExecKey []byte          `json:"encrypted_exec_key,omitempty"` // Exec key for E2E encrypted exec (32 bytes)
 	DeployNonce      string          `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key derivation
+	ExposePorts      []ExposedPort   `json:"expose_ports,omitempty"`       // Container ports to expose via ingress
 }
 
 // DeployResponse contains deployment result
@@ -177,6 +184,7 @@ type DeployResponse struct {
 	EncryptedVolume string    `json:"encrypted_volume,omitempty"`
 	Regions         []string  `json:"regions"`
 	ReplicaCount    int       `json:"replica_count"` // Number of successful replica acks received
+	PublicURLs      []string  `json:"public_urls,omitempty"`
 	CreatedAt       time.Time `json:"created_at,omitempty"`
 }
 

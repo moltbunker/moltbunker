@@ -110,7 +110,7 @@ func (hc *HealthChecker) checkService(ctx context.Context, entry *ServiceEntry) 
 	start := time.Now()
 	_ = ctx // used for timeout deadline
 
-	tun, err := hc.tunnelClient.OpenTunnel(entry.ProviderAddr, entry.DeploymentID, entry.ContainerPort)
+	tun, err := hc.tunnelClient.OpenTunnel(entry.ProviderAddr, entry.DeploymentID, entry.ContainerPort, entry.ProviderNodeID)
 
 	hc.mu.Lock()
 	defer hc.mu.Unlock()

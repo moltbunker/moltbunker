@@ -8,6 +8,9 @@ import (
 	goruntime "runtime"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -152,6 +155,7 @@ func (s *APIServer) handleDeploy(ctx context.Context, req *APIRequest) *APIRespo
 		Regions:         result.Deployment.Regions,
 		Locations:       result.Deployment.Locations,
 		ReplicaCount:    result.ReplicaCount,
+		PublicURLs:      result.Deployment.PublicURLs,
 	}
 
 	return &APIResponse{
@@ -670,6 +674,285 @@ func (s *APIServer) handleContainerDetail(ctx context.Context, req *APIRequest) 
 		Result: detail,
 		ID:     req.ID,
 	}
+}
+
+// ── Subdomain handlers ──
+
+// deploymentIDToBytes32 converts a hex deployment ID string to [32]byte.
+// Returns an error if the hex string is malformed.
+func deploymentIDToBytes32(id string) ([32]byte, error) {
+	var b [32]byte
+	// Strip "dep-" prefix if present
+	hexStr := id
+	if len(hexStr) > 4 && hexStr[:4] == "dep-" {
+		hexStr = hexStr[4:]
+	}
+	decoded, err := hexutil.Decode("0x" + hexStr)
+	if err != nil {
+		return b, fmt.Errorf("invalid deployment ID hex %q: %w", id, err)
+	}
+	if len(decoded) > 32 {
+		return b, fmt.Errorf("deployment ID too long: %d bytes (max 32)", len(decoded))
+	}
+	// Right-align (left-pad with zeros) to match Solidity bytes32 convention
+	copy(b[32-len(decoded):], decoded)
+	return b, nil
+}
+
+// bytes32ToDeploymentID converts a [32]byte to a human-readable hex string.
+// Strips leading zeros for readability.
+func bytes32ToDeploymentID(b [32]byte) string {
+	// Find first non-zero byte
+	start := 0
+	for start < 31 && b[start] == 0 {
+		start++
+	}
+	return fmt.Sprintf("%x", b[start:])
+}
+
+// handleSubdomainRegister registers a vanity subdomain via the on-chain registry.
+func (s *APIServer) handleSubdomainRegister(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainRegisterRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+
+	if params.Name == "" || params.DeploymentID == "" {
+		return &APIResponse{Error: "name and deployment_id are required", ID: req.ID}
+	}
+
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	depID, err := deploymentIDToBytes32(params.DeploymentID)
+	if err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid deployment ID: %v", err), ID: req.ID}
+	}
+	if err := ps.RegisterSubdomain(ctx, params.Name, depID); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("registration failed: %v", err), ID: req.ID}
+	}
+
+	// Gossip update AFTER on-chain call succeeds — if the TX reverted,
+	// we must not advertise the subdomain to the network.
+	if s.containerManager != nil && s.containerManager.GossipProtocol() != nil {
+		s.containerManager.GossipProtocol().UpdateState(
+			fmt.Sprintf("subdomain:%s", params.Name), params.DeploymentID)
+	}
+
+	domain := "moltbunker.dev"
+	if s.config != nil && s.config.Node.Provider.IngressDomain != "" {
+		domain = s.config.Node.Provider.IngressDomain
+	}
+
+	return &APIResponse{
+		Result: SubdomainRegisterResponse{
+			Name:         params.Name,
+			DeploymentID: params.DeploymentID,
+			URL:          fmt.Sprintf("https://%s.%s", params.Name, domain),
+		},
+		ID: req.ID,
+	}
+}
+
+// handleSubdomainRelease releases a vanity subdomain.
+func (s *APIServer) handleSubdomainRelease(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainReleaseRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	// Verify caller owns this subdomain
+	if err := s.verifySubdomainOwnership(ctx, ps, params.Name); err != nil {
+		return &APIResponse{Error: err.Error(), ID: req.ID}
+	}
+
+	if err := ps.ReleaseSubdomain(ctx, params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("release failed: %v", err), ID: req.ID}
+	}
+
+	// Remove gossip mapping
+	if s.containerManager != nil && s.containerManager.GossipProtocol() != nil {
+		s.containerManager.GossipProtocol().UpdateState(
+			fmt.Sprintf("subdomain:%s", params.Name), nil)
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "released", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainList lists subdomains owned by this node's wallet.
+func (s *APIServer) handleSubdomainList(ctx context.Context, req *APIRequest) *APIResponse {
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	owner := s.node.WalletAddress()
+	regs, err := ps.ListOwnedSubdomains(ctx, owner)
+	if err != nil {
+		return &APIResponse{Error: fmt.Sprintf("list failed: %v", err), ID: req.ID}
+	}
+
+	domain := "moltbunker.dev"
+	if s.config != nil && s.config.Node.Provider.IngressDomain != "" {
+		domain = s.config.Node.Provider.IngressDomain
+	}
+
+	var infos []SubdomainInfo
+	for _, reg := range regs {
+		infos = append(infos, SubdomainInfo{
+			Name:         reg.Name,
+			DeploymentID: bytes32ToDeploymentID(reg.DeploymentID),
+			Owner:        reg.Owner.Hex(),
+			URL:          fmt.Sprintf("https://%s.%s", reg.Name, domain),
+			RegisteredAt: reg.RegisteredAt,
+		})
+	}
+
+	return &APIResponse{Result: infos, ID: req.ID}
+}
+
+// handleSubdomainResolve resolves a subdomain name.
+func (s *APIServer) handleSubdomainResolve(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainResolveRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	reg, err := ps.ResolveSubdomain(ctx, params.Name)
+	if err != nil {
+		return &APIResponse{Error: fmt.Sprintf("resolve failed: %v", err), ID: req.ID}
+	}
+
+	domain := "moltbunker.dev"
+	if s.config != nil && s.config.Node.Provider.IngressDomain != "" {
+		domain = s.config.Node.Provider.IngressDomain
+	}
+
+	return &APIResponse{
+		Result: SubdomainInfo{
+			Name:         reg.Name,
+			DeploymentID: bytes32ToDeploymentID(reg.DeploymentID),
+			Owner:        reg.Owner.Hex(),
+			URL:          fmt.Sprintf("https://%s.%s", reg.Name, domain),
+			RegisteredAt: reg.RegisteredAt,
+		},
+		ID: req.ID,
+	}
+}
+
+// handleSubdomainTransfer transfers a subdomain to a new owner.
+func (s *APIServer) handleSubdomainTransfer(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainTransferRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" || params.NewOwner == "" {
+		return &APIResponse{Error: "name and new_owner are required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+	if !common.IsHexAddress(params.NewOwner) {
+		return &APIResponse{Error: "invalid new_owner: must be a valid Ethereum address (0x...)", ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	// Verify caller owns this subdomain
+	if err := s.verifySubdomainOwnership(ctx, ps, params.Name); err != nil {
+		return &APIResponse{Error: err.Error(), ID: req.ID}
+	}
+
+	newOwnerAddr := common.HexToAddress(params.NewOwner)
+	if err := ps.TransferSubdomain(ctx, params.Name, newOwnerAddr); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("transfer failed: %v", err), ID: req.ID}
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "transferred", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainUpdate updates the deployment ID for a subdomain.
+func (s *APIServer) handleSubdomainUpdate(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainUpdateRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" || params.DeploymentID == "" {
+		return &APIResponse{Error: "name and deployment_id are required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	// Verify caller owns this subdomain
+	if err := s.verifySubdomainOwnership(ctx, ps, params.Name); err != nil {
+		return &APIResponse{Error: err.Error(), ID: req.ID}
+	}
+
+	depID, err := deploymentIDToBytes32(params.DeploymentID)
+	if err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid deployment ID: %v", err), ID: req.ID}
+	}
+	if err := ps.UpdateSubdomainDeployment(ctx, params.Name, depID); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("update failed: %v", err), ID: req.ID}
+	}
+
+	// Gossip update AFTER on-chain call succeeds — if the TX reverted,
+	// we must not advertise stale mappings to the network.
+	if s.containerManager != nil && s.containerManager.GossipProtocol() != nil {
+		s.containerManager.GossipProtocol().UpdateState(
+			fmt.Sprintf("subdomain:%s", params.Name), params.DeploymentID)
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "updated", "name": params.Name}, ID: req.ID}
+}
+
+// verifySubdomainOwnership resolves a subdomain on-chain and verifies the caller
+// (this node's wallet) is the owner. Returns nil if ownership is confirmed.
+func (s *APIServer) verifySubdomainOwnership(ctx context.Context, ps *payment.PaymentService, name string) error {
+	reg, err := ps.ResolveSubdomain(ctx, name)
+	if err != nil {
+		return fmt.Errorf("subdomain not found: %v", err)
+	}
+	callerAddr := s.node.WalletAddress()
+	if reg.Owner != callerAddr {
+		return fmt.Errorf("permission denied: subdomain %q is owned by %s, not %s",
+			name, reg.Owner.Hex()[:10], callerAddr.Hex()[:10])
+	}
+	return nil
 }
 
 // sendError sends an error response and returns any encoding error

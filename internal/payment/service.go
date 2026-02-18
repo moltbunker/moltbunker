@@ -28,6 +28,9 @@ type PaymentService struct {
 	verificationContract *VerificationContract
 	onChainPricing       *OnChainPricingContract
 
+	// Subdomain registry
+	registryContract *RegistryContract
+
 	// Pricing calculator
 	pricingCalculator *PricingCalculator
 
@@ -47,15 +50,16 @@ type PaymentServiceConfig struct {
 	BlockConfirmations int
 
 	// Contract addresses
-	TokenAddress        common.Address
-	RegistryAddress     common.Address
-	EscrowAddress       common.Address
-	StakingAddress      common.Address
-	SlashingAddress     common.Address
-	DelegationAddress   common.Address
-	ReputationAddress   common.Address
-	VerificationAddress common.Address
-	PricingAddress      common.Address
+	TokenAddress              common.Address
+	RegistryAddress           common.Address
+	EscrowAddress             common.Address
+	StakingAddress            common.Address
+	SlashingAddress           common.Address
+	DelegationAddress         common.Address
+	ReputationAddress         common.Address
+	VerificationAddress       common.Address
+	PricingAddress            common.Address
+	SubdomainRegistryAddress  common.Address
 
 	// Wallet (nil for read-only mode)
 	PrivateKey *ecdsa.PrivateKey
@@ -148,6 +152,14 @@ func NewPaymentService(config *PaymentServiceConfig) (*PaymentService, error) {
 		return nil, fmt.Errorf("failed to create on-chain pricing contract: %w", err)
 	}
 
+	// Create subdomain registry contract (optional — zero address means disabled)
+	if config.SubdomainRegistryAddress != (common.Address{}) {
+		ps.registryContract, err = NewRegistryContract(ps.baseClient, config.SubdomainRegistryAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create registry contract: %w", err)
+		}
+	}
+
 	// Create pricing calculator
 	basePricePerHour := config.BasePricePerHour
 	if basePricePerHour == nil {
@@ -169,6 +181,7 @@ func (ps *PaymentService) setupMockMode() (*PaymentService, error) {
 	ps.reputationContract = NewMockReputationContract()
 	ps.verificationContract = NewMockVerificationContract()
 	ps.onChainPricing = NewMockOnChainPricingContract()
+	ps.registryContract = NewMockRegistryContract()
 
 	basePricePerHour := ps.config.BasePricePerHour
 	if basePricePerHour == nil {
@@ -608,6 +621,76 @@ func JobIDFromString(s string) [32]byte {
 // JobIDToHex converts a job ID to hex string
 func JobIDToHex(id [32]byte) string {
 	return fmt.Sprintf("%x", id)
+}
+
+// ===== Subdomain Registry Operations =====
+
+// RegisterSubdomain registers a vanity subdomain name on-chain.
+func (ps *PaymentService) RegisterSubdomain(ctx context.Context, name string, deploymentID [32]byte) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Register(ctx, name, deploymentID)
+	return err
+}
+
+// ReleaseSubdomain releases a subdomain name.
+func (ps *PaymentService) ReleaseSubdomain(ctx context.Context, name string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Release(ctx, name)
+	return err
+}
+
+// TransferSubdomain transfers a subdomain to a new owner.
+func (ps *PaymentService) TransferSubdomain(ctx context.Context, name string, newOwner common.Address) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Transfer(ctx, name, newOwner)
+	return err
+}
+
+// UpdateSubdomainDeployment updates the deployment ID a subdomain points to.
+func (ps *PaymentService) UpdateSubdomainDeployment(ctx context.Context, name string, newDeploymentID [32]byte) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.UpdateDeployment(ctx, name, newDeploymentID)
+	return err
+}
+
+// ResolveSubdomain resolves a subdomain name to its registration data.
+func (ps *PaymentService) ResolveSubdomain(ctx context.Context, name string) (*SubdomainRegistration, error) {
+	if ps.registryContract == nil {
+		return nil, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.Resolve(ctx, name)
+}
+
+// IsSubdomainAvailable checks if a subdomain name is available.
+func (ps *PaymentService) IsSubdomainAvailable(ctx context.Context, name string) (bool, error) {
+	if ps.registryContract == nil {
+		return false, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.IsAvailable(ctx, name)
+}
+
+// GetSubdomainRegistrationFee returns the current registration fee.
+func (ps *PaymentService) GetSubdomainRegistrationFee(ctx context.Context) (*big.Int, error) {
+	if ps.registryContract == nil {
+		return nil, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.GetRegistrationFee(ctx)
+}
+
+// ListOwnedSubdomains returns all subdomains owned by an address.
+func (ps *PaymentService) ListOwnedSubdomains(ctx context.Context, owner common.Address) ([]SubdomainRegistration, error) {
+	if ps.registryContract == nil {
+		return nil, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.ListOwnedNames(ctx, owner)
 }
 
 // NewPaymentServiceFromConfig creates a payment service from daemon config

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/moltbunker/moltbunker/internal/logging"
 )
@@ -57,9 +58,15 @@ func (s *Server) Serve(ctx context.Context) error {
 	}
 }
 
+// handshakeTimeout is the maximum time allowed for the initial TUNNEL_OPEN handshake.
+const handshakeTimeout = 30 * time.Second
+
 // handleConnection handles a single ingress connection.
 func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
+
+	// Set read deadline for the initial handshake to prevent slow-loris attacks.
+	conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
 
 	// Read TUNNEL_OPEN request
 	msgType, payload, err := readControlMsg(conn)
@@ -121,6 +128,9 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		s.mu.Unlock()
 		tun.Close()
 	}()
+
+	// Clear read deadline before bidirectional proxy — both sides control pacing.
+	conn.SetReadDeadline(time.Time{})
 
 	// Proxy bidirectionally
 	_ = ProxyBidirectional(ctx, conn, containerConn)

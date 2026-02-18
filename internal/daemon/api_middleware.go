@@ -210,6 +210,19 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 		response = s.handleSnapshotRestore(ctx, req)
 	case "snapshot_stats":
 		response = s.handleSnapshotStats(ctx, req)
+	// Subdomain handlers
+	case "subdomain_register":
+		response = s.handleSubdomainRegister(ctx, req)
+	case "subdomain_release":
+		response = s.handleSubdomainRelease(ctx, req)
+	case "subdomain_list":
+		response = s.handleSubdomainList(ctx, req)
+	case "subdomain_resolve":
+		response = s.handleSubdomainResolve(ctx, req)
+	case "subdomain_transfer":
+		response = s.handleSubdomainTransfer(ctx, req)
+	case "subdomain_update":
+		response = s.handleSubdomainUpdate(ctx, req)
 	// Exec helpers
 	case "container_detail":
 		response = s.handleContainerDetail(ctx, req)

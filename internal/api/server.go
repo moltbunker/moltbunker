@@ -455,6 +455,10 @@ func (s *Server) buildRouter() http.Handler {
 	mux.HandleFunc("/v1/admin/catalog/categories/", s.withAdminMiddleware(s.handleAdminCatalogCategoryByID))
 	mux.HandleFunc("/v1/admin/catalog/tiers/", s.withAdminMiddleware(s.handleAdminCatalogTierByID))
 
+	// Subdomain management (auth required)
+	mux.HandleFunc("/v1/subdomains", s.withMiddleware(s.handleSubdomains))
+	mux.HandleFunc("/v1/subdomains/", s.withMiddleware(s.handleSubdomainByName))
+
 	// Health endpoints (no auth required)
 	mux.HandleFunc("/v1/health", s.handleHealth)
 	mux.HandleFunc("/v1/healthz", s.handleHealthz)

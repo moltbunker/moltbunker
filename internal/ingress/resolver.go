@@ -2,6 +2,7 @@ package ingress
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,45 +24,106 @@ type GossipReader interface {
 	GetExposedServices() map[string]*ServiceEntry
 }
 
-// Resolver maps deployment IDs to provider addresses using gossip state.
-// Ingress nodes participate in gossip and automatically receive service
-// location updates from providers.
+// SubdomainResolver resolves vanity subdomain names to deployment IDs.
+type SubdomainResolver interface {
+	// ResolveVanityName resolves a vanity name to a deployment ID.
+	ResolveVanityName(name string) (deploymentID string, ok bool)
+}
+
+// Resolver maps subdomains to provider addresses using gossip state.
+// Supports both deployment ID prefix matching (auto-assigned subdomains)
+// and vanity name resolution via SubdomainResolver.
 type Resolver struct {
-	services map[string]*ServiceEntry // deploymentID → service entry
-	gossip   GossipReader
-	mu       sync.RWMutex
+	services          map[string]*ServiceEntry // deploymentID → service entry
+	gossip            GossipReader
+	subdomainResolver SubdomainResolver
+	mu                sync.RWMutex
 }
 
 // NewResolver creates a service resolver.
-func NewResolver(gossip GossipReader) *Resolver {
+// subdomainResolver may be nil to disable vanity name resolution.
+func NewResolver(gossip GossipReader, subdomainResolver SubdomainResolver) *Resolver {
 	return &Resolver{
-		services: make(map[string]*ServiceEntry),
-		gossip:   gossip,
+		services:          make(map[string]*ServiceEntry),
+		gossip:            gossip,
+		subdomainResolver: subdomainResolver,
 	}
 }
 
-// Resolve returns the service entry for a deployment ID.
-func (r *Resolver) Resolve(deploymentID string) (*ServiceEntry, error) {
+// Resolve returns the service entry for a subdomain string.
+// Resolution order:
+//  1. Exact deployment ID match
+//  2. Prefix match (8-char hex prefix from auto-assigned subdomains)
+//  3. Vanity name resolution via SubdomainResolver
+//  4. Refresh from gossip and retry steps 1-3
+func (r *Resolver) Resolve(subdomain string) (*ServiceEntry, error) {
+	// Step 1: Exact match
 	r.mu.RLock()
-	entry, ok := r.services[deploymentID]
+	entry, ok := r.services[subdomain]
 	r.mu.RUnlock()
-
 	if ok && time.Since(entry.LastSeen) < 5*time.Minute {
 		return entry, nil
 	}
 
-	// Refresh from gossip
+	// Step 2: Prefix match (subdomain is first 8 chars of deployment ID)
+	if entry := r.resolveByPrefix(subdomain); entry != nil {
+		return entry, nil
+	}
+
+	// Step 3: Vanity name resolution
+	if entry := r.resolveVanity(subdomain); entry != nil {
+		return entry, nil
+	}
+
+	// Step 4: Refresh from gossip and retry
 	if r.gossip != nil {
 		r.refreshFromGossip()
-		r.mu.RLock()
-		entry, ok = r.services[deploymentID]
-		r.mu.RUnlock()
-		if ok {
+
+		// Retry prefix match
+		if entry := r.resolveByPrefix(subdomain); entry != nil {
+			return entry, nil
+		}
+		// Retry vanity
+		if entry := r.resolveVanity(subdomain); entry != nil {
 			return entry, nil
 		}
 	}
 
-	return nil, fmt.Errorf("service not found: %s", deploymentID)
+	return nil, fmt.Errorf("service not found: %s", subdomain)
+}
+
+// resolveByPrefix finds a service whose deployment ID starts with the given prefix.
+func (r *Resolver) resolveByPrefix(prefix string) *ServiceEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	for depID, entry := range r.services {
+		// Strip "dep-" prefix from deployment ID for matching
+		bare := strings.TrimPrefix(depID, "dep-")
+		if strings.HasPrefix(bare, prefix) && time.Since(entry.LastSeen) < 5*time.Minute {
+			return entry
+		}
+	}
+	return nil
+}
+
+// resolveVanity resolves a vanity name to a deployment ID, then looks up the service.
+func (r *Resolver) resolveVanity(name string) *ServiceEntry {
+	if r.subdomainResolver == nil {
+		return nil
+	}
+	depID, ok := r.subdomainResolver.ResolveVanityName(name)
+	if !ok || depID == "" {
+		return nil
+	}
+
+	r.mu.RLock()
+	entry, ok := r.services[depID]
+	r.mu.RUnlock()
+	if ok && time.Since(entry.LastSeen) < 5*time.Minute {
+		return entry
+	}
+	return nil
 }
 
 // refreshFromGossip updates the local service cache from gossip state.

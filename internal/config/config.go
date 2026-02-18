@@ -156,6 +156,7 @@ type ProviderNodeConfig struct {
 	IngressEnabled bool   `yaml:"ingress_enabled"` // Act as ingress node for exposed services
 	IngressPort    int    `yaml:"ingress_port"`     // HTTP port for ingress proxy (default: 9090)
 	IngressDomain  string `yaml:"ingress_domain"`   // Domain for public URLs (e.g., "moltbunker.dev")
+	TunnelPort     int    `yaml:"tunnel_port"`      // TLS tunnel port for ingress→provider (default: base port + 2)
 }
 
 // RequesterNodeConfig contains requester-specific configuration
@@ -335,6 +336,7 @@ type EconomicsConfig struct {
 	DelegationAddress   string `yaml:"delegation_address"`   // BunkerDelegation contract
 	ReputationAddress   string `yaml:"reputation_address"`   // BunkerReputation contract
 	VerificationAddress string `yaml:"verification_address"` // BunkerVerification contract
+	SubdomainRegistryAddress string `yaml:"subdomain_registry_address"` // BunkerRegistry contract
 
 	// Payment mode
 	MockPayments     bool   `yaml:"mock_payments"`      // Use mock payment layer (default: true for dev)

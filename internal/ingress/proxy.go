@@ -61,21 +61,21 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 }
 
 // handleRequest processes an incoming HTTP request.
-// It extracts the deployment ID from the Host header subdomain,
-// looks up the provider via gossip, opens a tunnel, and proxies the request.
+// It extracts the subdomain from the Host header, resolves the service
+// (by deployment ID prefix or vanity name), opens a tunnel, and proxies.
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
-	// Extract deployment ID from Host header
-	deploymentID := p.extractDeploymentID(r.Host)
-	if deploymentID == "" {
+	// Extract subdomain from Host header
+	subdomain := p.extractSubdomain(r.Host)
+	if subdomain == "" {
 		http.Error(w, "invalid host", http.StatusBadRequest)
 		return
 	}
 
-	// Resolve service location via gossip
-	service, err := p.resolver.Resolve(deploymentID)
+	// Resolve service location (prefix match or vanity name)
+	service, err := p.resolver.Resolve(subdomain)
 	if err != nil {
 		logging.Debug("service not found",
-			"deployment_id", deploymentID,
+			"subdomain", subdomain,
 			"error", err.Error(),
 			logging.Component("ingress"))
 		http.Error(w, "service not found", http.StatusNotFound)
@@ -83,10 +83,10 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Open tunnel to the provider
-	tun, err := p.tunnelClient.OpenTunnel(service.ProviderAddr, deploymentID, service.ContainerPort)
+	tun, err := p.tunnelClient.OpenTunnel(service.ProviderAddr, service.DeploymentID, service.ContainerPort, service.ProviderNodeID)
 	if err != nil {
 		logging.Error("tunnel open failed",
-			"deployment_id", deploymentID,
+			"deployment_id", service.DeploymentID,
 			"provider", service.ProviderAddr,
 			logging.Err(err),
 			logging.Component("ingress"))
@@ -105,9 +105,9 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	p.proxyHTTP(w, r, tun, service)
 }
 
-// extractDeploymentID parses the deployment ID from the Host header.
+// extractSubdomain parses the deployment ID from the Host header.
 // Expected format: "<deployment-id>.moltbunker.dev" or "<deployment-id>.moltbunker.dev:port"
-func (p *Proxy) extractDeploymentID(host string) string {
+func (p *Proxy) extractSubdomain(host string) string {
 	// Strip port if present
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
@@ -143,12 +143,18 @@ func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tun
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers
+	// Copy response headers, stripping hop-by-hop headers that must not be forwarded
 	for k, vv := range resp.Header {
+		if isHopByHopHeader(k) {
+			continue
+		}
 		for _, v := range vv {
 			w.Header().Add(k, v)
 		}
 	}
+
+	// Strip Set-Cookie from backend to prevent cookie injection from containers
+	w.Header().Del("Set-Cookie")
 
 	// Add proxy headers
 	w.Header().Set("X-Moltbunker-Provider", service.ProviderNodeID)
@@ -221,4 +227,21 @@ func (t *tunnelNetConn) RemoteAddr() net.Addr               { return nil }
 func (t *tunnelNetConn) SetDeadline(_ time.Time) error      { return nil }
 func (t *tunnelNetConn) SetReadDeadline(_ time.Time) error  { return nil }
 func (t *tunnelNetConn) SetWriteDeadline(_ time.Time) error { return nil }
+
+// hopByHopHeaders are HTTP/1.1 headers that must not be forwarded by proxies (RFC 7230 §6.1).
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailers":            true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+// isHopByHopHeader returns true if the header is a hop-by-hop header that should not be forwarded.
+func isHopByHopHeader(h string) bool {
+	return hopByHopHeaders[http.CanonicalHeaderKey(h)]
+}
 
