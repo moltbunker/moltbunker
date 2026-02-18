@@ -656,12 +656,14 @@ func (s *APIServer) handleContainerDetail(ctx context.Context, req *APIRequest) 
 	}
 
 	detail := map[string]interface{}{
-		"id":               deployment.ID,
-		"image":            deployment.Image,
-		"status":           string(deployment.Status),
-		"provider_node_id": providerNodeID,
-		"provider_address": providerAddr,
-		"owner":            deployment.Owner,
+		"id":                 deployment.ID,
+		"image":              deployment.Image,
+		"status":             string(deployment.Status),
+		"provider_node_id":   providerNodeID,
+		"provider_address":   providerAddr,
+		"owner":              deployment.Owner,
+		"exec_agent_enabled": deployment.ExecAgentEnabled,
+		"deploy_nonce":       deployment.DeployNonce,
 	}
 
 	return &APIResponse{

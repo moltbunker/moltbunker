@@ -1,11 +1,14 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/moltbunker/moltbunker/internal/client"
+	"github.com/moltbunker/moltbunker/internal/identity"
 	"github.com/spf13/cobra"
 )
 
@@ -374,6 +377,13 @@ func runDeployDirect(image string) error {
 		MinProviderTier: deployMinTier,
 	}
 
+	// Generate E2E exec key if wallet is available
+	if execKey, nonce, err := generateExecKey(); err == nil {
+		req.EncryptedExecKey = execKey
+		req.DeployNonce = nonce
+		Info("E2E encrypted exec enabled")
+	}
+
 	var resp *client.DeployResponse
 	err = WithSpinner("Submitting deployment", func() error {
 		var e error
@@ -399,4 +409,36 @@ func runDeployDirect(image string) error {
 	fmt.Println(Hint(fmt.Sprintf("View logs: moltbunker logs %s", FormatNodeID(resp.ContainerID))))
 
 	return nil
+}
+
+// generateExecKey attempts to derive an exec_key from the local wallet.
+// Returns (execKey, hexDeployNonce, nil) on success, or error if wallet unavailable.
+func generateExecKey() ([]byte, string, error) {
+	keystoreDir := defaultKeystoreDir()
+	wm, err := identity.LoadWalletManager(keystoreDir)
+	if err != nil {
+		return nil, "", err
+	}
+	if !wm.IsLoaded() {
+		return nil, "", fmt.Errorf("no wallet")
+	}
+
+	// TODO: prompt for wallet password when keystore is encrypted.
+	// For now, use empty password (works for unencrypted testnet wallets).
+	masterKEK, err := deriveMasterKEK(wm, "")
+	if err != nil {
+		return nil, "", fmt.Errorf("derive master KEK: %w", err)
+	}
+
+	deployNonce := make([]byte, 32)
+	if _, err := rand.Read(deployNonce); err != nil {
+		return nil, "", fmt.Errorf("generate deploy nonce: %w", err)
+	}
+
+	execKey, err := deriveExecKey(masterKEK, deployNonce)
+	if err != nil {
+		return nil, "", fmt.Errorf("derive exec key: %w", err)
+	}
+
+	return execKey, hex.EncodeToString(deployNonce), nil
 }

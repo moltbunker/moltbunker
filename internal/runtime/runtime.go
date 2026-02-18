@@ -28,6 +28,7 @@ type ContainerRuntime interface {
 	// Exec
 	ExecInContainer(ctx context.Context, id string, cmd []string) ([]byte, error)
 	ExecInteractive(ctx context.Context, id string, cols, rows uint16) (*InteractiveSession, error)
+	ExecRaw(ctx context.Context, id string, cmd []string) (*InteractiveSession, error)
 	CanExec(id string) bool
 
 	// Health

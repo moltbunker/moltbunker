@@ -216,6 +216,100 @@ func (cc *ContainerdClient) ExecInteractive(ctx context.Context, id string, cols
 	return session, nil
 }
 
+// ExecRaw opens a raw (non-PTY) exec session in a container.
+// Unlike ExecInteractive, this uses plain stdin/stdout pipes without terminal processing.
+// Designed for running the exec-agent binary which manages its own PTY internally.
+func (cc *ContainerdClient) ExecRaw(ctx context.Context, id string, cmd []string) (*InteractiveSession, error) {
+	ctx = cc.WithNamespace(ctx)
+
+	cc.mu.RLock()
+	managed, exists := cc.containers[id]
+	cc.mu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("container not found: %s", id)
+	}
+
+	managed.mu.RLock()
+	task := managed.Task
+	securityEnforcer := managed.SecurityEnforcer
+	managed.mu.RUnlock()
+
+	if securityEnforcer != nil {
+		if err := securityEnforcer.ValidateExecCommand(cmd); err != nil {
+			return nil, err
+		}
+	}
+
+	if task == nil {
+		return nil, fmt.Errorf("container not running: %s", id)
+	}
+
+	spec, err := managed.Container.Spec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container spec: %w", err)
+	}
+
+	pspec := spec.Process
+	pspec.Args = cmd
+	pspec.Terminal = false // raw pipes, no PTY
+
+	stdinR, stdinW := io.Pipe()
+	stdoutR, stdoutW := io.Pipe()
+
+	execID := fmt.Sprintf("exec-raw-%d", time.Now().UnixNano())
+	execCtx, execCancel := context.WithCancel(ctx)
+
+	// Non-terminal mode: plain stdin+stdout+stderr pipes.
+	// Stderr is merged into stdout (stdoutW) so exec-agent output is unified.
+	process, err := task.Exec(execCtx, execID, pspec,
+		cio.NewCreator(cio.WithStreams(stdinR, stdoutW, stdoutW)))
+	if err != nil {
+		execCancel()
+		stdinR.Close()
+		stdinW.Close()
+		stdoutR.Close()
+		stdoutW.Close()
+		return nil, fmt.Errorf("failed to create raw exec: %w", err)
+	}
+
+	if err := process.Start(execCtx); err != nil {
+		process.Delete(execCtx)
+		execCancel()
+		stdinR.Close()
+		stdinW.Close()
+		stdoutR.Close()
+		stdoutW.Close()
+		return nil, fmt.Errorf("failed to start raw exec: %w", err)
+	}
+
+	session := &InteractiveSession{
+		SessionID: execID,
+		Stdin:     stdinW,
+		Stdout:    stdoutR,
+		done:      make(chan struct{}),
+		cancel:    execCancel,
+		// resizeFn left nil — exec-agent handles resize internally via frames
+	}
+
+	go func() {
+		defer func() {
+			stdoutW.Close()
+			stdinR.Close()
+			process.Delete(context.Background())
+			session.Close()
+		}()
+
+		exitCh, err := process.Wait(execCtx)
+		if err != nil {
+			return
+		}
+		<-exitCh
+	}()
+
+	return session, nil
+}
+
 // CanExec checks if exec is allowed for the container
 func (cc *ContainerdClient) CanExec(id string) bool {
 	cc.mu.RLock()

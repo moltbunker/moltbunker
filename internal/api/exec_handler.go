@@ -446,6 +446,9 @@ func (s *Server) bridgeLocalExec(
 				newRows := uint16(frameData[2])<<8 | uint16(frameData[3])
 				ptySession.Resize(newCols, newRows)
 			}
+		case WSFrameKeyInit, WSFrameKeyAck:
+			// E2E key exchange frames — relay to container stdin as exec-agent frames
+			ptySession.Stdin.Write(frameData)
 		case WSFramePing:
 			ws.writeMessage([]byte{WSFramePong})
 		case WSFrameClose:
@@ -636,6 +639,22 @@ func (s *Server) bridgeRemoteExec(
 					Timestamp: time.Now(),
 				})
 			}
+
+		case WSFrameKeyInit, WSFrameKeyAck:
+			// E2E key exchange frames — forward as ExecData to provider (opaque relay).
+			// The provider's ExecStream wraps it in exec-agent framing automatically.
+			dataPayload := types.ExecDataPayload{
+				SessionID: session.SessionID,
+				Data:      message, // include frame type byte — provider relays as-is
+			}
+			pb, _ := json.Marshal(dataPayload)
+			cm.SendExecMessage(ctx, providerID, &types.Message{
+				Type:      types.MessageTypeExecData,
+				From:      cm.LocalNodeID(),
+				To:        providerID,
+				Payload:   pb,
+				Timestamp: time.Now(),
+			})
 
 		case WSFramePing:
 			ws.writeMessage([]byte{WSFramePong})
