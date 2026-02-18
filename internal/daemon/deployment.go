@@ -34,6 +34,7 @@ type Deployment struct {
 	Owner           string                 `json:"owner,omitempty"`     // Wallet address of the deployer
 	ExecAgentEnabled bool                  `json:"exec_agent_enabled,omitempty"` // True if exec-agent binary is injected (E2E encrypted exec)
 	ExecKeyPath      string               `json:"exec_key_path,omitempty"`      // Host path to exec_key file (for cleanup)
+	DeployNonce      string               `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key re-derivation
 	ExposedPorts     []ExposedPort         `json:"exposed_ports,omitempty"`      // Ports exposed publicly via ingress
 	PublicURLs       []string              `json:"public_urls,omitempty"`        // Generated public URLs
 	MinProviderTier  types.ProviderTier    `json:"min_provider_tier,omitempty"`  // Minimum provider tier required

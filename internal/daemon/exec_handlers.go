@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/logging"
+	"github.com/moltbunker/moltbunker/internal/runtime"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -74,19 +75,33 @@ func (cm *ContainerManager) handleExecOpen(ctx context.Context, msg *types.Messa
 		rows = 24
 	}
 
-	// Open interactive PTY session
-	session, err := cm.containerd.ExecInteractive(ctx, payload.ContainerID, cols, rows)
+	// Detect exec-agent mode (E2E encrypted exec)
+	execAgentMode := deployment.ExecAgentEnabled
+
+	var session *runtime.InteractiveSession
+	var err error
+	if execAgentMode {
+		// Launch exec-agent binary in raw (non-PTY) mode — it manages its own PTY internally.
+		// All terminal I/O is encrypted end-to-end; the provider only sees ciphertext.
+		session, err = cm.containerd.ExecRaw(ctx, payload.ContainerID, []string{
+			"/usr/local/bin/exec-agent", "--stdio",
+		})
+	} else {
+		// Standard PTY session — plaintext terminal I/O
+		session, err = cm.containerd.ExecInteractive(ctx, payload.ContainerID, cols, rows)
+	}
 	if err != nil {
 		logging.Error("exec open failed",
 			"session_id", payload.SessionID,
 			logging.ContainerID(payload.ContainerID),
+			"exec_agent", execAgentMode,
 			logging.Err(err),
 			logging.Component("exec"))
 		return cm.sendExecClose(ctx, msg.From, payload.SessionID, fmt.Sprintf("exec_failed: %v", err))
 	}
 
-	// Create exec stream to bridge PTY ↔ P2P
-	stream := newExecStream(ctx, payload.SessionID, payload.ContainerID, msg.From, cm.node.nodeInfo.ID, session, cm.router)
+	// Create exec stream to bridge PTY/exec-agent ↔ P2P
+	stream := newExecStream(ctx, payload.SessionID, payload.ContainerID, msg.From, cm.node.nodeInfo.ID, session, cm.router, execAgentMode)
 
 	// Register with stream manager
 	if err := cm.execStreams.Add(stream); err != nil {
@@ -125,12 +140,18 @@ func (cm *ContainerManager) handleExecData(_ context.Context, msg *types.Message
 	// Provider side: session exists locally, write to container stdin
 	stream, ok := cm.execStreams.Get(payload.SessionID)
 	if ok {
+		if stream.FromNode() != msg.From {
+			return nil // silently drop: sender is not the session originator
+		}
 		return stream.WriteData(payload.Data)
 	}
 
 	// Requester side: relay container output to WebSocket
 	relay, ok := cm.getExecRelay(payload.SessionID)
 	if ok && relay.OnData != nil {
+		if relay.ProviderID != msg.From {
+			return nil // silently drop: sender is not the expected provider
+		}
 		relay.OnData(payload.Data)
 		return nil
 	}
@@ -149,6 +170,9 @@ func (cm *ContainerManager) handleExecResize(_ context.Context, msg *types.Messa
 	if !ok {
 		return nil
 	}
+	if stream.FromNode() != msg.From {
+		return nil // silently drop: sender is not the session originator
+	}
 
 	return stream.Resize(uint16(payload.Cols), uint16(payload.Rows))
 }
@@ -165,6 +189,9 @@ func (cm *ContainerManager) handleExecClose(_ context.Context, msg *types.Messag
 	// Provider side: close the PTY stream
 	stream, ok := cm.execStreams.Get(payload.SessionID)
 	if ok {
+		if stream.FromNode() != msg.From {
+			return nil // silently drop: sender is not the session originator
+		}
 		logging.Info("exec session closed by requester",
 			"session_id", payload.SessionID,
 			"reason", payload.Reason,
@@ -176,6 +203,9 @@ func (cm *ContainerManager) handleExecClose(_ context.Context, msg *types.Messag
 	// Requester side: provider reports session ended → notify WebSocket
 	relay, ok := cm.getExecRelay(payload.SessionID)
 	if ok && relay.OnClose != nil {
+		if relay.ProviderID != msg.From {
+			return nil // silently drop: sender is not the expected provider
+		}
 		logging.Info("exec session closed by provider",
 			"session_id", payload.SessionID,
 			"reason", payload.Reason,

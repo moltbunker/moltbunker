@@ -197,6 +197,9 @@ configs/
 
 docs/
 
+# Bruno API collection (local testing only)
+api/
+
 # ===================
 # ROOT-LEVEL BINARIES
 # ===================
@@ -213,3 +216,4 @@ docs/
 CLAUDE.md
 AGENTS.md
 .claude/
+.briefings/

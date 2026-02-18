@@ -533,6 +533,7 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 			secConfig.BindMounts = mounts
 			deployment.ExecAgentEnabled = true
 			deployment.ExecKeyPath = keyPath
+			deployment.DeployNonce = req.DeployNonce
 		}
 	}
 

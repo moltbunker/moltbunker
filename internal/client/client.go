@@ -164,7 +164,9 @@ type DeployRequest struct {
 	WaitForReplicas bool            `json:"wait_for_replicas,omitempty"` // If true, wait for at least 1 replica ack before returning
 	ReservationID   string          `json:"reservation_id,omitempty"`    // On-chain escrow reservation ID (user-created)
 	Owner           string          `json:"owner,omitempty"`             // Wallet address of the deployer
-	MinProviderTier string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
+	MinProviderTier  string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
+	EncryptedExecKey []byte          `json:"encrypted_exec_key,omitempty"` // Exec key for E2E encrypted exec (32 bytes)
+	DeployNonce      string          `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key derivation
 }
 
 // DeployResponse contains deployment result

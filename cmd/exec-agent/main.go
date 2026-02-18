@@ -17,6 +17,17 @@ import (
 	"syscall"
 )
 
+// stdioReadWriteCloser wraps os.Stdin and os.Stdout as an io.ReadWriteCloser.
+// Used in --stdio mode where the provider daemon pipes frames via container stdin/stdout.
+type stdioReadWriteCloser struct {
+	r io.Reader
+	w io.Writer
+}
+
+func (s *stdioReadWriteCloser) Read(p []byte) (int, error)  { return s.r.Read(p) }
+func (s *stdioReadWriteCloser) Write(p []byte) (int, error) { return s.w.Write(p) }
+func (s *stdioReadWriteCloser) Close() error                { return nil }
+
 const (
 	// defaultSecretPath is where the exec_key is mounted inside the container.
 	defaultSecretPath = "/run/secrets/exec_key"
@@ -44,19 +55,26 @@ func main() {
 	}
 	log.Printf("loaded exec_key (%d bytes) from %s", len(execKey), secretPath)
 
-	// Remove stale socket
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer cancel()
+
+	// --stdio mode: read/write frames via stdin/stdout (for ExecRaw integration)
+	if hasArg(os.Args[1:], "--stdio") {
+		log.Println("running in --stdio mode")
+		rw := &stdioReadWriteCloser{os.Stdin, os.Stdout}
+		handleSession(ctx, rw, execKey)
+		return
+	}
+
+	// Default: Unix socket mode
 	os.Remove(socketPath)
 
-	// Listen for connections from the provider daemon
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
 		log.Fatalf("listen on %s: %v", socketPath, err)
 	}
 	defer listener.Close()
 	log.Printf("listening on %s", socketPath)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer cancel()
 
 	var wg sync.WaitGroup
 
@@ -89,18 +107,28 @@ func main() {
 	log.Println("exit")
 }
 
-// handleSession manages a single exec session on the accepted Unix socket connection.
+func hasArg(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// handleSession manages a single exec session on the given read/write transport.
+// In socket mode, rw is a net.Conn; in --stdio mode, rw wraps stdin/stdout.
 // Protocol:
 //  1. Read KEY_INIT frame containing session_nonce
 //  2. Derive session_key = HKDF(exec_key, session_nonce)
 //  3. Send KEY_ACK frame
 //  4. Bridge encrypted frames <-> PTY
-func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
-	defer conn.Close()
+func handleSession(ctx context.Context, rw io.ReadWriteCloser, execKey []byte) {
+	defer rw.Close()
 	log.Println("new session connection")
 
 	// Step 1: Read KEY_INIT frame with session_nonce
-	initFrame, err := readFrame(conn)
+	initFrame, err := readFrame(rw)
 	if err != nil {
 		log.Printf("read KEY_INIT: %v", err)
 		return
@@ -111,8 +139,8 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 	}
 
 	sessionNonce := initFrame.Payload
-	if len(sessionNonce) == 0 {
-		log.Println("empty session_nonce in KEY_INIT")
+	if len(sessionNonce) < 16 {
+		log.Printf("session_nonce too short: %d bytes (minimum 16)", len(sessionNonce))
 		return
 	}
 	log.Printf("received KEY_INIT with %d-byte nonce", len(sessionNonce))
@@ -121,13 +149,13 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 	session, err := NewSession(execKey, sessionNonce)
 	if err != nil {
 		log.Printf("derive session key: %v", err)
-		sendError(conn, fmt.Sprintf("key derivation failed: %v", err))
+		sendError(rw, fmt.Sprintf("key derivation failed: %v", err))
 		return
 	}
 	log.Println("session key derived")
 
 	// Step 3: Send KEY_ACK
-	if err := writeFrame(conn, &Frame{Type: FrameKeyAck}); err != nil {
+	if err := writeFrame(rw, &Frame{Type: FrameKeyAck}); err != nil {
 		log.Printf("send KEY_ACK: %v", err)
 		return
 	}
@@ -138,7 +166,7 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 	pty, err := SpawnShell(cols, rows)
 	if err != nil {
 		log.Printf("spawn shell: %v", err)
-		sendError(conn, fmt.Sprintf("spawn shell failed: %v", err))
+		sendError(rw, fmt.Sprintf("spawn shell failed: %v", err))
 		return
 	}
 	defer pty.Close()
@@ -169,7 +197,7 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 					log.Printf("encrypt stdout: %v", encErr)
 					return
 				}
-				if wErr := writeFrame(conn, &Frame{Type: FrameData, Payload: encrypted}); wErr != nil {
+				if wErr := writeFrame(rw, &Frame{Type: FrameData, Payload: encrypted}); wErr != nil {
 					log.Printf("send DATA frame: %v", wErr)
 					return
 				}
@@ -183,7 +211,7 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 		}
 	}()
 
-	// Read frames from conn -> decrypt -> write to PTY stdin / handle control
+	// Read frames from rw -> decrypt -> write to PTY stdin / handle control
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -195,7 +223,7 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 			default:
 			}
 
-			frame, err := readFrame(conn)
+			frame, err := readFrame(rw)
 			if err != nil {
 				if err != io.EOF && !strings.Contains(err.Error(), "use of closed") {
 					log.Printf("read frame: %v", err)
@@ -224,7 +252,7 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 				}
 
 			case FramePing:
-				_ = writeFrame(conn, &Frame{Type: FramePong})
+				_ = writeFrame(rw, &Frame{Type: FramePong})
 
 			case FrameClose:
 				log.Println("received CLOSE frame")
@@ -245,7 +273,7 @@ func handleSession(ctx context.Context, conn net.Conn, execKey []byte) {
 	wg.Wait()
 
 	// Send CLOSE frame
-	_ = writeFrame(conn, &Frame{Type: FrameClose})
+	_ = writeFrame(rw, &Frame{Type: FrameClose})
 	log.Println("session ended")
 }
 
@@ -281,9 +309,9 @@ func parseResizePayload(payload []byte) (cols, rows uint16) {
 	return cols, rows
 }
 
-// sendError sends an ERROR frame to the connection.
-func sendError(conn net.Conn, msg string) {
-	_ = writeFrame(conn, &Frame{Type: FrameError, Payload: []byte(msg)})
+// sendError sends an ERROR frame to the writer.
+func sendError(w io.Writer, msg string) {
+	_ = writeFrame(w, &Frame{Type: FrameError, Payload: []byte(msg)})
 }
 
 func envOr(key, fallback string) string {
