@@ -229,3 +229,53 @@ type SubdomainUpdateRequest struct {
 	Name         string `json:"name"`
 	DeploymentID string `json:"deployment_id"`
 }
+
+// --- Molt (WASM serverless) API types ---
+
+// MoltDeployRequest is the API request to deploy a Molt serverless function.
+type MoltDeployRequest struct {
+	ModuleCID     string            `json:"module_cid"`                // IPFS CID of the .wasm binary
+	MemoryLimitMB uint32            `json:"memory_limit_mb,omitempty"` // Max WASM memory (default: 256MB)
+	TimeoutMs     int               `json:"timeout_ms,omitempty"`      // Max execution time (default: 30s)
+	MaxInstances  int               `json:"max_instances,omitempty"`   // Max concurrent instances (default: 100)
+	Environment   map[string]string `json:"environment,omitempty"`     // Env vars passed to WASM
+	Owner         string            `json:"owner,omitempty"`           // Deployer wallet address
+	WasmBytes     []byte            `json:"wasm_bytes,omitempty"`      // Inline WASM binary (if not using IPFS)
+}
+
+// MoltDeployResponse is the API response after deploying a Molt.
+type MoltDeployResponse struct {
+	DeploymentID string `json:"deployment_id"`
+	ModuleCID    string `json:"module_cid"`
+	Status       string `json:"status"`
+}
+
+// MoltInfo describes a deployed Molt for list/get responses.
+type MoltInfo struct {
+	ID           string                        `json:"id"`
+	ModuleCID    string                        `json:"module_cid"`
+	Status       string                        `json:"status"`
+	CreatedAt    time.Time                     `json:"created_at"`
+	Owner        string                        `json:"owner,omitempty"`
+	MemoryLimitMB uint32                       `json:"memory_limit_mb,omitempty"`
+	TimeoutMs    int                           `json:"timeout_ms,omitempty"`
+	Metrics      *types.MoltDeploymentMetrics  `json:"metrics,omitempty"`
+}
+
+// MoltInvokeRequest is the API request to invoke a Molt directly.
+type MoltInvokeRequest struct {
+	DeploymentID string            `json:"deployment_id"`
+	Method       string            `json:"method"`                // HTTP method (default: GET)
+	Path         string            `json:"path"`                  // HTTP path (default: /)
+	Headers      map[string]string `json:"headers,omitempty"`
+	Body         []byte            `json:"body,omitempty"`        // Request body
+}
+
+// MoltInvokeResponse is the API response from a Molt invocation.
+type MoltInvokeResponse struct {
+	StatusCode int               `json:"status_code"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       []byte            `json:"body,omitempty"`
+	DurationMs int64             `json:"duration_ms"`
+	Error      string            `json:"error,omitempty"`
+}

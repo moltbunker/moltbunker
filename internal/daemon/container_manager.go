@@ -17,6 +17,7 @@ import (
 
 	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
+	"github.com/moltbunker/moltbunker/internal/molt"
 	"github.com/moltbunker/moltbunker/internal/networking"
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
@@ -64,6 +65,9 @@ type ContainerManager struct {
 	imageGC          *runtime.ImageGC    // image garbage collector (nil if no containerd)
 	cleanupMgr       *runtime.CleanupManager // P1-1: orphan container cleanup
 	healthChecker    *runtime.HealthChecker  // P1-2: container-level health probes
+
+	// Molt (WASM serverless) manager
+	moltManager *MoltManager
 
 	// P1-10: Container lifecycle event counters (atomic, lock-free)
 	deploysTotal  atomic.Int64
@@ -147,6 +151,15 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		containerdSocket:   config.ContainerdSocket,
 		runtimeName:        rtCaps.RuntimeName,
 		kataConfig:         config.KataConfig,
+	}
+
+	// Initialize Molt (WASM serverless) runtime — pure Go, always available
+	moltRuntime, moltErr := molt.NewMoltRuntime(ctx, molt.DefaultMoltConfig())
+	if moltErr != nil {
+		logging.Warn("molt runtime not available", logging.Err(moltErr))
+	} else {
+		cm.moltManager = NewMoltManager(moltRuntime)
+		logging.Info("molt runtime initialized")
 	}
 
 	// Set up health probe function if containerd is available
@@ -1353,6 +1366,13 @@ func (cm *ContainerManager) Close() error {
 		cm.imageGC.Stop()
 	}
 
+	// Close Molt (WASM) manager and runtime
+	if cm.moltManager != nil {
+		if err := cm.moltManager.Close(context.Background()); err != nil {
+			logging.Error("failed to close molt manager", logging.Err(err))
+		}
+	}
+
 	// Close containerd client (does NOT stop containers)
 	if cm.containerd != nil {
 		cm.containerd.Close()
@@ -1536,6 +1556,12 @@ func (cm *ContainerManager) NetworkManager() *networking.NetworkManager {
 	return cm.networkManager
 }
 
+// MoltManager returns the Molt (WASM serverless) manager.
+// Returns nil if the Molt runtime failed to initialize.
+func (cm *ContainerManager) MoltManager() *MoltManager {
+	return cm.moltManager
+}
+
 // convertExposedPorts converts daemon ExposedPort to networking ExposedPort.
 func convertExposedPorts(ports []ExposedPort) []networking.ExposedPort {
 	result := make([]networking.ExposedPort, len(ports))
@@ -1570,6 +1596,7 @@ func (cm *ContainerManager) publishServiceExposure(deploymentID string, containe
 		ProviderAddr:   nodeAddr,
 		ContainerPort:  containerPort,
 		HostPort:       hostPort,
+		RuntimeType:    "container",
 	}
 
 	// Validate deploymentID has no colons to prevent gossip key injection
@@ -1609,4 +1636,30 @@ func (cm *ContainerManager) removeServiceExposure(containerID string) {
 		key := fmt.Sprintf("expose:%s:%d", containerID, p.ContainerPort)
 		cm.gossip.UpdateState(key, nil) // nil = removed
 	}
+}
+
+// publishMoltServiceExposure writes a Molt deployment's service entry to gossip.
+// Molt deployments expose port 80 (HTTP handler) and are marked with RuntimeType "molt".
+func (cm *ContainerManager) publishMoltServiceExposure(deploymentID string) {
+	if cm.gossip == nil || cm.node == nil || cm.node.nodeInfo == nil {
+		return
+	}
+
+	nodeAddr := fmt.Sprintf("%s:%d", cm.node.nodeInfo.Address, cm.node.nodeInfo.Port+2)
+
+	entry := &ingress.ServiceEntry{
+		DeploymentID:   deploymentID,
+		ProviderNodeID: cm.node.nodeInfo.ID.String(),
+		ProviderAddr:   nodeAddr,
+		ContainerPort:  80,
+		HostPort:       0, // Molt uses HTTP handler, not host port mapping
+		RuntimeType:    "molt",
+	}
+
+	key := fmt.Sprintf("expose:%s:%d", deploymentID, 80)
+	cm.gossip.UpdateState(key, entry)
+
+	logging.Info("published molt service exposure to gossip",
+		"deployment_id", deploymentID,
+		"key", key)
 }

@@ -223,6 +223,19 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 		response = s.handleSubdomainTransfer(ctx, req)
 	case "subdomain_update":
 		response = s.handleSubdomainUpdate(ctx, req)
+	// Molt (WASM serverless) handlers
+	case "molt_deploy":
+		response = s.handleMoltDeploy(ctx, req)
+	case "molt_list":
+		response = s.handleMoltList(ctx, req)
+	case "molt_get":
+		response = s.handleMoltGet(ctx, req)
+	case "molt_stop":
+		response = s.handleMoltStop(ctx, req)
+	case "molt_delete":
+		response = s.handleMoltDelete(ctx, req)
+	case "molt_invoke":
+		response = s.handleMoltInvoke(ctx, req)
 	// Exec helpers
 	case "container_detail":
 		response = s.handleContainerDetail(ctx, req)
