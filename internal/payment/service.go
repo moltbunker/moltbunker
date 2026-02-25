@@ -34,6 +34,9 @@ type PaymentService struct {
 	// Pricing calculator
 	pricingCalculator *PricingCalculator
 
+	// Molt credits (in-memory prepaid balances for serverless invocations)
+	moltCredits *MoltCreditManager
+
 	// Service state
 	started bool
 	mu      sync.RWMutex
@@ -166,6 +169,7 @@ func NewPaymentService(config *PaymentServiceConfig) (*PaymentService, error) {
 		basePricePerHour = parseWei("1") // 1 BUNKER per hour default
 	}
 	ps.pricingCalculator = NewPricingCalculator(basePricePerHour)
+	ps.moltCredits = NewMoltCreditManager()
 
 	return ps, nil
 }
@@ -188,6 +192,7 @@ func (ps *PaymentService) setupMockMode() (*PaymentService, error) {
 		basePricePerHour = parseWei("1")
 	}
 	ps.pricingCalculator = NewPricingCalculator(basePricePerHour)
+	ps.moltCredits = NewMoltCreditManager()
 
 	return ps, nil
 }
@@ -424,6 +429,36 @@ func (ps *PaymentService) CalculateJobPrice(resources pkgtypes.ResourceLimits, d
 // CalculateProviderBid calculates a bid price for a provider
 func (ps *PaymentService) CalculateProviderBid(resources pkgtypes.ResourceLimits, duration time.Duration, stake *big.Int) *big.Int {
 	return ps.pricingCalculator.CalculateBid(resources, duration, stake)
+}
+
+// ===== Molt Pricing & Credits =====
+
+// CalculateMoltCost calculates the cost of a single Molt invocation based on
+// actual execution duration and memory used. Uses the minimum billing floor
+// from PricingConfig (default 100ms).
+func (ps *PaymentService) CalculateMoltCost(duration time.Duration, memoryUsedBytes int64) *big.Int {
+	pricingCfg := pkgtypes.DefaultPricingConfig()
+	return ps.pricingCalculator.CalculateMoltInvocationPrice(duration, memoryUsedBytes, pricingCfg)
+}
+
+// DepositMoltCredits adds prepaid credits for a requester's Molt invocations.
+func (ps *PaymentService) DepositMoltCredits(requesterAddress string, amount *big.Int) {
+	ps.moltCredits.Deposit(requesterAddress, amount)
+}
+
+// DeductMoltCredit subtracts an invocation cost from the requester's credit balance.
+func (ps *PaymentService) DeductMoltCredit(requesterAddress string, cost *big.Int) error {
+	return ps.moltCredits.Deduct(requesterAddress, cost)
+}
+
+// GetMoltCreditBalance returns the current prepaid credit balance.
+func (ps *PaymentService) GetMoltCreditBalance(requesterAddress string) *big.Int {
+	return ps.moltCredits.GetBalance(requesterAddress)
+}
+
+// RefundMoltCredits refunds all remaining credits and returns the amount.
+func (ps *PaymentService) RefundMoltCredits(requesterAddress string) *big.Int {
+	return ps.moltCredits.RefundAll(requesterAddress)
 }
 
 // ===== Delegation Operations =====
