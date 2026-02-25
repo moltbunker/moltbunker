@@ -98,6 +98,9 @@ contract BunkerRegistry is Ownable2Step, ReentrancyGuard, Pausable {
     /// @notice Whether 3-character names can be registered (default: false, admin-gated).
     bool public shortNamesEnabled;
 
+    /// @notice Reserved name hashes that cannot be registered by users.
+    mapping(bytes32 => bool) public reservedNames;
+
     /// @notice Staking tier discount BPS: None=0, Starter=0, Bronze=500, Silver=1000, Gold=1500, Platinum=2000.
     uint256[6] internal _tierDiscountBps = [0, 0, 500, 1000, 1500, 2000];
 
@@ -221,6 +224,7 @@ contract BunkerRegistry is Ownable2Step, ReentrancyGuard, Pausable {
     event ReferralDiscountUpdated(uint256 oldBps, uint256 newBps);
     event ReferralRewardUpdated(uint256 oldBps, uint256 newBps);
     event ShortNamesEnabledUpdated(bool enabled);
+    event ReservedNameUpdated(string name, bool reserved);
 
     // ─── Errors ─────────────────────────────────────────────────────────
 
@@ -395,6 +399,7 @@ contract BunkerRegistry is Ownable2Step, ReentrancyGuard, Pausable {
     {
         _validateName(name);
         if (bytes(name).length <= 3 && !shortNamesEnabled) revert ShortNamesDisabled();
+        if (reservedNames[keccak256(abi.encodePacked(name))]) revert NameReserved(name);
         if (_ownedNames[msg.sender].length >= MAX_NAMES_PER_OWNER) {
             revert TooManyNames(msg.sender, MAX_NAMES_PER_OWNER);
         }
@@ -817,6 +822,25 @@ contract BunkerRegistry is Ownable2Step, ReentrancyGuard, Pausable {
         emit ShortNamesEnabledUpdated(enabled);
     }
 
+    /// @notice Mark a name as reserved or unreserved. Owner-only.
+    /// @param name The subdomain name to reserve/unreserve.
+    /// @param reserved Whether the name should be reserved.
+    function setReservedName(string calldata name, bool reserved) external onlyOwner {
+        bytes32 nameHash = keccak256(abi.encodePacked(name));
+        reservedNames[nameHash] = reserved;
+        emit ReservedNameUpdated(name, reserved);
+    }
+
+    /// @notice Batch-reserve multiple names. Owner-only.
+    /// @param names Array of subdomain names to reserve.
+    function batchReserveNames(string[] calldata names) external onlyOwner {
+        for (uint256 i = 0; i < names.length; i++) {
+            bytes32 nameHash = keccak256(abi.encodePacked(names[i]));
+            reservedNames[nameHash] = true;
+            emit ReservedNameUpdated(names[i], true);
+        }
+    }
+
     /// @notice Pause the contract. Owner-only.
     function pause() external onlyOwner {
         _pause();
@@ -837,6 +861,7 @@ contract BunkerRegistry is Ownable2Step, ReentrancyGuard, Pausable {
     ) internal {
         _validateName(name);
         if (bytes(name).length <= 3 && !shortNamesEnabled) revert ShortNamesDisabled();
+        if (reservedNames[keccak256(abi.encodePacked(name))]) revert NameReserved(name);
         if (deploymentID == bytes32(0)) revert InvalidDeploymentID();
         if (_ownedNames[msg.sender].length >= MAX_NAMES_PER_OWNER) {
             revert TooManyNames(msg.sender, MAX_NAMES_PER_OWNER);

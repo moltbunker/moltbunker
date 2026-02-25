@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
@@ -98,15 +99,8 @@ func (rc *RegistryContract) Register(ctx context.Context, name string, deploymen
 		return nil, nil
 	}
 
-	// Approve the registry contract to pull the registration fee
-	if rc.tokenContract != nil {
-		fee, err := rc.GetRegistrationFee(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get registration fee: %w", err)
-		}
-		if _, err := rc.tokenContract.Approve(ctx, rc.contractAddr, fee); err != nil {
-			return nil, fmt.Errorf("failed to approve token spend for registration: %w", err)
-		}
+	if err := rc.approveNameFee(ctx, name); err != nil {
+		return nil, err
 	}
 
 	opts, err := rc.baseClient.GetTransactOpts(ctx)
@@ -145,6 +139,10 @@ func (rc *RegistryContract) RegisterWithReferral(ctx context.Context, name strin
 			Referrer:     referrer,
 		}
 		return nil, nil
+	}
+
+	if err := rc.approveNameFee(ctx, name); err != nil {
+		return nil, err
 	}
 
 	opts, err := rc.baseClient.GetTransactOpts(ctx)
@@ -207,6 +205,10 @@ func (rc *RegistryContract) UpdateDeployment(ctx context.Context, name string, n
 		return nil, nil
 	}
 
+	if err := rc.approveChangeFee(ctx); err != nil {
+		return nil, err
+	}
+
 	opts, err := rc.baseClient.GetTransactOpts(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create transact opts: %w", err)
@@ -223,6 +225,10 @@ func (rc *RegistryContract) Renew(ctx context.Context, name string) (*types.Tran
 			rec.ExpiresAt = rec.ExpiresAt.Add(365 * 24 * time.Hour)
 		}
 		return nil, nil
+	}
+
+	if err := rc.approveNameFee(ctx, name); err != nil {
+		return nil, err
 	}
 
 	opts, err := rc.baseClient.GetTransactOpts(ctx)
@@ -251,6 +257,10 @@ func (rc *RegistryContract) Reserve(ctx context.Context, name string) (*types.Tr
 			ReservedUntil: time.Now().Add(48 * time.Hour),
 		}
 		return nil, nil
+	}
+
+	if err := rc.approveNameFee(ctx, name); err != nil {
+		return nil, err
 	}
 
 	opts, err := rc.baseClient.GetTransactOpts(ctx)
@@ -305,6 +315,10 @@ func (rc *RegistryContract) SetMetadata(ctx context.Context, name string, descri
 			rec.AvatarURL = avatarURL
 		}
 		return nil, nil
+	}
+
+	if err := rc.approveChangeFee(ctx); err != nil {
+		return nil, err
 	}
 
 	opts, err := rc.baseClient.GetTransactOpts(ctx)
@@ -552,10 +566,7 @@ func (rc *RegistryContract) GetMetadata(ctx context.Context, name string) (*Subd
 	}
 
 	callOpts := &bind.CallOpts{Context: ctx}
-	nameHash := common.BytesToHash([]byte(name)) // will be hashed on-chain
-	// For the public mapping accessor, we need to pass the nameHash
-	// Actually, metadata is accessed via nameHash, need to compute keccak256
-	// The ABI expects bytes32, so we compute the hash client-side
+	nameHash := crypto.Keccak256Hash([]byte(name))
 	var result []interface{}
 	err := rc.contract.Call(callOpts, &result, "metadata", nameHash)
 	if err != nil {
@@ -568,6 +579,42 @@ func (rc *RegistryContract) GetMetadata(ctx context.Context, name string) (*Subd
 		Description: result[0].(string),
 		AvatarURL:   result[1].(string),
 	}, nil
+}
+
+// approveNameFee calculates the actual price (with premiums + staking discounts) and approves the registry contract.
+func (rc *RegistryContract) approveNameFee(ctx context.Context, name string) error {
+	if rc.tokenContract == nil {
+		return nil
+	}
+	fee, err := rc.CalculatePrice(ctx, name, rc.baseClient.Address())
+	if err != nil {
+		return fmt.Errorf("failed to calculate price for %q: %w", name, err)
+	}
+	if fee.Sign() == 0 {
+		return nil
+	}
+	if _, err := rc.tokenContract.Approve(ctx, rc.contractAddr, fee); err != nil {
+		return fmt.Errorf("failed to approve token spend: %w", err)
+	}
+	return nil
+}
+
+// approveChangeFee reads the on-chain changeFee and approves the registry contract.
+func (rc *RegistryContract) approveChangeFee(ctx context.Context) error {
+	if rc.tokenContract == nil {
+		return nil
+	}
+	fee, err := rc.GetChangeFee(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get change fee: %w", err)
+	}
+	if fee.Sign() == 0 {
+		return nil
+	}
+	if _, err := rc.tokenContract.Approve(ctx, rc.contractAddr, fee); err != nil {
+		return fmt.Errorf("failed to approve token spend: %w", err)
+	}
+	return nil
 }
 
 // ListOwnedNames returns all subdomain registrations owned by an address.

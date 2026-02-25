@@ -2109,6 +2109,30 @@ const BunkerRegistryABI = `[
 		],
 		"stateMutability": "view",
 		"type": "function"
+	},
+	{
+		"inputs": [{"name": "", "type": "bytes32"}],
+		"name": "reservedNames",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "reserved", "type": "bool"}
+		],
+		"name": "setReservedName",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "names", "type": "string[]"}],
+		"name": "batchReserveNames",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
 	}
 ]`
 

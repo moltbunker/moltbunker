@@ -1789,4 +1789,117 @@ contract BunkerRegistryTest is Test {
         string memory name = registry.reverseResolve(depID);
         assertEq(name, "my-app");
     }
+
+    // =====================================================================
+    //  Reserved Names Tests
+    // =====================================================================
+
+    function test_ReservedName_SetByOwner() public {
+        vm.prank(owner);
+        registry.setReservedName("admin", true);
+        assertTrue(registry.reservedNames(keccak256(abi.encodePacked("admin"))));
+    }
+
+    function test_ReservedName_SetByNonOwner_Reverts() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        registry.setReservedName("admin", true);
+    }
+
+    function test_ReservedName_BlocksRegister() public {
+        vm.prank(owner);
+        registry.setReservedName("admin", true);
+
+        bytes32 depID = bytes32(uint256(1));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(BunkerRegistry.NameReserved.selector, "admin"));
+        registry.register("admin", depID);
+    }
+
+    function test_ReservedName_BlocksRegisterWithReferral() public {
+        vm.prank(owner);
+        registry.setReservedName("admin", true);
+
+        bytes32 depID = bytes32(uint256(1));
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(BunkerRegistry.NameReserved.selector, "admin"));
+        registry.registerWithReferral("admin", depID, bob);
+    }
+
+    function test_ReservedName_BlocksReserve() public {
+        vm.prank(owner);
+        registry.setReservedName("dashboard", true);
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(BunkerRegistry.NameReserved.selector, "dashboard"));
+        registry.reserve("dashboard");
+    }
+
+    function test_ReservedName_BlocksBulkRegister() public {
+        vm.prank(owner);
+        registry.setReservedName("status", true);
+
+        string[] memory names = new string[](2);
+        names[0] = "good-name";
+        names[1] = "status";
+        bytes32[] memory depIDs = new bytes32[](2);
+        depIDs[0] = bytes32(uint256(1));
+        depIDs[1] = bytes32(uint256(2));
+
+        vm.prank(alice);
+        vm.expectRevert(abi.encodeWithSelector(BunkerRegistry.NameReserved.selector, "status"));
+        registry.bulkRegister(names, depIDs);
+    }
+
+    function test_ReservedName_CanBeUnreserved() public {
+        vm.startPrank(owner);
+        registry.setReservedName("admin", true);
+        assertTrue(registry.reservedNames(keccak256(abi.encodePacked("admin"))));
+
+        registry.setReservedName("admin", false);
+        assertFalse(registry.reservedNames(keccak256(abi.encodePacked("admin"))));
+        vm.stopPrank();
+
+        // Now alice can register it
+        bytes32 depID = bytes32(uint256(1));
+        vm.prank(alice);
+        registry.register("admin", depID);
+        (address regOwner,,) = registry.resolve("admin");
+        assertEq(regOwner, alice);
+    }
+
+    function test_ReservedName_BatchReserve() public {
+        string[] memory names = new string[](3);
+        names[0] = "admin";
+        names[1] = "dashboard";
+        names[2] = "status";
+
+        vm.prank(owner);
+        registry.batchReserveNames(names);
+
+        assertTrue(registry.reservedNames(keccak256(abi.encodePacked("admin"))));
+        assertTrue(registry.reservedNames(keccak256(abi.encodePacked("dashboard"))));
+        assertTrue(registry.reservedNames(keccak256(abi.encodePacked("status"))));
+    }
+
+    function test_ReservedName_BatchReserve_NonOwner_Reverts() public {
+        string[] memory names = new string[](1);
+        names[0] = "admin";
+
+        vm.prank(alice);
+        vm.expectRevert();
+        registry.batchReserveNames(names);
+    }
+
+    function test_ReservedName_NonReservedStillWorks() public {
+        // Reserve "admin" but "my-admin-panel" should still work
+        vm.prank(owner);
+        registry.setReservedName("admin", true);
+
+        bytes32 depID = bytes32(uint256(1));
+        vm.prank(alice);
+        registry.register("my-admin-panel", depID);
+        (address regOwner,,) = registry.resolve("my-admin-panel");
+        assertEq(regOwner, alice);
+    }
 }
