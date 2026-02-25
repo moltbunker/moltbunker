@@ -50,6 +50,7 @@ func main() {
 
 	// Containers
 	addCmd(commands.NewDeployCmd(), groupContainers)
+	addCmd(commands.NewMoltCmd(), groupContainers)
 	addCmd(commands.NewPsCmd(), groupContainers)
 	addCmd(commands.NewLogsCmd(), groupContainers)
 	addCmd(commands.NewExecCmd(), groupContainers)

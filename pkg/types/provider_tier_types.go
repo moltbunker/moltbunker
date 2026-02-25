@@ -54,4 +54,8 @@ type RuntimeCapabilities struct {
 
 	// VMIsolation indicates whether containers run in dedicated VMs (Kata).
 	VMIsolation bool `json:"vm_isolation"`
+
+	// MoltAvailable indicates whether the Molt (WASM serverless) runtime is available.
+	// wazero is pure Go — this is true on all platforms.
+	MoltAvailable bool `json:"molt_available"`
 }

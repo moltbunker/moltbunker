@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moltbunker/moltbunker/internal/molt"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/runtime"
 	"github.com/moltbunker/moltbunker/pkg/types"
@@ -98,4 +99,6 @@ type ContainerManagerConfig struct {
 	TorDataDir       string
 	EnableEncryption bool
 	PaymentService   *payment.PaymentService
+	MoltEnabled      bool             // Enable Molt WASM runtime
+	MoltConfig       *molt.MoltConfig // Molt runtime settings (nil = use defaults)
 }

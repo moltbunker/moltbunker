@@ -40,22 +40,24 @@ func DetectRuntime(preference string) types.RuntimeCapabilities {
 		tier := classifyTier(preference, isSEVSNPActive())
 		kataAvail := IsKataAvailable()
 		return types.RuntimeCapabilities{
-			RuntimeName:  preference,
-			ProviderTier: tier,
+			RuntimeName:   preference,
+			ProviderTier:  tier,
 			KataAvailable: kataAvail,
-			SEVSNPActive: isSEVSNPActive(),
-			VMIsolation:  isKataRuntime(preference),
+			SEVSNPActive:  isSEVSNPActive(),
+			VMIsolation:   isKataRuntime(preference),
+			MoltAvailable: true, // wazero is pure Go — always available
 		}
 	}
 
 	// Auto-detect
 	if goruntime.GOOS != "linux" {
 		return types.RuntimeCapabilities{
-			RuntimeName:  RuntimeRuncV2,
-			ProviderTier: types.ProviderTierDev,
+			RuntimeName:   RuntimeRuncV2,
+			ProviderTier:  types.ProviderTierDev,
 			KataAvailable: false,
-			SEVSNPActive: false,
-			VMIsolation:  false,
+			SEVSNPActive:  false,
+			VMIsolation:   false,
+			MoltAvailable: true,
 		}
 	}
 
@@ -64,30 +66,33 @@ func DetectRuntime(preference string) types.RuntimeCapabilities {
 
 	if kataAvail && sevActive {
 		return types.RuntimeCapabilities{
-			RuntimeName:  RuntimeKataQemuSNP,
-			ProviderTier: types.ProviderTierConfidential,
+			RuntimeName:   RuntimeKataQemuSNP,
+			ProviderTier:  types.ProviderTierConfidential,
 			KataAvailable: true,
-			SEVSNPActive: true,
-			VMIsolation:  true,
+			SEVSNPActive:  true,
+			VMIsolation:   true,
+			MoltAvailable: true,
 		}
 	}
 
 	if kataAvail {
 		return types.RuntimeCapabilities{
-			RuntimeName:  RuntimeKataV2,
-			ProviderTier: types.ProviderTierStandard,
+			RuntimeName:   RuntimeKataV2,
+			ProviderTier:  types.ProviderTierStandard,
 			KataAvailable: true,
-			SEVSNPActive: false,
-			VMIsolation:  true,
+			SEVSNPActive:  false,
+			VMIsolation:   true,
+			MoltAvailable: true,
 		}
 	}
 
 	return types.RuntimeCapabilities{
-		RuntimeName:  RuntimeRuncV2,
-		ProviderTier: types.ProviderTierStandard,
+		RuntimeName:   RuntimeRuncV2,
+		ProviderTier:  types.ProviderTierStandard,
 		KataAvailable: false,
-		SEVSNPActive: false,
-		VMIsolation:  false,
+		SEVSNPActive:  false,
+		VMIsolation:   false,
+		MoltAvailable: true,
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/config"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
+	"github.com/moltbunker/moltbunker/internal/molt"
 	"github.com/moltbunker/moltbunker/internal/runtime"
 	"github.com/moltbunker/moltbunker/internal/util"
 )
@@ -219,6 +220,19 @@ func (s *APIServer) Start(ctx context.Context) error {
 			}
 		}
 	}
+	// Map config.Runtime.Molt → molt.MoltConfig for WASM runtime
+	var moltEnabled bool
+	var moltCfg *molt.MoltConfig
+	if s.config != nil && s.config.Runtime.Molt.Enabled {
+		moltEnabled = true
+		moltCfg = &molt.MoltConfig{
+			MemoryLimitMB:   s.config.Runtime.Molt.MemoryLimitMB,
+			TimeoutMs:       s.config.Runtime.Molt.TimeoutMs,
+			MaxInstances:    s.config.Runtime.Molt.MaxInstances,
+			CacheDir:        s.config.Runtime.Molt.CacheDir,
+			MaxCacheEntries: s.config.Runtime.Molt.MaxCacheEntries,
+		}
+	}
 	cmConfig := ContainerManagerConfig{
 		DataDir:          s.dataDir,
 		ContainerdSocket: containerdSocket,
@@ -227,6 +241,8 @@ func (s *APIServer) Start(ctx context.Context) error {
 		TorDataDir:       filepath.Join(s.dataDir, "tor"),
 		EnableEncryption: true,
 		PaymentService:   s.node.PaymentService(),
+		MoltEnabled:      moltEnabled,
+		MoltConfig:       moltCfg,
 	}
 	containerManager, err := NewContainerManager(ctx, cmConfig, s.node)
 	if err != nil {

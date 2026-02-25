@@ -153,13 +153,23 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		kataConfig:         config.KataConfig,
 	}
 
-	// Initialize Molt (WASM serverless) runtime — pure Go, always available
-	moltRuntime, moltErr := molt.NewMoltRuntime(ctx, molt.DefaultMoltConfig())
-	if moltErr != nil {
-		logging.Warn("molt runtime not available", logging.Err(moltErr))
-	} else {
-		cm.moltManager = NewMoltManager(moltRuntime)
-		logging.Info("molt runtime initialized")
+	// Initialize Molt (WASM serverless) runtime if enabled
+	if config.MoltEnabled {
+		moltCfg := molt.DefaultMoltConfig()
+		if config.MoltConfig != nil {
+			moltCfg = *config.MoltConfig
+		}
+		moltRuntime, moltErr := molt.NewMoltRuntime(ctx, moltCfg)
+		if moltErr != nil {
+			logging.Warn("molt runtime not available", logging.Err(moltErr))
+		} else {
+			cm.moltManager = NewMoltManager(moltRuntime)
+			logging.Info("molt runtime initialized",
+				"memory_limit_mb", moltCfg.MemoryLimitMB,
+				"timeout_ms", moltCfg.TimeoutMs,
+				"max_instances", moltCfg.MaxInstances,
+			)
+		}
 	}
 
 	// Set up health probe function if containerd is available

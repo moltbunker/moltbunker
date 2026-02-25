@@ -278,10 +278,34 @@ type RuntimeConfig struct {
 	Namespace        string                `yaml:"namespace"`
 	RuntimeName      string                `yaml:"runtime_name"`    // "auto", "io.containerd.runc.v2", "io.containerd.kata.v2", etc.
 	Kata             KataConfig            `yaml:"kata"`
+	Molt             MoltRuntimeConfig     `yaml:"molt"`
 	DefaultResources types.ResourceLimits  `yaml:"default_resources"`
 	MaxResources     types.ResourceLimits  `yaml:"max_resources"`  // Maximum allocatable
 	LogsDir          string                `yaml:"logs_dir"`
 	VolumesDir       string                `yaml:"volumes_dir"`
+}
+
+// MoltRuntimeConfig contains Molt (WASM serverless) runtime settings.
+type MoltRuntimeConfig struct {
+	// Enabled controls whether the Molt WASM runtime is initialized at startup.
+	// When false, all Molt API calls return "molt runtime not available".
+	Enabled bool `yaml:"enabled"`
+
+	// MemoryLimitMB is the max linear memory each WASM instance can use (default: 256).
+	MemoryLimitMB uint32 `yaml:"memory_limit_mb"`
+
+	// TimeoutMs is the max execution time per invocation in milliseconds (default: 30000).
+	TimeoutMs int `yaml:"timeout_ms"`
+
+	// MaxInstances is the max concurrent WASM instances across all deployments (default: 100).
+	MaxInstances int `yaml:"max_instances"`
+
+	// CacheDir is the directory for wazero's on-disk compilation cache.
+	// Empty string defaults to ~/.moltbunker/molt-cache/.
+	CacheDir string `yaml:"cache_dir"`
+
+	// MaxCacheEntries is the max number of compiled modules kept in the in-memory LRU cache (default: 256).
+	MaxCacheEntries int `yaml:"max_cache_entries"`
 }
 
 // KataConfig contains Kata Containers-specific settings
@@ -493,6 +517,14 @@ func DefaultConfig() *Config {
 			Kata: KataConfig{
 				VMMemoryMB: 256,
 				VMCPUs:     1,
+			},
+			Molt: MoltRuntimeConfig{
+				Enabled:         false, // Opt-in: provider must explicitly enable
+				MemoryLimitMB:   256,
+				TimeoutMs:       30000,
+				MaxInstances:    100,
+				CacheDir:        "", // resolved at runtime to ~/.moltbunker/molt-cache/
+				MaxCacheEntries: 256,
 			},
 			DefaultResources: types.ResourceLimits{
 				CPUQuota:    100000,
@@ -718,6 +750,7 @@ func (c *Config) expandPaths() {
 	c.Tor.DataDir = expandPath(c.Tor.DataDir)
 	c.Runtime.LogsDir = expandPath(c.Runtime.LogsDir)
 	c.Runtime.VolumesDir = expandPath(c.Runtime.VolumesDir)
+	c.Runtime.Molt.CacheDir = expandPath(c.Runtime.Molt.CacheDir)
 	c.Encryption.KeyStorePath = expandPath(c.Encryption.KeyStorePath)
 	c.Node.WalletKeyFile = expandPath(c.Node.WalletKeyFile)
 	c.Node.WalletPasswordFile = expandPath(c.Node.WalletPasswordFile)
