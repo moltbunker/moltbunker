@@ -118,6 +118,157 @@ func TestEscrowManager_ReleasePayment_NotExists(t *testing.T) {
 	}
 }
 
+// --- Molt Credit Manager Tests ---
+
+func TestMoltCreditManager_Deposit(t *testing.T) {
+	m := NewMoltCreditManager()
+
+	m.Deposit("0xabc", big.NewInt(1000))
+
+	bal := m.GetBalance("0xabc")
+	if bal.Cmp(big.NewInt(1000)) != 0 {
+		t.Fatalf("balance = %s, want 1000", bal)
+	}
+}
+
+func TestMoltCreditManager_DepositAdditive(t *testing.T) {
+	m := NewMoltCreditManager()
+
+	m.Deposit("0xabc", big.NewInt(500))
+	m.Deposit("0xabc", big.NewInt(300))
+
+	bal := m.GetBalance("0xabc")
+	if bal.Cmp(big.NewInt(800)) != 0 {
+		t.Fatalf("balance = %s, want 800", bal)
+	}
+}
+
+func TestMoltCreditManager_Deduct(t *testing.T) {
+	m := NewMoltCreditManager()
+	m.Deposit("0xabc", big.NewInt(1000))
+
+	err := m.Deduct("0xabc", big.NewInt(400))
+	if err != nil {
+		t.Fatalf("Deduct: %v", err)
+	}
+
+	bal := m.GetBalance("0xabc")
+	if bal.Cmp(big.NewInt(600)) != 0 {
+		t.Fatalf("balance = %s, want 600", bal)
+	}
+}
+
+func TestMoltCreditManager_DeductInsufficientFunds(t *testing.T) {
+	m := NewMoltCreditManager()
+	m.Deposit("0xabc", big.NewInt(100))
+
+	err := m.Deduct("0xabc", big.NewInt(200))
+	if err == nil {
+		t.Fatal("expected error for insufficient funds")
+	}
+
+	// Balance should be unchanged
+	bal := m.GetBalance("0xabc")
+	if bal.Cmp(big.NewInt(100)) != 0 {
+		t.Fatalf("balance should be unchanged: got %s, want 100", bal)
+	}
+}
+
+func TestMoltCreditManager_DeductUnknownRequester(t *testing.T) {
+	m := NewMoltCreditManager()
+
+	err := m.Deduct("0xunknown", big.NewInt(1))
+	if err == nil {
+		t.Fatal("expected error for unknown requester")
+	}
+}
+
+func TestMoltCreditManager_GetBalanceUnknown(t *testing.T) {
+	m := NewMoltCreditManager()
+
+	bal := m.GetBalance("0xunknown")
+	if bal.Sign() != 0 {
+		t.Fatalf("balance should be 0 for unknown, got %s", bal)
+	}
+}
+
+func TestMoltCreditManager_RefundAll(t *testing.T) {
+	m := NewMoltCreditManager()
+	m.Deposit("0xabc", big.NewInt(1000))
+	m.Deduct("0xabc", big.NewInt(300))
+
+	refund := m.RefundAll("0xabc")
+	if refund.Cmp(big.NewInt(700)) != 0 {
+		t.Fatalf("refund = %s, want 700", refund)
+	}
+
+	// After refund, balance should be 0 and requester removed
+	bal := m.GetBalance("0xabc")
+	if bal.Sign() != 0 {
+		t.Fatalf("balance after refund should be 0, got %s", bal)
+	}
+}
+
+func TestMoltCreditManager_RefundUnknown(t *testing.T) {
+	m := NewMoltCreditManager()
+
+	refund := m.RefundAll("0xunknown")
+	if refund.Sign() != 0 {
+		t.Fatalf("refund for unknown should be 0, got %s", refund)
+	}
+}
+
+func TestMoltCreditManager_GetCredit(t *testing.T) {
+	m := NewMoltCreditManager()
+	m.Deposit("0xabc", big.NewInt(500))
+	m.Deduct("0xabc", big.NewInt(100))
+
+	credit := m.GetCredit("0xabc")
+	if credit == nil {
+		t.Fatal("expected non-nil credit")
+	}
+	if credit.RequesterAddress != "0xabc" {
+		t.Fatalf("RequesterAddress = %s, want 0xabc", credit.RequesterAddress)
+	}
+	if credit.TotalDeposited.Cmp(big.NewInt(500)) != 0 {
+		t.Fatalf("TotalDeposited = %s, want 500", credit.TotalDeposited)
+	}
+	if credit.TotalSpent.Cmp(big.NewInt(100)) != 0 {
+		t.Fatalf("TotalSpent = %s, want 100", credit.TotalSpent)
+	}
+}
+
+func TestMoltCreditManager_GetCreditUnknown(t *testing.T) {
+	m := NewMoltCreditManager()
+
+	credit := m.GetCredit("0xunknown")
+	if credit != nil {
+		t.Fatal("expected nil for unknown requester")
+	}
+}
+
+func TestMoltCreditManager_DepletionFlow(t *testing.T) {
+	m := NewMoltCreditManager()
+	m.Deposit("0xabc", big.NewInt(10))
+
+	// Deduct 10 times (1 each) — should all succeed
+	for i := 0; i < 10; i++ {
+		if err := m.Deduct("0xabc", big.NewInt(1)); err != nil {
+			t.Fatalf("deduction %d failed: %v", i, err)
+		}
+	}
+
+	// 11th deduction should fail
+	if err := m.Deduct("0xabc", big.NewInt(1)); err == nil {
+		t.Fatal("expected error on depleted credits")
+	}
+
+	bal := m.GetBalance("0xabc")
+	if bal.Sign() != 0 {
+		t.Fatalf("balance should be 0 after depletion, got %s", bal)
+	}
+}
+
 func TestEscrowManager_ReleasePayment_Incremental(t *testing.T) {
 	em := NewEscrowManager()
 

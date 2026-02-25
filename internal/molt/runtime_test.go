@@ -547,6 +547,84 @@ func TestMoltHTTPHandler_LargeBody(t *testing.T) {
 	}
 }
 
+func TestMoltHTTPHandler_POST(t *testing.T) {
+	rt := newTestRuntime(t)
+	wasm := loadTestWASM(t, "echo.wasm")
+	compiled, err := rt.Compile(context.Background(), wasm, "echo-post")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	handler := NewMoltHTTPHandler(rt, compiled, "echo-post-deploy")
+
+	body := `{"key":"value"}`
+	req := httptest.NewRequest("POST", "/api/data", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if string(rec.Body.Bytes()) != body {
+		t.Fatalf("body = %q, want %q", rec.Body.String(), body)
+	}
+}
+
+func TestMoltHTTPHandler_ConcurrentRequests(t *testing.T) {
+	rt := newTestRuntime(t)
+	wasm := loadTestWASM(t, "noop.wasm")
+	compiled, err := rt.Compile(context.Background(), wasm, "conc-http")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	handler := NewMoltHTTPHandler(rt, compiled, "conc-http-deploy")
+
+	const n = 10
+	var wg sync.WaitGroup
+	statuses := make([]int, n)
+
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			req := httptest.NewRequest("GET", fmt.Sprintf("/test/%d", idx), nil)
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			statuses[idx] = rec.Code
+		}(i)
+	}
+	wg.Wait()
+
+	for i, status := range statuses {
+		if status != 200 {
+			t.Errorf("request %d: status = %d, want 200", i, status)
+		}
+	}
+}
+
+func TestMoltHTTPHandler_DifferentMethods(t *testing.T) {
+	rt := newTestRuntime(t)
+	wasm := loadTestWASM(t, "noop.wasm")
+	compiled, err := rt.Compile(context.Background(), wasm, "methods")
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+
+	handler := NewMoltHTTPHandler(rt, compiled, "methods-deploy")
+
+	methods := []string{"GET", "POST", "PUT", "DELETE", "PATCH"}
+	for _, method := range methods {
+		req := httptest.NewRequest(method, "/test", nil)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != 200 {
+			t.Errorf("%s: status = %d, want 200", method, rec.Code)
+		}
+	}
+}
+
 // --- Helpers ---
 
 func mustJSON(v interface{}) []byte {
