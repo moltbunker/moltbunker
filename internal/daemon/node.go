@@ -1005,20 +1005,36 @@ func (n *Node) TLSServerConfig() *tls.Config {
 			fingerprint := sha256.Sum256(spki)
 			peerNodeID := hex.EncodeToString(fingerprint[:])
 
-			// Check if this peer is known (in our routing table)
-			if n.router != nil {
-				known := false
-				for _, p := range n.router.GetPeers() {
-					if p.ID.String() == peerNodeID {
-						known = true
-						break
+			// Reject peers not in our routing table — tunnel access requires
+			// the peer to have completed the P2P handshake (TLS + announce).
+			// Without this check, any self-signed cert can tunnel into containers.
+			if n.router == nil {
+				return fmt.Errorf("tunnel server not ready: no router")
+			}
+
+			known := false
+			for _, p := range n.router.GetPeers() {
+				if p.ID.String() == peerNodeID {
+					known = true
+					break
+				}
+			}
+			if !known {
+				// Also check the ban list — explicitly banned peers are always rejected
+				var nodeID types.NodeID
+				if decoded, decErr := hex.DecodeString(peerNodeID); decErr == nil && len(decoded) == 32 {
+					copy(nodeID[:], decoded)
+					if bl := n.router.BanList(); bl != nil && bl.IsBanned(nodeID) {
+						logging.Warn("tunnel client is banned — rejecting",
+							"peer_node_id", peerNodeID[:16],
+							logging.Component("tunnel"))
+						return fmt.Errorf("tunnel client banned: %s", peerNodeID[:16])
 					}
 				}
-				if !known {
-					logging.Warn("tunnel client not in peer list — allowing but monitoring",
-						"peer_node_id", peerNodeID[:16],
-						logging.Component("tunnel"))
-				}
+				logging.Warn("tunnel client not in peer list — rejecting",
+					"peer_node_id", peerNodeID[:16],
+					logging.Component("tunnel"))
+				return fmt.Errorf("tunnel client not in peer list: %s", peerNodeID[:16])
 			}
 
 			return nil

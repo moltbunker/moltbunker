@@ -143,9 +143,13 @@ func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tun
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers, stripping hop-by-hop headers that must not be forwarded
+	// Copy ONLY safe response headers from the backend container.
+	// Containers share the *.moltbunker.dev domain, so a malicious container
+	// could inject CORS/CSP/security headers to attack other tenants.
+	// Use an allowlist — not a blocklist — to prevent cross-tenant attacks.
 	for k, vv := range resp.Header {
-		if isHopByHopHeader(k) {
+		canonical := http.CanonicalHeaderKey(k)
+		if !allowedResponseHeaders[canonical] {
 			continue
 		}
 		for _, v := range vv {
@@ -153,10 +157,12 @@ func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tun
 		}
 	}
 
-	// Strip Set-Cookie from backend to prevent cookie injection from containers
-	w.Header().Del("Set-Cookie")
+	// Set security headers server-side — containers must NOT control these
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 
-	// Add proxy headers
+	// Add proxy identification headers
 	w.Header().Set("X-Moltbunker-Provider", service.ProviderNodeID)
 	w.Header().Set("X-Moltbunker-Deployment", service.DeploymentID)
 
@@ -228,20 +234,32 @@ func (t *tunnelNetConn) SetDeadline(_ time.Time) error      { return nil }
 func (t *tunnelNetConn) SetReadDeadline(_ time.Time) error  { return nil }
 func (t *tunnelNetConn) SetWriteDeadline(_ time.Time) error { return nil }
 
-// hopByHopHeaders are HTTP/1.1 headers that must not be forwarded by proxies (RFC 7230 §6.1).
-var hopByHopHeaders = map[string]bool{
-	"Connection":          true,
-	"Keep-Alive":          true,
-	"Proxy-Authenticate":  true,
-	"Proxy-Authorization": true,
-	"Te":                  true,
-	"Trailers":            true,
-	"Transfer-Encoding":   true,
-	"Upgrade":             true,
-}
+// allowedResponseHeaders is the set of response headers that the ingress proxy
+// forwards from backend containers. All containers share the *.moltbunker.dev
+// domain, so we MUST NOT forward security-sensitive headers (CORS, CSP, HSTS,
+// Set-Cookie, X-Frame-Options, etc.) — those are set server-side by the proxy.
+var allowedResponseHeaders = map[string]bool{
+	// Content description
+	"Content-Type":     true,
+	"Content-Length":   true,
+	"Content-Encoding": true,
+	"Content-Language": true,
+	"Content-Range":    true,
 
-// isHopByHopHeader returns true if the header is a hop-by-hop header that should not be forwarded.
-func isHopByHopHeader(h string) bool {
-	return hopByHopHeaders[http.CanonicalHeaderKey(h)]
+	// Caching
+	"Cache-Control": true,
+	"Etag":          true,
+	"Last-Modified": true,
+	"Expires":       true,
+	"Vary":          true,
+	"Age":           true,
+
+	// Range requests
+	"Accept-Ranges": true,
+
+	// Misc safe headers
+	"Date":          true,
+	"Retry-After":   true,
+	"X-Request-Id":  true,
 }
 
