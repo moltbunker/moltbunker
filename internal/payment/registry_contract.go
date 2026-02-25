@@ -17,11 +17,12 @@ import (
 
 // RegistryContract provides an interface to the BunkerRegistry smart contract.
 type RegistryContract struct {
-	baseClient   *BaseClient
-	contract     *bind.BoundContract
-	contractABI  abi.ABI
-	contractAddr common.Address
-	mockMode     bool
+	baseClient    *BaseClient
+	tokenContract *TokenContract
+	contract      *bind.BoundContract
+	contractABI   abi.ABI
+	contractAddr  common.Address
+	mockMode      bool
 
 	// Mock state
 	mockNames map[string]*mockSubdomain // name → record
@@ -32,14 +33,21 @@ type mockSubdomain struct {
 	Owner        common.Address
 	DeploymentID [32]byte
 	RegisteredAt time.Time
+	ExpiresAt    time.Time
+	ReservedUntil time.Time
+	Referrer     common.Address
+	Description  string
+	AvatarURL    string
+	PrimaryName  bool // whether this is the primary name for its deployment
 }
 
 // NewRegistryContract creates a new registry contract client.
-func NewRegistryContract(baseClient *BaseClient, contractAddr common.Address) (*RegistryContract, error) {
+func NewRegistryContract(baseClient *BaseClient, tokenContract *TokenContract, contractAddr common.Address) (*RegistryContract, error) {
 	rc := &RegistryContract{
-		baseClient:   baseClient,
-		contractAddr: contractAddr,
-		mockNames:    make(map[string]*mockSubdomain),
+		baseClient:    baseClient,
+		tokenContract: tokenContract,
+		contractAddr:  contractAddr,
+		mockNames:     make(map[string]*mockSubdomain),
 	}
 
 	if baseClient == nil {
@@ -85,8 +93,20 @@ func (rc *RegistryContract) Register(ctx context.Context, name string, deploymen
 			Owner:        owner,
 			DeploymentID: deploymentID,
 			RegisteredAt: time.Now(),
+			ExpiresAt:    time.Now().Add(365 * 24 * time.Hour),
 		}
 		return nil, nil
+	}
+
+	// Approve the registry contract to pull the registration fee
+	if rc.tokenContract != nil {
+		fee, err := rc.GetRegistrationFee(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get registration fee: %w", err)
+		}
+		if _, err := rc.tokenContract.Approve(ctx, rc.contractAddr, fee); err != nil {
+			return nil, fmt.Errorf("failed to approve token spend for registration: %w", err)
+		}
 	}
 
 	opts, err := rc.baseClient.GetTransactOpts(ctx)
@@ -101,6 +121,43 @@ func (rc *RegistryContract) Register(ctx context.Context, name string, deploymen
 
 	logging.Info("subdomain registration TX sent",
 		"name", name,
+		"tx", tx.Hash().Hex()[:16])
+	return tx, nil
+}
+
+// RegisterWithReferral registers a subdomain with a referral discount.
+func (rc *RegistryContract) RegisterWithReferral(ctx context.Context, name string, deploymentID [32]byte, referrer common.Address) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		if _, exists := rc.mockNames[name]; exists {
+			return nil, fmt.Errorf("name already registered: %s", name)
+		}
+		owner := common.Address{}
+		if rc.baseClient != nil {
+			owner = rc.baseClient.Address()
+		}
+		rc.mockNames[name] = &mockSubdomain{
+			Owner:        owner,
+			DeploymentID: deploymentID,
+			RegisteredAt: time.Now(),
+			ExpiresAt:    time.Now().Add(365 * 24 * time.Hour),
+			Referrer:     referrer,
+		}
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	tx, err := rc.contract.Transact(opts, "registerWithReferral", name, deploymentID, referrer)
+	if err != nil {
+		return nil, fmt.Errorf("registerWithReferral failed: %w", err)
+	}
+	logging.Info("subdomain registration with referral TX sent",
+		"name", name,
+		"referrer", referrer.Hex()[:10],
 		"tx", tx.Hash().Hex()[:16])
 	return tx, nil
 }
@@ -155,6 +212,140 @@ func (rc *RegistryContract) UpdateDeployment(ctx context.Context, name string, n
 		return nil, fmt.Errorf("failed to create transact opts: %w", err)
 	}
 	return rc.contract.Transact(opts, "updateDeployment", name, newDeploymentID)
+}
+
+// Renew extends a name's expiration.
+func (rc *RegistryContract) Renew(ctx context.Context, name string) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		if rec, exists := rc.mockNames[name]; exists {
+			rec.ExpiresAt = rec.ExpiresAt.Add(365 * 24 * time.Hour)
+		}
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	return rc.contract.Transact(opts, "renew", name)
+}
+
+// Reserve reserves a name for a limited time.
+func (rc *RegistryContract) Reserve(ctx context.Context, name string) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		if _, exists := rc.mockNames[name]; exists {
+			return nil, fmt.Errorf("name already registered: %s", name)
+		}
+		owner := common.Address{}
+		if rc.baseClient != nil {
+			owner = rc.baseClient.Address()
+		}
+		rc.mockNames[name] = &mockSubdomain{
+			Owner:         owner,
+			RegisteredAt:  time.Now(),
+			ExpiresAt:     time.Now().Add(365 * 24 * time.Hour),
+			ReservedUntil: time.Now().Add(48 * time.Hour),
+		}
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	return rc.contract.Transact(opts, "reserve", name)
+}
+
+// ClaimReservation sets the deployment ID for a reserved name.
+func (rc *RegistryContract) ClaimReservation(ctx context.Context, name string, deploymentID [32]byte) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		if rec, exists := rc.mockNames[name]; exists {
+			rec.DeploymentID = deploymentID
+			rec.ReservedUntil = time.Time{}
+		}
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	return rc.contract.Transact(opts, "claimReservation", name, deploymentID)
+}
+
+// CancelReservation cancels a name reservation.
+func (rc *RegistryContract) CancelReservation(ctx context.Context, name string) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		delete(rc.mockNames, name)
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	return rc.contract.Transact(opts, "cancelReservation", name)
+}
+
+// SetMetadata sets description and avatar URL for a name.
+func (rc *RegistryContract) SetMetadata(ctx context.Context, name string, description string, avatarURL string) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		if rec, exists := rc.mockNames[name]; exists {
+			rec.Description = description
+			rec.AvatarURL = avatarURL
+		}
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	return rc.contract.Transact(opts, "setMetadata", name, description, avatarURL)
+}
+
+// SetPrimaryName sets the primary name for reverse resolution.
+func (rc *RegistryContract) SetPrimaryName(ctx context.Context, name string) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		if rec, exists := rc.mockNames[name]; exists {
+			rec.PrimaryName = true
+		}
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	return rc.contract.Transact(opts, "setPrimaryName", name)
+}
+
+// ReclaimSquatted reclaims a squatted name.
+func (rc *RegistryContract) ReclaimSquatted(ctx context.Context, name string) (*types.Transaction, error) {
+	if rc.mockMode {
+		rc.mockMu.Lock()
+		defer rc.mockMu.Unlock()
+		delete(rc.mockNames, name)
+		return nil, nil
+	}
+
+	opts, err := rc.baseClient.GetTransactOpts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create transact opts: %w", err)
+	}
+	return rc.contract.Transact(opts, "reclaimSquatted", name)
 }
 
 // Resolve returns the registration data for a subdomain name.
@@ -221,10 +412,98 @@ func (rc *RegistryContract) IsAvailable(ctx context.Context, name string) (bool,
 	return result[0].(bool), nil
 }
 
-// GetRegistrationFee returns the current registration fee in BUNKER tokens.
+// IsExpired checks if a subdomain name is expired.
+func (rc *RegistryContract) IsExpired(ctx context.Context, name string) (bool, error) {
+	if rc.mockMode {
+		rc.mockMu.RLock()
+		defer rc.mockMu.RUnlock()
+		rec, exists := rc.mockNames[name]
+		if !exists {
+			return false, nil
+		}
+		if rec.ExpiresAt.IsZero() {
+			return false, nil
+		}
+		return time.Now().After(rec.ExpiresAt), nil
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	var result []interface{}
+	err := rc.contract.Call(callOpts, &result, "isExpired", name)
+	if err != nil {
+		return false, fmt.Errorf("isExpired failed: %w", err)
+	}
+	if len(result) < 1 {
+		return false, fmt.Errorf("unexpected result length")
+	}
+	return result[0].(bool), nil
+}
+
+// IsInGracePeriod checks if a name is in its post-expiry grace period.
+func (rc *RegistryContract) IsInGracePeriod(ctx context.Context, name string) (bool, error) {
+	if rc.mockMode {
+		return false, nil
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	var result []interface{}
+	err := rc.contract.Call(callOpts, &result, "isInGracePeriod", name)
+	if err != nil {
+		return false, fmt.Errorf("isInGracePeriod failed: %w", err)
+	}
+	if len(result) < 1 {
+		return false, fmt.Errorf("unexpected result length")
+	}
+	return result[0].(bool), nil
+}
+
+// ReverseResolve looks up the primary name for a deployment ID.
+func (rc *RegistryContract) ReverseResolve(ctx context.Context, deploymentID [32]byte) (string, error) {
+	if rc.mockMode {
+		rc.mockMu.RLock()
+		defer rc.mockMu.RUnlock()
+		for name, rec := range rc.mockNames {
+			if rec.DeploymentID == deploymentID && rec.PrimaryName {
+				return name, nil
+			}
+		}
+		return "", nil
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	var result []interface{}
+	err := rc.contract.Call(callOpts, &result, "reverseResolve", deploymentID)
+	if err != nil {
+		return "", fmt.Errorf("reverseResolve failed: %w", err)
+	}
+	if len(result) < 1 {
+		return "", fmt.Errorf("unexpected result length")
+	}
+	return result[0].(string), nil
+}
+
+// CalculatePrice returns the registration price for a name including premium and staking discounts.
+func (rc *RegistryContract) CalculatePrice(ctx context.Context, name string, user common.Address) (*big.Int, error) {
+	if rc.mockMode {
+		return big.NewInt(1000000), nil
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	var result []interface{}
+	err := rc.contract.Call(callOpts, &result, "calculatePrice", name, user)
+	if err != nil {
+		return nil, fmt.Errorf("calculatePrice failed: %w", err)
+	}
+	if len(result) < 1 {
+		return nil, fmt.Errorf("unexpected result length")
+	}
+	return result[0].(*big.Int), nil
+}
+
+// GetRegistrationFee returns the current base registration fee in BUNKER tokens.
 func (rc *RegistryContract) GetRegistrationFee(ctx context.Context) (*big.Int, error) {
 	if rc.mockMode {
-		return big.NewInt(10000), nil // 10K BUNKER (without decimals for mock)
+		return big.NewInt(1000000), nil // 1M BUNKER (without decimals for mock)
 	}
 
 	callOpts := &bind.CallOpts{Context: ctx}
@@ -237,6 +516,58 @@ func (rc *RegistryContract) GetRegistrationFee(ctx context.Context) (*big.Int, e
 		return nil, fmt.Errorf("unexpected result length")
 	}
 	return result[0].(*big.Int), nil
+}
+
+// GetChangeFee returns the current change fee for updateDeployment and setMetadata.
+func (rc *RegistryContract) GetChangeFee(ctx context.Context) (*big.Int, error) {
+	if rc.mockMode {
+		return big.NewInt(10000), nil // 10K BUNKER
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	var result []interface{}
+	err := rc.contract.Call(callOpts, &result, "changeFee")
+	if err != nil {
+		return nil, fmt.Errorf("changeFee failed: %w", err)
+	}
+	if len(result) < 1 {
+		return nil, fmt.Errorf("unexpected result length")
+	}
+	return result[0].(*big.Int), nil
+}
+
+// GetMetadata returns the metadata for a subdomain.
+func (rc *RegistryContract) GetMetadata(ctx context.Context, name string) (*SubdomainMetadata, error) {
+	if rc.mockMode {
+		rc.mockMu.RLock()
+		defer rc.mockMu.RUnlock()
+		rec, exists := rc.mockNames[name]
+		if !exists {
+			return &SubdomainMetadata{}, nil
+		}
+		return &SubdomainMetadata{
+			Description: rec.Description,
+			AvatarURL:   rec.AvatarURL,
+		}, nil
+	}
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	nameHash := common.BytesToHash([]byte(name)) // will be hashed on-chain
+	// For the public mapping accessor, we need to pass the nameHash
+	// Actually, metadata is accessed via nameHash, need to compute keccak256
+	// The ABI expects bytes32, so we compute the hash client-side
+	var result []interface{}
+	err := rc.contract.Call(callOpts, &result, "metadata", nameHash)
+	if err != nil {
+		return nil, fmt.Errorf("metadata failed: %w", err)
+	}
+	if len(result) < 2 {
+		return nil, fmt.Errorf("unexpected result length: %d", len(result))
+	}
+	return &SubdomainMetadata{
+		Description: result[0].(string),
+		AvatarURL:   result[1].(string),
+	}, nil
 }
 
 // ListOwnedNames returns all subdomain registrations owned by an address.

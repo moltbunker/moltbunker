@@ -17,7 +17,7 @@ func NewSubdomainCmd() *cobra.Command {
 
 Every deployment automatically gets a subdomain based on its ID prefix
 (e.g., dep-a1b2c3d4 → a1b2c3d4.moltbunker.dev). Vanity subdomains let
-you pick a custom name (e.g., myapp.moltbunker.dev) for 10,000 BUNKER.`,
+you pick a custom name (e.g., myapp.moltbunker.dev) for 1,000,000 BUNKER.`,
 	}
 
 	cmd.AddCommand(
@@ -39,7 +39,7 @@ func newSubdomainRegisterCmd() *cobra.Command {
 		Long: `Register a vanity subdomain pointing to a deployment.
 
 The name must be 3-32 characters, lowercase alphanumeric with hyphens,
-and cannot start or end with a hyphen. Registration costs 10,000 BUNKER
+and cannot start or end with a hyphen. Registration costs 1,000,000 BUNKER
 (80% burned, 20% treasury).
 
 Examples:

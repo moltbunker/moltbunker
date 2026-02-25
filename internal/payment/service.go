@@ -154,7 +154,7 @@ func NewPaymentService(config *PaymentServiceConfig) (*PaymentService, error) {
 
 	// Create subdomain registry contract (optional — zero address means disabled)
 	if config.SubdomainRegistryAddress != (common.Address{}) {
-		ps.registryContract, err = NewRegistryContract(ps.baseClient, config.SubdomainRegistryAddress)
+		ps.registryContract, err = NewRegistryContract(ps.baseClient, ps.tokenContract, config.SubdomainRegistryAddress)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create registry contract: %w", err)
 		}

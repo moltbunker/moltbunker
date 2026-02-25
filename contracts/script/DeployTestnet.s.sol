@@ -95,9 +95,9 @@ contract DeployTestnet is Script {
         // 8. Verification
         verificationAddr = address(new BunkerVerification(deployer));
 
-        // 9. Registry (needs token, treasury)
+        // 9. Registry (needs token, treasury, staking)
         registryAddr = address(
-            new BunkerRegistry(tokenAddr, treasury, 10_000 * 1e18, deployer)
+            new BunkerRegistry(tokenAddr, treasury, 1_000_000 * 1e18, deployer, stakingAddr)
         );
 
         // Wire escrow → staking

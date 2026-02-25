@@ -1890,7 +1890,7 @@ type ResourceRequestData struct {
 	GPUCount      uint8
 }
 
-// BunkerRegistryABI is the ABI for the BunkerRegistry subdomain name contract.
+// BunkerRegistryABI is the ABI for the BunkerRegistry v2.0.0 subdomain name contract.
 const BunkerRegistryABI = `[
 	{
 		"inputs": [
@@ -1898,6 +1898,27 @@ const BunkerRegistryABI = `[
 			{"name": "deploymentID", "type": "bytes32"}
 		],
 		"name": "register",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "deploymentID", "type": "bytes32"},
+			{"name": "referrer", "type": "address"}
+		],
+		"name": "registerWithReferral",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "names", "type": "string[]"},
+			{"name": "deploymentIDs", "type": "bytes32[]"}
+		],
+		"name": "bulkRegister",
 		"outputs": [],
 		"stateMutability": "nonpayable",
 		"type": "function"
@@ -1931,6 +1952,69 @@ const BunkerRegistryABI = `[
 	},
 	{
 		"inputs": [{"name": "name", "type": "string"}],
+		"name": "renew",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "names", "type": "string[]"}],
+		"name": "bulkRenew",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "reserve",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "deploymentID", "type": "bytes32"}
+		],
+		"name": "claimReservation",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "cancelReservation",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "description", "type": "string"},
+			{"name": "avatarURL", "type": "string"}
+		],
+		"name": "setMetadata",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "reclaimSquatted",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "setPrimaryName",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
 		"name": "resolve",
 		"outputs": [
 			{"name": "owner", "type": "address"},
@@ -1948,8 +2032,46 @@ const BunkerRegistryABI = `[
 		"type": "function"
 	},
 	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "isExpired",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "isInGracePeriod",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "deploymentID", "type": "bytes32"}],
+		"name": "reverseResolve",
+		"outputs": [{"name": "name", "type": "string"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "user", "type": "address"}
+		],
+		"name": "calculatePrice",
+		"outputs": [{"name": "price", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
 		"inputs": [],
 		"name": "registrationFee",
+		"outputs": [{"name": "", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "changeFee",
 		"outputs": [{"name": "", "type": "uint256"}],
 		"stateMutability": "view",
 		"type": "function"
@@ -1977,6 +2099,16 @@ const BunkerRegistryABI = `[
 		"outputs": [{"name": "", "type": "string"}],
 		"stateMutability": "view",
 		"type": "function"
+	},
+	{
+		"inputs": [{"name": "", "type": "bytes32"}],
+		"name": "metadata",
+		"outputs": [
+			{"name": "description", "type": "string"},
+			{"name": "avatarURL", "type": "string"}
+		],
+		"stateMutability": "view",
+		"type": "function"
 	}
 ]`
 
@@ -1986,4 +2118,10 @@ type SubdomainRegistration struct {
 	Owner        common.Address
 	DeploymentID [32]byte
 	RegisteredAt time.Time
+}
+
+// SubdomainMetadata represents metadata for a subdomain.
+type SubdomainMetadata struct {
+	Description string
+	AvatarURL   string
 }
