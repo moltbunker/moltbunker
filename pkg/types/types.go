@@ -48,6 +48,11 @@ type NodeCapabilities struct {
 	ContainerRuntime bool
 	TorSupport       bool
 	StakingAmount    uint64 // BUNKER tokens staked
+
+	// Molt (WASM serverless) capabilities
+	MoltAvailable    bool `json:"molt_available,omitempty"`
+	MoltMaxMemoryMB  int  `json:"molt_max_memory_mb,omitempty"`
+	MoltMaxInstances int  `json:"molt_max_instances,omitempty"`
 }
 
 // Container represents a running container instance
@@ -61,6 +66,12 @@ type Container struct {
 	Health      HealthStatus
 	Encrypted   bool
 	OnionAddr   string // .onion address if Tor-enabled
+
+	// RuntimeType is "container" (default) or "molt" for WASM workloads.
+	RuntimeType RuntimeType `json:"runtime_type,omitempty"`
+
+	// MoltMetrics holds invocation metrics for Molt deployments (nil for containers).
+	MoltMetrics *MoltDeploymentMetrics `json:"molt_metrics,omitempty"`
 }
 
 // ContainerStatus represents container state
@@ -204,10 +215,19 @@ type DeploymentRequest struct {
 	// Minimum provider tier required for this deployment
 	MinProviderTier ProviderTier `json:"min_provider_tier,omitempty"`
 
+	// Molt serverless function (nil = container deployment, non-nil = Molt deployment).
+	// Mutually exclusive with ImageCID.
+	WasmModule *MoltSpec `json:"wasm_module,omitempty"`
+
 	// Exec encryption (optional — omit to disable exec for this container)
 	DeployNonce      string `json:"deploy_nonce,omitempty"`
 	EncryptedExecKey []byte `json:"encrypted_exec_key,omitempty"`
 	ExecKeyNonce     []byte `json:"exec_key_nonce,omitempty"`
+}
+
+// IsMolt returns true if this is a Molt (WASM) deployment rather than a container.
+func (r *DeploymentRequest) IsMolt() bool {
+	return r.WasmModule != nil
 }
 
 // ExecOpenPayload is sent from API node to provider to request an exec stream

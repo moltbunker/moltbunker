@@ -15,6 +15,7 @@ type ServiceEntry struct {
 	ContainerPort  int       `json:"container_port"`
 	HostPort       int       `json:"host_port"`
 	LastSeen       time.Time `json:"last_seen"`
+	RuntimeType    string    `json:"runtime_type,omitempty"` // "container" (default) or "molt"
 }
 
 // GossipReader reads exposed service entries from the gossip state.
