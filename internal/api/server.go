@@ -23,6 +23,8 @@ import (
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
+	"github.com/moltbunker/moltbunker/internal/agent"
+	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/proxy"
 	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
@@ -69,6 +71,8 @@ type Server struct {
 	// P0 service handlers
 	storageHandler *storage.RESTHandler
 	proxyHandler   *proxy.RESTHandler
+	crawlHandler   *crawl.RESTHandler
+	agentHandler   *agent.RESTHandler
 
 	// Per-IP rate limiters
 	rateLimiters    sync.Map
@@ -243,6 +247,16 @@ func (s *Server) SetStorageHandler(handler *storage.RESTHandler) {
 // SetProxyHandler sets the proxy REST handler for proxy management API.
 func (s *Server) SetProxyHandler(handler *proxy.RESTHandler) {
 	s.proxyHandler = handler
+}
+
+// SetCrawlHandler sets the crawl REST handler for web crawling API.
+func (s *Server) SetCrawlHandler(handler *crawl.RESTHandler) {
+	s.crawlHandler = handler
+}
+
+// SetAgentHandler sets the agent REST handler for AI agent runtime API.
+func (s *Server) SetAgentHandler(handler *agent.RESTHandler) {
+	s.agentHandler = handler
 }
 
 // Start starts the HTTP API server
@@ -488,6 +502,22 @@ func (s *Server) buildRouter() http.Handler {
 	// Proxy management endpoints (read/write permission)
 	if s.proxyHandler != nil {
 		s.proxyHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
+
+	// Web Crawling endpoints (read/write permission)
+	if s.crawlHandler != nil {
+		s.crawlHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
+
+	// AI Agent Runtime endpoints (read/write permission)
+	if s.agentHandler != nil {
+		s.agentHandler.RegisterRoutes(mux,
 			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
 			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
 		)

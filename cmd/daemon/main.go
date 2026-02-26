@@ -18,17 +18,21 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/moltbunker/moltbunker/internal/agent"
 	"github.com/moltbunker/moltbunker/internal/api"
 	"github.com/moltbunker/moltbunker/internal/cloning"
 	"github.com/moltbunker/moltbunker/internal/config"
+	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/daemon"
 	"github.com/moltbunker/moltbunker/internal/identity"
 	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
+	"github.com/moltbunker/moltbunker/internal/proxy"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
 	"github.com/moltbunker/moltbunker/internal/state"
+	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
 	"github.com/moltbunker/moltbunker/internal/tunnel"
 	"github.com/moltbunker/moltbunker/internal/util"
@@ -512,6 +516,64 @@ func main() {
 		httpAPIServer.SetAdminStore(api.NewAdminMetadataStore(filepath.Join(cfg.Daemon.DataDir, "admin_metadata.json")))
 		httpAPIServer.SetPolicyStore(api.NewPolicyStore(filepath.Join(cfg.Daemon.DataDir, "admin_policies.json")))
 		httpAPIServer.SetCatalogStore(api.NewCatalogStore(filepath.Join(cfg.Daemon.DataDir, "catalog.json")))
+
+		// ── P0 Services ──
+
+		// Object Storage
+		if cfg.Storage.Enabled {
+			storageDataDir := cfg.Storage.DataDir
+			if storageDataDir == "" {
+				storageDataDir = filepath.Join(cfg.Daemon.DataDir, "storage")
+			}
+			storageEngine, storageErr := storage.NewStorageEngine(storageDataDir, stateStore, storage.EngineConfig{
+				MaxBuckets:    cfg.Storage.MaxBuckets,
+				MaxObjectSize: cfg.Storage.MaxObjectSize,
+			})
+			if storageErr != nil {
+				log.Fatalf("Failed to create storage engine: %v", storageErr)
+			}
+			httpAPIServer.SetStorageHandler(storage.NewRESTHandler(storageEngine))
+			logging.Info("object storage service enabled", logging.Component("daemon"))
+		}
+
+		// Decentralized Proxy
+		if cfg.Proxy.Enabled {
+			proxyServer := proxy.NewServer(proxy.Config{
+				SOCKS5Addr:  cfg.Proxy.SOCKS5Addr,
+				HTTPAddr:    cfg.Proxy.HTTPAddr,
+				UseTor:      cfg.Proxy.UseTor,
+				MaxSessions: cfg.Proxy.MaxSessions,
+			}, &proxy.DirectDialer{}, &proxy.AllowAllAuth{DefaultWallet: "system"})
+			if proxyErr := proxyServer.Start(ctx); proxyErr != nil {
+				log.Fatalf("Failed to start proxy service: %v", proxyErr)
+			}
+			httpAPIServer.SetProxyHandler(proxy.NewRESTHandler(proxyServer))
+			// Store reference for shutdown (captured in shutdown goroutine closure)
+			defer proxyServer.Stop()
+			logging.Info("proxy service enabled",
+				"socks5", cfg.Proxy.SOCKS5Addr,
+				"http", cfg.Proxy.HTTPAddr,
+				logging.Component("daemon"))
+		}
+
+		// Web Crawling
+		if cfg.Crawl.Enabled {
+			scheduler := crawl.NewScheduler(crawl.SchedulerConfig{
+				MaxConcurrentJobs: cfg.Crawl.MaxConcurrent,
+				MaxPagesPerJob:    cfg.Crawl.MaxPages,
+			})
+			httpAPIServer.SetCrawlHandler(crawl.NewRESTHandler(scheduler, crawl.NewRobotsChecker()))
+			logging.Info("web crawling service enabled", logging.Component("daemon"))
+		}
+
+		// AI Agent Runtime
+		if cfg.Agent.Enabled {
+			agentRuntime := agent.NewAgentRuntime(agent.RuntimeConfig{
+				MaxAgentsPerWallet: cfg.Agent.MaxAgentsPerWallet,
+			})
+			httpAPIServer.SetAgentHandler(agent.NewRESTHandler(agentRuntime, agent.NewMemoryStore()))
+			logging.Info("agent runtime service enabled", logging.Component("daemon"))
+		}
 
 		if err := httpAPIServer.Start(ctx); err != nil {
 			log.Fatalf("Failed to start HTTP API server: %v", err)

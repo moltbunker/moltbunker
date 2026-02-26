@@ -53,6 +53,12 @@ type NodeCapabilities struct {
 	MoltAvailable    bool `json:"molt_available,omitempty"`
 	MoltMaxMemoryMB  int  `json:"molt_max_memory_mb,omitempty"`
 	MoltMaxInstances int  `json:"molt_max_instances,omitempty"`
+
+	// P0 service capabilities
+	StorageAvailable bool `json:"storage_available,omitempty"`
+	ProxyAvailable   bool `json:"proxy_available,omitempty"`
+	CrawlAvailable   bool `json:"crawl_available,omitempty"`
+	AgentAvailable   bool `json:"agent_available,omitempty"`
 }
 
 // Container represents a running container instance
@@ -276,6 +282,12 @@ type AnnouncePayload struct {
 	MoltAvailable    bool         `json:"molt_available,omitempty"`   // Whether Molt (WASM) runtime is available
 	MoltMaxMemoryMB  int          `json:"molt_max_memory_mb,omitempty"` // Max WASM memory per instance
 	MoltMaxInstances int          `json:"molt_max_instances,omitempty"` // Max concurrent WASM instances
+
+	// P0 service capabilities
+	StorageAvailable bool `json:"storage_available,omitempty"` // Object storage service
+	ProxyAvailable   bool `json:"proxy_available,omitempty"`   // Decentralized proxy service
+	CrawlAvailable   bool `json:"crawl_available,omitempty"`   // Web crawling service
+	AgentAvailable   bool `json:"agent_available,omitempty"`   // AI agent runtime
 }
 
 // Bid represents a daemon's bid for hosting a container

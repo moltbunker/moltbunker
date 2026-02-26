@@ -259,6 +259,10 @@ func NewNodeWithConfig(ctx context.Context, cfg *config.Config) (*Node, error) {
 		Capabilities: types.NodeCapabilities{
 			ContainerRuntime: true,
 			TorSupport:       cfg.Tor.Enabled,
+			StorageAvailable: cfg.Storage.Enabled,
+			ProxyAvailable:   cfg.Proxy.Enabled,
+			CrawlAvailable:   cfg.Crawl.Enabled,
+			AgentAvailable:   cfg.Agent.Enabled,
 		},
 	}
 
@@ -743,6 +747,12 @@ func (n *Node) sendAnnounce(conn *tls.Conn) {
 	payload.MoltMaxMemoryMB = n.nodeInfo.Capabilities.MoltMaxMemoryMB
 	payload.MoltMaxInstances = n.nodeInfo.Capabilities.MoltMaxInstances
 
+	// Include P0 service capabilities in announce
+	payload.StorageAvailable = n.nodeInfo.Capabilities.StorageAvailable
+	payload.ProxyAvailable = n.nodeInfo.Capabilities.ProxyAvailable
+	payload.CrawlAvailable = n.nodeInfo.Capabilities.CrawlAvailable
+	payload.AgentAvailable = n.nodeInfo.Capabilities.AgentAvailable
+
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
 		logging.Warn("failed to marshal announce payload",
@@ -822,6 +832,12 @@ func (n *Node) handleAnnounceMessage(msg *types.Message, peerNode *types.Node) {
 	peerNode.Capabilities.MoltAvailable = payload.MoltAvailable
 	peerNode.Capabilities.MoltMaxMemoryMB = payload.MoltMaxMemoryMB
 	peerNode.Capabilities.MoltMaxInstances = payload.MoltMaxInstances
+
+	// Set P0 service capabilities from announce
+	peerNode.Capabilities.StorageAvailable = payload.StorageAvailable
+	peerNode.Capabilities.ProxyAvailable = payload.ProxyAvailable
+	peerNode.Capabilities.CrawlAvailable = payload.CrawlAvailable
+	peerNode.Capabilities.AgentAvailable = payload.AgentAvailable
 
 	logging.Info("peer announced wallet",
 		logging.NodeID(peerNode.ID.String()[:16]),
