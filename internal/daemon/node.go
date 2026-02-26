@@ -737,8 +737,11 @@ func (n *Node) sendAnnounce(conn *tls.Conn) {
 		return
 	}
 
-	// Include local provider tier in announce
+	// Include local provider tier and Molt capabilities in announce
 	payload.ProviderTier = n.nodeInfo.ProviderTier
+	payload.MoltAvailable = n.nodeInfo.Capabilities.MoltAvailable
+	payload.MoltMaxMemoryMB = n.nodeInfo.Capabilities.MoltMaxMemoryMB
+	payload.MoltMaxInstances = n.nodeInfo.Capabilities.MoltMaxInstances
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -815,10 +818,16 @@ func (n *Node) handleAnnounceMessage(msg *types.Message, peerNode *types.Node) {
 		peerNode.ProviderTier = payload.ProviderTier
 	}
 
+	// W11: Set Molt capabilities from announce
+	peerNode.Capabilities.MoltAvailable = payload.MoltAvailable
+	peerNode.Capabilities.MoltMaxMemoryMB = payload.MoltMaxMemoryMB
+	peerNode.Capabilities.MoltMaxInstances = payload.MoltMaxInstances
+
 	logging.Info("peer announced wallet",
 		logging.NodeID(peerNode.ID.String()[:16]),
 		"wallet", recoveredAddr.Hex()[:10],
 		"tier", string(payload.ProviderTier),
+		"molt", payload.MoltAvailable,
 		logging.Component("node"))
 }
 

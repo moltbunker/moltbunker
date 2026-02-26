@@ -271,8 +271,11 @@ type AnnouncePayload struct {
 	NodeID        string `json:"node_id"`         // Hex-encoded node ID (binds wallet to node)
 	Timestamp     int64  `json:"timestamp"`       // Unix timestamp (must be within 5 min)
 	Nonce         string `json:"nonce"`            // Random 32-byte hex string
-	EthSignature  string       `json:"eth_signature"`              // EIP-191 personal_sign (65 bytes, hex)
-	ProviderTier  ProviderTier `json:"provider_tier,omitempty"`    // Self-reported provider tier
+	EthSignature     string       `json:"eth_signature"`              // EIP-191 personal_sign (65 bytes, hex)
+	ProviderTier     ProviderTier `json:"provider_tier,omitempty"`    // Self-reported provider tier
+	MoltAvailable    bool         `json:"molt_available,omitempty"`   // Whether Molt (WASM) runtime is available
+	MoltMaxMemoryMB  int          `json:"molt_max_memory_mb,omitempty"` // Max WASM memory per instance
+	MoltMaxInstances int          `json:"molt_max_instances,omitempty"` // Max concurrent WASM instances
 }
 
 // Bid represents a daemon's bid for hosting a container

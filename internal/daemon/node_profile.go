@@ -43,6 +43,11 @@ type NodeProfile struct {
 	KataSupported    bool                      `json:"kata_supported,omitempty"`
 	SEVSNPActive     bool                      `json:"sev_snp_active,omitempty"`
 
+	// Molt (WASM serverless) capabilities
+	MoltAvailable    bool `json:"molt_available,omitempty"`
+	MoltMaxMemoryMB  int  `json:"molt_max_memory_mb,omitempty"`
+	MoltMaxInstances int  `json:"molt_max_instances,omitempty"`
+
 	// Admin-assigned metadata (merged from admin store)
 	Badges  []string `json:"badges,omitempty"`
 	Blocked bool     `json:"blocked,omitempty"`
@@ -244,6 +249,13 @@ func (pm *NodeProfileManager) RefreshSelf() {
 	profile.RuntimeName = rtCaps.RuntimeName
 	profile.KataSupported = rtCaps.KataAvailable
 	profile.SEVSNPActive = rtCaps.SEVSNPActive
+	profile.MoltAvailable = rtCaps.MoltAvailable
+
+	// Molt capacity from config (if Molt runtime is enabled)
+	if pm.config.Runtime.Molt.Enabled {
+		profile.MoltMaxMemoryMB = int(pm.config.Runtime.Molt.MemoryLimitMB)
+		profile.MoltMaxInstances = pm.config.Runtime.Molt.MaxInstances
+	}
 
 	// GPU from config
 	if pm.config.Node.Provider.GPUEnabled {

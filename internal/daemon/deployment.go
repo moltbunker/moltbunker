@@ -43,6 +43,8 @@ type Deployment struct {
 	Spot             bool                  `json:"spot,omitempty"`               // Spot pricing (lower cost, preemptible)
 	StoppedAt        time.Time             `json:"stopped_at,omitempty"`         // When container was stopped
 	VolumeExpiresAt  time.Time             `json:"volume_expires_at,omitempty"`  // When volume will be auto-deleted
+	RuntimeType      types.RuntimeType     `json:"runtime_type,omitempty"`       // "container" (default) or "molt" for WASM workloads
+	MoltSpec         *types.MoltSpec       `json:"molt_spec,omitempty"`          // Molt spec for WASM deployments (nil for containers)
 }
 
 // pendingDeployment tracks replica acknowledgments for a deployment

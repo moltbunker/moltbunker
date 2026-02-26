@@ -962,6 +962,22 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 		}
 	}
 
+	// C2: Record job failure in reputation contract for failed/error deployments.
+	// RecordJobCompleted is already called on Stop() (line 843). Here we track
+	// deployments that never ran successfully (error, failed, pending states).
+	if cm.payment != nil && isOriginator {
+		if deployment.Status == types.ContainerStatusFailed || deployment.Status == types.ContainerStatusPending {
+			providerAddr := cm.node.WalletAddress()
+			if providerAddr != (common.Address{}) {
+				if err := cm.payment.RecordJobFailed(ctx, providerAddr); err != nil {
+					logging.Warn("failed to record job failure in reputation",
+						logging.ContainerID(containerID),
+						logging.Err(err))
+				}
+			}
+		}
+	}
+
 	// Clean up pending deployment tracker
 	cm.pendingMu.Lock()
 	if pending, exists := cm.pendingDeployments[containerID]; exists {
