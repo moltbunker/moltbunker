@@ -313,6 +313,45 @@ type MoltRuntimeConfig struct {
 
 	// MaxCacheEntries is the max number of compiled modules kept in the in-memory LRU cache (default: 256).
 	MaxCacheEntries int `yaml:"max_cache_entries"`
+
+	// Host function capability flags (all default false — must be explicitly enabled per deployment)
+	HTTPEnabled      bool     `yaml:"http_enabled"`                        // Allow WASM host.http_request
+	StorageEnabled   bool     `yaml:"storage_enabled"`                     // Allow WASM host.storage_*
+	CrawlEnabled     bool     `yaml:"crawl_enabled"`                       // Allow WASM host.crawl_page
+	HTTPAllowedHosts []string `yaml:"http_allowed_hosts,omitempty"`        // Restrict HTTP to these hosts only
+	HTTPBlockedHosts []string `yaml:"http_blocked_hosts,omitempty"`        // Block HTTP to these hosts
+
+	// JS/TS runtime (Deno worker pool)
+	JSRuntime JSRuntimeConfig `yaml:"js_runtime"`
+}
+
+// JSRuntimeConfig contains Deno-based JavaScript/TypeScript runtime settings.
+type JSRuntimeConfig struct {
+	// Enabled controls whether the JS runtime (Deno worker pool) is available.
+	Enabled bool `yaml:"enabled"`
+
+	// DenoPath is the path to the Deno binary. Empty defaults to "deno" (found in PATH).
+	DenoPath string `yaml:"deno_path"`
+
+	// PoolSize is the number of warm Deno worker processes (default: 10).
+	PoolSize int `yaml:"pool_size"`
+
+	// TimeoutMs is the max execution time per JS invocation in milliseconds (default: 30000).
+	TimeoutMs int `yaml:"timeout_ms"`
+
+	// MaxMemoryMB is the V8 heap size limit in MB per worker (default: 128).
+	MaxMemoryMB int `yaml:"max_memory_mb"`
+}
+
+// DefaultJSRuntimeConfig returns sensible defaults for the JS runtime.
+func DefaultJSRuntimeConfig() JSRuntimeConfig {
+	return JSRuntimeConfig{
+		Enabled:     false,
+		DenoPath:    "deno",
+		PoolSize:    10,
+		TimeoutMs:   30000,
+		MaxMemoryMB: 128,
+	}
 }
 
 // KataConfig contains Kata Containers-specific settings
@@ -618,6 +657,7 @@ func DefaultConfig() *Config {
 				MaxInstances:    100,
 				CacheDir:        "", // resolved at runtime to ~/.moltbunker/molt-cache/
 				MaxCacheEntries: 256,
+				JSRuntime:       DefaultJSRuntimeConfig(),
 			},
 			DefaultResources: types.ResourceLimits{
 				CPUQuota:    100000,

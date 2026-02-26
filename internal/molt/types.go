@@ -6,6 +6,16 @@ import (
 	"github.com/tetratelabs/wazero"
 )
 
+// RuntimeType identifies the execution engine for a Molt deployment.
+type RuntimeType string
+
+const (
+	// RuntimeWASM uses wazero (in-process WASM execution).
+	RuntimeWASM RuntimeType = "wasm"
+	// RuntimeJS uses Deno worker pool (subprocess, stdio JSON-RPC).
+	RuntimeJS RuntimeType = "js"
+)
+
 // MoltConfig configures the WASM runtime for Molt serverless functions.
 type MoltConfig struct {
 	// MemoryLimitMB is the max memory each WASM instance can use.
@@ -23,6 +33,13 @@ type MoltConfig struct {
 
 	// MaxCacheEntries is the max number of compiled modules kept in memory.
 	MaxCacheEntries int `yaml:"max_cache_entries" json:"max_cache_entries"`
+
+	// Host function capabilities (v2 — controls what services WASM modules can access)
+	HTTPEnabled      bool     `yaml:"http_enabled" json:"http_enabled"`
+	StorageEnabled   bool     `yaml:"storage_enabled" json:"storage_enabled"`
+	CrawlEnabled     bool     `yaml:"crawl_enabled" json:"crawl_enabled"`
+	HTTPAllowedHosts []string `yaml:"http_allowed_hosts,omitempty" json:"http_allowed_hosts,omitempty"`
+	HTTPBlockedHosts []string `yaml:"http_blocked_hosts,omitempty" json:"http_blocked_hosts,omitempty"`
 }
 
 // DefaultMoltConfig returns a MoltConfig with sensible defaults.

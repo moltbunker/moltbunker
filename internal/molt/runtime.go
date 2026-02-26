@@ -28,6 +28,10 @@ type MoltRuntime struct {
 	cache   *ModuleCache
 	metrics *MoltMetrics
 
+	// Host services injected into WASM invocations (optional).
+	// When set, host functions can access HTTP, storage, and crawl services.
+	services *HostServices
+
 	// Semaphore for concurrency limiting (buffered channel)
 	sem chan struct{}
 
@@ -109,6 +113,12 @@ func NewMoltRuntime(ctx context.Context, cfg MoltConfig) (*MoltRuntime, error) {
 	}, nil
 }
 
+// SetHostServices configures platform services available to WASM host functions.
+// Must be called before Invoke. Safe to call with nil to disable host services.
+func (m *MoltRuntime) SetHostServices(svc *HostServices) {
+	m.services = svc
+}
+
 // Compile compiles WASM bytes into a reusable CompiledMolt.
 // Results are cached by CID — repeated calls with the same CID return the cached module.
 func (m *MoltRuntime) Compile(ctx context.Context, wasmBytes []byte, cid string) (*CompiledMolt, error) {
@@ -163,6 +173,11 @@ func (m *MoltRuntime) Invoke(ctx context.Context, compiled *CompiledMolt, invoca
 	timeout := time.Duration(m.cfg.TimeoutMs) * time.Millisecond
 	invokeCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	// Inject host services into context (if configured)
+	if m.services != nil {
+		invokeCtx = withHostServices(invokeCtx, m.services)
+	}
 
 	// Serialize request to stdin JSON
 	httpReq := MoltHTTPRequest{
