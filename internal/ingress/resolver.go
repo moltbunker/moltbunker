@@ -93,8 +93,18 @@ func (r *Resolver) Resolve(subdomain string) (*ServiceEntry, error) {
 	return nil, fmt.Errorf("service not found: %s", subdomain)
 }
 
+// minPrefixLen is the minimum subdomain length required for deployment ID
+// prefix matching. Auto-assigned subdomains use the first 8 hex chars of
+// the deployment ID. Without this floor, a 1-char subdomain like "a" would
+// match any deployment starting with "a", enabling cross-tenant routing.
+const minPrefixLen = 8
+
 // resolveByPrefix finds a service whose deployment ID starts with the given prefix.
 func (r *Resolver) resolveByPrefix(prefix string) *ServiceEntry {
+	if len(prefix) < minPrefixLen {
+		return nil
+	}
+
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
