@@ -109,7 +109,7 @@ logs/
 
 # State files
 *.state
-state/
+/state/
 
 # ===================
 # BUILD & TEST

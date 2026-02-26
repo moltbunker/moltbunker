@@ -1,0 +1,223 @@
+package state
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	bolt "go.etcd.io/bbolt"
+)
+
+// BboltStore implements StateStore using bbolt (embedded B+ tree KV database).
+// Each category of state (deployments, bans, peers, etc.) is stored in its own bucket.
+// All operations are ACID — partial writes on crash are impossible.
+type BboltStore struct {
+	db *bolt.DB
+}
+
+// allBuckets is the list of buckets created on database open.
+var allBuckets = []string{
+	BucketMeta,
+	BucketDeployments,
+	BucketBans,
+	BucketPeers,
+	BucketCertPins,
+	BucketAPIKeys,
+}
+
+// NewBboltStore opens or creates a bbolt database at the given path.
+// Parent directories are created if they don't exist.
+func NewBboltStore(path string) (*BboltStore, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return nil, fmt.Errorf("create state db directory: %w", err)
+	}
+
+	db, err := bolt.Open(path, 0600, &bolt.Options{
+		Timeout:      1 * time.Second,
+		FreelistType: bolt.FreelistMapType,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("open state db: %w", err)
+	}
+
+	// Create all buckets in a single transaction
+	err = db.Update(func(tx *bolt.Tx) error {
+		for _, name := range allBuckets {
+			if _, err := tx.CreateBucketIfNotExists([]byte(name)); err != nil {
+				return fmt.Errorf("create bucket %s: %w", name, err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		db.Close()
+		return nil, fmt.Errorf("initialize buckets: %w", err)
+	}
+
+	return &BboltStore{db: db}, nil
+}
+
+func (s *BboltStore) Close() error {
+	return s.db.Close()
+}
+
+// --- internal helpers ---
+
+func (s *BboltStore) put(bucket, key string, data []byte) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucket)
+		}
+		return b.Put([]byte(key), data)
+	})
+}
+
+func (s *BboltStore) get(bucket, key string) ([]byte, error) {
+	var result []byte
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucket)
+		}
+		v := b.Get([]byte(key))
+		if v != nil {
+			result = make([]byte, len(v))
+			copy(result, v)
+		}
+		return nil
+	})
+	return result, err
+}
+
+func (s *BboltStore) del(bucket, key string) error {
+	return s.db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucket)
+		}
+		return b.Delete([]byte(key))
+	})
+}
+
+func (s *BboltStore) list(bucket string) (map[string][]byte, error) {
+	result := make(map[string][]byte)
+	err := s.db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket([]byte(bucket))
+		if b == nil {
+			return fmt.Errorf("bucket %s not found", bucket)
+		}
+		return b.ForEach(func(k, v []byte) error {
+			cp := make([]byte, len(v))
+			copy(cp, v)
+			result[string(k)] = cp
+			return nil
+		})
+	})
+	return result, err
+}
+
+// --- Deployments ---
+
+func (s *BboltStore) PutDeployment(_ context.Context, id string, data []byte) error {
+	return s.put(BucketDeployments, id, data)
+}
+
+func (s *BboltStore) GetDeployment(_ context.Context, id string) ([]byte, error) {
+	return s.get(BucketDeployments, id)
+}
+
+func (s *BboltStore) DeleteDeployment(_ context.Context, id string) error {
+	return s.del(BucketDeployments, id)
+}
+
+func (s *BboltStore) ListDeployments(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketDeployments)
+}
+
+// --- Bans ---
+
+func (s *BboltStore) PutBan(_ context.Context, peerID string, data []byte) error {
+	return s.put(BucketBans, peerID, data)
+}
+
+func (s *BboltStore) DeleteBan(_ context.Context, peerID string) error {
+	return s.del(BucketBans, peerID)
+}
+
+func (s *BboltStore) ListBans(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketBans)
+}
+
+// --- Peers ---
+
+func (s *BboltStore) PutPeer(_ context.Context, peerID string, data []byte) error {
+	return s.put(BucketPeers, peerID, data)
+}
+
+func (s *BboltStore) DeletePeer(_ context.Context, peerID string) error {
+	return s.del(BucketPeers, peerID)
+}
+
+func (s *BboltStore) ListPeers(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketPeers)
+}
+
+// --- Certificate Pins ---
+
+func (s *BboltStore) PutCertPin(_ context.Context, nodeID string, hash []byte) error {
+	return s.put(BucketCertPins, nodeID, hash)
+}
+
+func (s *BboltStore) DeleteCertPin(_ context.Context, nodeID string) error {
+	return s.del(BucketCertPins, nodeID)
+}
+
+func (s *BboltStore) ListCertPins(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketCertPins)
+}
+
+// --- API Keys ---
+
+func (s *BboltStore) PutAPIKey(_ context.Context, id string, data []byte) error {
+	return s.put(BucketAPIKeys, id, data)
+}
+
+func (s *BboltStore) DeleteAPIKey(_ context.Context, id string) error {
+	return s.del(BucketAPIKeys, id)
+}
+
+func (s *BboltStore) ListAPIKeys(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketAPIKeys)
+}
+
+// --- Schema ---
+
+func (s *BboltStore) SchemaVersion(_ context.Context) (int, error) {
+	data, err := s.get(BucketMeta, MetaSchemaVersion)
+	if err != nil {
+		return 0, err
+	}
+	if data == nil {
+		return 0, nil
+	}
+	var v int
+	_, err = fmt.Sscanf(string(data), "%d", &v)
+	return v, err
+}
+
+func (s *BboltStore) SetSchemaVersion(_ context.Context, version int) error {
+	return s.put(BucketMeta, MetaSchemaVersion, []byte(fmt.Sprintf("%d", version)))
+}
+
+// --- Metadata ---
+
+func (s *BboltStore) PutMeta(_ context.Context, key string, data []byte) error {
+	return s.put(BucketMeta, key, data)
+}
+
+func (s *BboltStore) GetMeta(_ context.Context, key string) ([]byte, error) {
+	return s.get(BucketMeta, key)
+}

@@ -17,6 +17,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/metrics"
 	"github.com/moltbunker/moltbunker/internal/molt"
 	"github.com/moltbunker/moltbunker/internal/runtime"
+	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/internal/util"
 )
 
@@ -39,6 +40,9 @@ type APIServer struct {
 	rateLimitRequests   int           // Max requests per connection per window
 	rateLimitWindow     time.Duration // Rate limit window duration
 	maxRequestSize      int64         // Maximum request body size
+
+	// State store — passed to ContainerManager for persistent state
+	stateStore state.StateStore
 
 	// Admin badge getter — set by external API server to merge badges into status
 	adminBadgeGetter AdminBadgeGetter
@@ -243,6 +247,7 @@ func (s *APIServer) Start(ctx context.Context) error {
 		PaymentService:   s.node.PaymentService(),
 		MoltEnabled:      moltEnabled,
 		MoltConfig:       moltCfg,
+		StateStore:       s.stateStore,
 	}
 	containerManager, err := NewContainerManager(ctx, cmConfig, s.node)
 	if err != nil {
@@ -304,6 +309,11 @@ func (s *APIServer) Stop() error {
 	os.Remove(s.socketPath)
 
 	return nil
+}
+
+// SetStateStore sets the persistent state store passed to ContainerManager.
+func (s *APIServer) SetStateStore(store state.StateStore) {
+	s.stateStore = store
 }
 
 // SetAdminBadgeGetter sets the admin badge getter for merging into status responses

@@ -28,6 +28,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
+	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/internal/threat"
 	"github.com/moltbunker/moltbunker/internal/tunnel"
 	"github.com/moltbunker/moltbunker/internal/util"
@@ -86,8 +87,25 @@ func main() {
 	}
 	defer os.Remove(pidPath)
 
+	// C1: Open persistent state database (bbolt)
+	stateDBPath := cfg.Daemon.StateDBPath
+	if stateDBPath == "" {
+		stateDBPath = filepath.Join(cfg.Daemon.DataDir, "moltbunker.db")
+	}
+	stateStore, err := state.NewBboltStore(stateDBPath)
+	if err != nil {
+		log.Fatalf("Failed to open state database: %v", err)
+	}
+	defer stateStore.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Run JSON → bbolt migration (no-op if already migrated or no JSON files)
+	if err := state.MigrateFromJSON(ctx, stateStore, cfg.Daemon.DataDir); err != nil {
+		logging.Warn("state migration failed, continuing",
+			logging.Err(err), logging.Component("daemon"))
+	}
 
 	// Handle signals
 	sigChan := make(chan os.Signal, 1)
@@ -269,6 +287,7 @@ func main() {
 
 	// Create and start API server for CLI communication
 	apiServer := daemon.NewAPIServerWithFullConfig(node, cfg)
+	apiServer.SetStateStore(stateStore)
 	if err := apiServer.Start(ctx); err != nil {
 		log.Fatalf("Failed to start API server: %v", err)
 	}

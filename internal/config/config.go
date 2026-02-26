@@ -34,7 +34,8 @@ type DaemonConfig struct {
 	KeystoreDir string `yaml:"keystore_dir"`
 	SocketPath  string `yaml:"socket_path"`
 	LogLevel    string `yaml:"log_level"`
-	LogFormat   string `yaml:"log_format"` // "json" or "text"
+	LogFormat   string `yaml:"log_format"`    // "json" or "text"
+	StateDBPath string `yaml:"state_db_path"` // Path to bbolt state database (default: <data_dir>/moltbunker.db)
 }
 
 // APIConfig contains API server settings

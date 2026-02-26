@@ -23,6 +23,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/redundancy"
 	"github.com/moltbunker/moltbunker/internal/runtime"
+	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/internal/tor"
 	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
@@ -42,6 +43,7 @@ type ContainerManager struct {
 	node          *Node
 	payment       *payment.PaymentService
 
+	stateStore  state.StateStore // nil = legacy JSON fallback
 	deployments map[string]*Deployment
 	mu          sync.RWMutex
 
@@ -143,6 +145,7 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		node:               node,
 		payment:            config.PaymentService,
 		networkManager:     networking.NewNetworkManager(),
+		stateStore:         config.StateStore,
 		deployments:        make(map[string]*Deployment),
 		pendingDeployments: make(map[string]*pendingDeployment),
 		execStreams:        NewExecStreamManager(),
@@ -1001,8 +1004,8 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 	// P1-10: Track delete event
 	cm.deletesTotal.Add(1)
 
-	// Persist state to disk
-	cm.saveStateAsync()
+	// Persist state: delete just this deployment (more efficient than full re-save)
+	cm.deleteDeploymentState(containerID)
 
 	return nil
 }
