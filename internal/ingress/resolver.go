@@ -56,12 +56,36 @@ func NewResolver(gossip GossipReader, subdomainResolver SubdomainResolver) *Reso
 }
 
 // Resolve returns the service entry for a subdomain string.
+// It first tries the full subdomain through all 5 resolution steps.
+// If that fails and the subdomain contains a dot (e.g., "foo.myapp"),
+// it strips the leftmost label and retries once ("myapp").
+// This enables wildcard subdomain routing: foo.myapp.moltbunker.dev → myapp.
+// Max 1 strip for security — prevents deep chains from matching unrelated services.
+func (r *Resolver) Resolve(subdomain string) (*ServiceEntry, error) {
+	// Try full subdomain (all 5 steps)
+	if entry, err := r.resolveOnce(subdomain); err == nil {
+		return entry, nil
+	}
+
+	// Wildcard: strip leftmost label, retry once
+	if idx := strings.Index(subdomain, "."); idx >= 0 && idx < len(subdomain)-1 {
+		parent := subdomain[idx+1:]
+		if entry, err := r.resolveOnce(parent); err == nil {
+			return entry, nil
+		}
+	}
+
+	return nil, fmt.Errorf("service not found: %s", subdomain)
+}
+
+// resolveOnce runs the full 5-step resolution pipeline for a single subdomain.
 // Resolution order:
 //  1. Exact deployment ID match
 //  2. Prefix match (8-char hex prefix from auto-assigned subdomains)
 //  3. Vanity name resolution via SubdomainResolver
 //  4. Refresh from gossip and retry steps 1-3
-func (r *Resolver) Resolve(subdomain string) (*ServiceEntry, error) {
+//  5. On-chain fallback for cross-node vanity routing
+func (r *Resolver) resolveOnce(subdomain string) (*ServiceEntry, error) {
 	// Step 1: Exact match
 	r.mu.RLock()
 	entry, ok := r.services[subdomain]

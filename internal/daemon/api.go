@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/config"
+	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
 	"github.com/moltbunker/moltbunker/internal/molt"
@@ -46,6 +47,9 @@ type APIServer struct {
 
 	// Admin badge getter — set by external API server to merge badges into status
 	adminBadgeGetter AdminBadgeGetter
+
+	// DNS sync for Cloudflare subdomain A records
+	dnsSync *ingress.DNSSync
 }
 
 // AdminBadgeGetter returns admin-assigned badges/blocked status for a node
@@ -319,6 +323,11 @@ func (s *APIServer) SetStateStore(store state.StateStore) {
 // SetAdminBadgeGetter sets the admin badge getter for merging into status responses
 func (s *APIServer) SetAdminBadgeGetter(getter AdminBadgeGetter) {
 	s.adminBadgeGetter = getter
+}
+
+// SetDNSSync sets the Cloudflare DNS sync manager for subdomain record management.
+func (s *APIServer) SetDNSSync(dns *ingress.DNSSync) {
+	s.dnsSync = dns
 }
 
 // SocketPath returns the socket path

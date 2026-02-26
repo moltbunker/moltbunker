@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/ingress"
@@ -12,6 +13,19 @@ import (
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/pkg/types"
+)
+
+// cachedSubdomainResult stores a cached on-chain subdomain resolution result.
+type cachedSubdomainResult struct {
+	DeploymentID string
+	Found        bool
+	FetchedAt    time.Time
+}
+
+// Default cache TTLs for on-chain subdomain resolution.
+const (
+	defaultSubdomainCacheTTL         = 5 * time.Minute // positive results
+	defaultSubdomainNegativeCacheTTL = 2 * time.Minute // negative (not found) results
 )
 
 // GossipServiceAdapter bridges p2p.GossipProtocol to ingress.GossipReader.
@@ -23,11 +37,24 @@ import (
 type GossipServiceAdapter struct {
 	gossip         *p2p.GossipProtocol
 	paymentService *payment.PaymentService
+
+	// On-chain subdomain resolution cache
+	subdomainCache map[string]*cachedSubdomainResult
+	cacheMu        sync.RWMutex
+	cacheTTL       time.Duration // TTL for positive results
+	negativeTTL    time.Duration // TTL for negative (not found) results
+	nowFunc        func() time.Time
 }
 
 // NewGossipServiceAdapter creates a new gossip service adapter.
 func NewGossipServiceAdapter(gossip *p2p.GossipProtocol) *GossipServiceAdapter {
-	return &GossipServiceAdapter{gossip: gossip}
+	return &GossipServiceAdapter{
+		gossip:         gossip,
+		subdomainCache: make(map[string]*cachedSubdomainResult),
+		cacheTTL:       defaultSubdomainCacheTTL,
+		negativeTTL:    defaultSubdomainNegativeCacheTTL,
+		nowFunc:        time.Now,
+	}
 }
 
 // SetPaymentService sets the payment service for on-chain subdomain resolution.
@@ -73,7 +100,27 @@ func (a *GossipServiceAdapter) ResolveVanityName(name string) (string, bool) {
 // ResolveOnChain implements ingress.SubdomainResolver.
 // It queries the BunkerRegistry smart contract as a fallback for cross-node
 // vanity routing when gossip state doesn't have the mapping.
+// Results are cached with separate TTLs for positive (5min) and negative (2min) hits
+// to avoid redundant RPC calls for popular subdomains.
 func (a *GossipServiceAdapter) ResolveOnChain(name string) (string, bool) {
+	now := a.nowFunc()
+
+	// Check cache first — return cached result even if paymentService is nil
+	a.cacheMu.RLock()
+	cached, ok := a.subdomainCache[name]
+	a.cacheMu.RUnlock()
+
+	if ok {
+		ttl := a.cacheTTL
+		if !cached.Found {
+			ttl = a.negativeTTL
+		}
+		if now.Sub(cached.FetchedAt) < ttl {
+			return cached.DeploymentID, cached.Found
+		}
+	}
+
+	// Cache miss or expired — need payment service for RPC call
 	if a.paymentService == nil {
 		return "", false
 	}
@@ -85,13 +132,37 @@ func (a *GossipServiceAdapter) ResolveOnChain(name string) (string, bool) {
 			"name", name,
 			logging.Err(err),
 			logging.Component("ingress"))
+		// Cache negative result
+		a.cacheMu.Lock()
+		a.subdomainCache[name] = &cachedSubdomainResult{Found: false, FetchedAt: now}
+		a.cacheMu.Unlock()
 		return "", false
 	}
 	depID := bytes32ToDeploymentID(reg.DeploymentID)
 	if depID == "" || depID == fmt.Sprintf("%x", [32]byte{}) {
+		a.cacheMu.Lock()
+		a.subdomainCache[name] = &cachedSubdomainResult{Found: false, FetchedAt: now}
+		a.cacheMu.Unlock()
 		return "", false
 	}
+
+	// Cache positive result
+	a.cacheMu.Lock()
+	a.subdomainCache[name] = &cachedSubdomainResult{
+		DeploymentID: depID,
+		Found:        true,
+		FetchedAt:    now,
+	}
+	a.cacheMu.Unlock()
 	return depID, true
+}
+
+// InvalidateSubdomainCache evicts a cached on-chain resolution result,
+// forcing the next ResolveOnChain call to re-query the contract.
+func (a *GossipServiceAdapter) InvalidateSubdomainCache(name string) {
+	a.cacheMu.Lock()
+	delete(a.subdomainCache, name)
+	a.cacheMu.Unlock()
 }
 
 // toServiceEntry converts a gossip value to *ingress.ServiceEntry.

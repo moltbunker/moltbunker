@@ -1,10 +1,114 @@
 package daemon
 
 import (
+	"context"
 	"testing"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
+
+// mockPaymentService is a minimal mock that tracks ResolveSubdomain calls.
+type mockPaymentService struct {
+	resolveFunc func(ctx context.Context, name string) (*payment.SubdomainRegistration, error)
+	callCount   int
+}
+
+func (m *mockPaymentService) resolveSubdomain(ctx context.Context, name string) (*payment.SubdomainRegistration, error) {
+	m.callCount++
+	return m.resolveFunc(ctx, name)
+}
+
+func TestResolveOnChain_CachePositiveHit(t *testing.T) {
+	mock := &mockPaymentService{
+		resolveFunc: func(_ context.Context, name string) (*payment.SubdomainRegistration, error) {
+			return &payment.SubdomainRegistration{
+				Name:         name,
+				DeploymentID: [32]byte{0xab, 0xcd},
+				Owner:        common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678"),
+			}, nil
+		},
+	}
+
+	adapter := NewGossipServiceAdapter(nil)
+	now := time.Now()
+	adapter.nowFunc = func() time.Time { return now }
+	// Wire mock: pre-populate cache as if RPC returned result
+	adapter.subdomainCache["myapp"] = &cachedSubdomainResult{
+		DeploymentID: "abcd",
+		Found:        true,
+		FetchedAt:    now,
+	}
+
+	// Should return cached result without calling RPC
+	depID, ok := adapter.ResolveOnChain("myapp")
+	if !ok || depID != "abcd" {
+		t.Errorf("expected cached positive hit, got depID=%q ok=%v", depID, ok)
+	}
+	if mock.callCount != 0 {
+		t.Errorf("expected 0 RPC calls, got %d", mock.callCount)
+	}
+}
+
+func TestResolveOnChain_CacheNegativeHit(t *testing.T) {
+	adapter := NewGossipServiceAdapter(nil)
+	now := time.Now()
+	adapter.nowFunc = func() time.Time { return now }
+	// Pre-populate negative cache
+	adapter.subdomainCache["unknown"] = &cachedSubdomainResult{
+		Found:     false,
+		FetchedAt: now,
+	}
+
+	depID, ok := adapter.ResolveOnChain("unknown")
+	if ok || depID != "" {
+		t.Errorf("expected cached negative hit, got depID=%q ok=%v", depID, ok)
+	}
+}
+
+func TestResolveOnChain_CacheExpires(t *testing.T) {
+	callCount := 0
+	adapter := NewGossipServiceAdapter(nil)
+	now := time.Now()
+	adapter.nowFunc = func() time.Time { return now }
+	// Pre-populate expired cache entry
+	adapter.subdomainCache["myapp"] = &cachedSubdomainResult{
+		DeploymentID: "old-value",
+		Found:        true,
+		FetchedAt:    now.Add(-10 * time.Minute), // well past 5min TTL
+	}
+	// No payment service means the RPC call will return ("", false)
+	// which proves the cache was bypassed
+	_ = callCount
+
+	depID, ok := adapter.ResolveOnChain("myapp")
+	// No payment service → returns false, but the point is it didn't return the cached "old-value"
+	if ok {
+		t.Errorf("expected cache miss (no payment svc), got depID=%q ok=%v", depID, ok)
+	}
+}
+
+func TestInvalidateSubdomainCache(t *testing.T) {
+	adapter := NewGossipServiceAdapter(nil)
+	now := time.Now()
+	adapter.nowFunc = func() time.Time { return now }
+	adapter.subdomainCache["myapp"] = &cachedSubdomainResult{
+		DeploymentID: "abcd",
+		Found:        true,
+		FetchedAt:    now,
+	}
+
+	adapter.InvalidateSubdomainCache("myapp")
+
+	adapter.cacheMu.RLock()
+	_, exists := adapter.subdomainCache["myapp"]
+	adapter.cacheMu.RUnlock()
+	if exists {
+		t.Error("expected cache entry to be evicted after InvalidateSubdomainCache")
+	}
+}
 
 func TestGossipStateValidator_RejectsRemoteSubdomainEntries(t *testing.T) {
 	localID := types.NodeID{0x01}

@@ -10,7 +10,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/payment"
+	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -745,6 +747,9 @@ func (s *APIServer) handleSubdomainRegister(ctx context.Context, req *APIRequest
 			fmt.Sprintf("subdomain:%s", params.Name), params.DeploymentID)
 	}
 
+	// Non-blocking DNS record creation
+	s.dnsSyncCreate(params.Name)
+
 	domain := "moltbunker.dev"
 	if s.config != nil && s.config.Node.Provider.IngressDomain != "" {
 		domain = s.config.Node.Provider.IngressDomain
@@ -792,6 +797,9 @@ func (s *APIServer) handleSubdomainRelease(ctx context.Context, req *APIRequest)
 		s.containerManager.GossipProtocol().UpdateState(
 			fmt.Sprintf("subdomain:%s", params.Name), nil)
 	}
+
+	// Non-blocking DNS record deletion
+	s.dnsSyncDelete(params.Name)
 
 	return &APIResponse{Result: map[string]string{"status": "released", "name": params.Name}, ID: req.ID}
 }
@@ -1073,6 +1081,9 @@ func (s *APIServer) handleSubdomainCancel(ctx context.Context, req *APIRequest) 
 			fmt.Sprintf("subdomain:%s", params.Name), nil)
 	}
 
+	// Non-blocking DNS record deletion
+	s.dnsSyncDelete(params.Name)
+
 	return &APIResponse{Result: map[string]string{"status": "cancelled", "name": params.Name}, ID: req.ID}
 }
 
@@ -1164,7 +1175,44 @@ func (s *APIServer) handleSubdomainReclaim(ctx context.Context, req *APIRequest)
 			fmt.Sprintf("subdomain:%s", params.Name), nil)
 	}
 
+	// Non-blocking DNS record deletion
+	s.dnsSyncDelete(params.Name)
+
 	return &APIResponse{Result: map[string]string{"status": "reclaimed", "name": params.Name}, ID: req.ID}
+}
+
+// dnsSyncCreate fires a non-blocking DNS record creation.
+func (s *APIServer) dnsSyncCreate(subdomain string) {
+	if s.dnsSync == nil {
+		return
+	}
+	util.SafeGoWithName("dns-sync-create", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.dnsSync.CreateRecord(ctx, subdomain); err != nil {
+			logging.Warn("DNS sync create failed",
+				"subdomain", subdomain,
+				logging.Err(err),
+				logging.Component("dns-sync"))
+		}
+	})
+}
+
+// dnsSyncDelete fires a non-blocking DNS record deletion.
+func (s *APIServer) dnsSyncDelete(subdomain string) {
+	if s.dnsSync == nil {
+		return
+	}
+	util.SafeGoWithName("dns-sync-delete", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := s.dnsSync.DeleteRecord(ctx, subdomain); err != nil {
+			logging.Warn("DNS sync delete failed",
+				"subdomain", subdomain,
+				logging.Err(err),
+				logging.Component("dns-sync"))
+		}
+	})
 }
 
 // sendError sends an error response and returns any encoding error

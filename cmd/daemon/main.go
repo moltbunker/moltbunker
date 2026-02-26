@@ -373,10 +373,40 @@ func main() {
 			resolver := ingress.NewResolver(gossipAdapter, gossipAdapter) // implements both GossipReader and SubdomainResolver
 			ingressProxy = ingress.NewProxy(resolver, tunnelClient, ingressDomain)
 
-			// Use TLS for the public-facing ingress listener.
-			// Even behind Cloudflare Tunnel, TLS provides defense in depth.
-			ingressTLSCfg := node.TLSServerConfig()
-			ingressTLSCfg.ClientAuth = tls.NoClientCert // Public clients don't present certs
+			// Wire Cloudflare DNS sync if configured
+			if cfg.Node.Provider.CloudflareAPIToken != "" && cfg.Node.Provider.CloudflareZoneID != "" && cfg.Node.Provider.IngressIP != "" {
+				dnsSync := ingress.NewDNSSync(
+					cfg.Node.Provider.CloudflareAPIToken,
+					cfg.Node.Provider.CloudflareZoneID,
+					cfg.Node.Provider.IngressIP,
+					ingressDomain,
+				)
+				apiServer.SetDNSSync(dnsSync)
+				logging.Info("cloudflare DNS sync enabled",
+					"domain", ingressDomain,
+					logging.Component("ingress"))
+			}
+
+			// TLS configuration: use Let's Encrypt autocert if enabled, else node self-signed cert
+			var ingressTLSCfg *tls.Config
+			if cfg.Node.Provider.IngressAutoTLS {
+				certDir := cfg.Node.Provider.IngressCertDir
+				if certDir == "" {
+					certDir = filepath.Join(cfg.Daemon.DataDir, "ingress-certs")
+				}
+				email := cfg.Node.Provider.IngressACMEEmail
+				autoTLS := ingress.NewAutoTLSConfig(certDir, ingressDomain, email, resolver)
+				ingressTLSCfg = autoTLS.TLSConfig()
+				logging.Info("ingress auto-TLS enabled (Let's Encrypt)",
+					"cert_dir", certDir,
+					"domain", ingressDomain,
+					logging.Component("ingress"))
+			} else {
+				// Existing: node self-signed cert
+				ingressTLSCfg = node.TLSServerConfig()
+				ingressTLSCfg.ClientAuth = tls.NoClientCert // Public clients don't present certs
+			}
+
 			ingressListener, listenErr := tls.Listen("tcp", fmt.Sprintf(":%d", ingressPort), ingressTLSCfg)
 			if listenErr != nil {
 				logging.Warn("failed to start ingress proxy",

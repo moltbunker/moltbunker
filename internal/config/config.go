@@ -164,6 +164,16 @@ type ProviderNodeConfig struct {
 	IngressPort    int    `yaml:"ingress_port"`     // HTTP port for ingress proxy (default: 9090)
 	IngressDomain  string `yaml:"ingress_domain"`   // Domain for public URLs (e.g., "moltbunker.dev")
 	TunnelPort     int    `yaml:"tunnel_port"`      // TLS tunnel port for ingress→provider (default: base port + 2)
+
+	// Cloudflare DNS sync for subdomain A records
+	CloudflareAPIToken string `yaml:"cloudflare_api_token,omitempty"` // Cloudflare API bearer token
+	CloudflareZoneID   string `yaml:"cloudflare_zone_id,omitempty"`   // Cloudflare zone ID for the domain
+	IngressIP          string `yaml:"ingress_ip,omitempty"`           // Public IP for DNS A records
+
+	// Auto-TLS (Let's Encrypt)
+	IngressAutoTLS   bool   `yaml:"ingress_auto_tls,omitempty"`   // Enable automatic TLS via Let's Encrypt
+	IngressCertDir   string `yaml:"ingress_cert_dir,omitempty"`   // Directory for autocert cache
+	IngressACMEEmail string `yaml:"ingress_acme_email,omitempty"` // ACME account email for Let's Encrypt
 }
 
 // RequesterNodeConfig contains requester-specific configuration

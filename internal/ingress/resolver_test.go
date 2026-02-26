@@ -60,3 +60,90 @@ func TestResolveByPrefix_ExpiredEntry(t *testing.T) {
 		t.Error("resolveByPrefix returned expired entry")
 	}
 }
+
+// mockSubdomainResolver for testing vanity resolution in Resolve().
+type mockSubdomainResolver struct {
+	vanity  map[string]string // name → deploymentID
+	onChain map[string]string // name → deploymentID
+}
+
+func (m *mockSubdomainResolver) ResolveVanityName(name string) (string, bool) {
+	depID, ok := m.vanity[name]
+	return depID, ok
+}
+
+func (m *mockSubdomainResolver) ResolveOnChain(name string) (string, bool) {
+	depID, ok := m.onChain[name]
+	return depID, ok
+}
+
+func TestResolve_WildcardFallback(t *testing.T) {
+	mock := &mockSubdomainResolver{
+		vanity: map[string]string{"myapp": "dep-aabbccdd"},
+	}
+	r := NewResolver(nil, mock)
+	r.Register(&ServiceEntry{
+		DeploymentID:   "dep-aabbccdd",
+		ProviderNodeID: "node1",
+		ProviderAddr:   "10.0.0.1:9002",
+		ContainerPort:  8080,
+		HostPort:       32000,
+	})
+
+	// Direct resolve should work
+	entry, err := r.Resolve("myapp")
+	if err != nil || entry == nil {
+		t.Fatalf("direct resolve failed: %v", err)
+	}
+
+	// Wildcard: foo.myapp should strip to myapp and match
+	entry, err = r.Resolve("foo.myapp")
+	if err != nil || entry == nil {
+		t.Fatalf("wildcard resolve foo.myapp failed: %v", err)
+	}
+	if entry.DeploymentID != "dep-aabbccdd" {
+		t.Errorf("got deployment %s, want dep-aabbccdd", entry.DeploymentID)
+	}
+}
+
+func TestResolve_WildcardMaxOneLevel(t *testing.T) {
+	mock := &mockSubdomainResolver{
+		vanity: map[string]string{"myapp": "dep-aabbccdd"},
+	}
+	r := NewResolver(nil, mock)
+	r.Register(&ServiceEntry{
+		DeploymentID:   "dep-aabbccdd",
+		ProviderNodeID: "node1",
+		ProviderAddr:   "10.0.0.1:9002",
+		ContainerPort:  8080,
+		HostPort:       32000,
+	})
+
+	// a.b.myapp → strips to b.myapp (not myapp), so should NOT match
+	_, err := r.Resolve("a.b.myapp")
+	if err == nil {
+		t.Error("expected a.b.myapp to NOT resolve (max 1 strip), but it did")
+	}
+}
+
+func TestResolve_DirectMatchUnchanged(t *testing.T) {
+	mock := &mockSubdomainResolver{
+		vanity: map[string]string{"myapp": "dep-aabbccdd"},
+	}
+	r := NewResolver(nil, mock)
+	r.Register(&ServiceEntry{
+		DeploymentID:   "dep-aabbccdd",
+		ProviderNodeID: "node1",
+		ProviderAddr:   "10.0.0.1:9002",
+		ContainerPort:  8080,
+		HostPort:       32000,
+	})
+
+	entry, err := r.Resolve("myapp")
+	if err != nil {
+		t.Fatalf("direct resolve failed: %v", err)
+	}
+	if entry.DeploymentID != "dep-aabbccdd" {
+		t.Errorf("got deployment %s, want dep-aabbccdd", entry.DeploymentID)
+	}
+}
