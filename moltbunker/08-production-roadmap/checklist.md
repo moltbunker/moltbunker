@@ -12,7 +12,7 @@ Every item must be completed (checked) before mainnet launch unless explicitly m
 
 | # | Item | Status | Priority | Owner | Notes |
 |---|------|--------|----------|-------|-------|
-| N1 | Replace IPFS bootstrap peers with dedicated Moltbunker bootstrap nodes | [ ] | P0 | DevOps | Currently using default libp2p bootstrap peers |
+| N1 | Replace IPFS bootstrap peers with dedicated Moltbunker bootstrap nodes | [x] | P0 | Backend | Done: DNS bootstrap in bootstrap.go, no public IPFS peers, mDNS + address book fallback |
 | N2 | Deploy 5 bootstrap nodes across 5 regions (US-E, US-W, EU-W, EU-C, APAC) | [ ] | P0 | DevOps | Minimum 3 cloud providers |
 | N3 | Implement DNS-based bootstrap peer resolution (`/dnsaddr/`) | [x] | P0 | Backend | Done: ResolveDNSBootstrap in bootstrap.go, _dnsaddr TXT resolution, static fallback, 14 tests |
 | N4 | Persist DHT routing table to disk for faster reconnection | [x] | P1 | Backend | Done: PeerStore with JSON save/load in peerstore.go |
@@ -65,7 +65,7 @@ Every item must be completed (checked) before mainnet launch unless explicitly m
 | C9 | Foundry fork tests against Base mainnet state | [x] | P1 | Smart Contract | Done: Fork.t.sol with 8 tests on Base mainnet fork (chain 8453) — lifecycle, staking, metadata, contracts |
 | C10 | Professional security audit completed | [ ] | P0 | Security | Trail of Bits, OpenZeppelin, or Cyfrin |
 | C11 | All critical/high audit findings remediated | [ ] | P0 | Smart Contract | Verified by auditor re-review |
-| C12 | Contracts verified on Basescan | [ ] | P0 | Smart Contract | Source code publicly verifiable |
+| C12 | Contracts verified on Basescan | [x] | P0 | Smart Contract | Done: All 8 contracts verified on Base Sepolia Basescan |
 | C13 | Emergency pause mechanism (circuit breaker) | [x] | P0 | Smart Contract | Done: Pausable on Escrow and Staking with whenNotPaused on critical functions, owner-controlled pause/unpause |
 | C14 | Timelock on all admin parameter changes (24h minimum) | [x] | P0 | Smart Contract | Done: BunkerTimelock.sol (OZ TimelockController, 24h MIN_DELAY_FLOOR, GUARDIAN_ROLE emergency pause, 45 tests) |
 | C15 | Token distribution executed according to allocation plan | [ ] | P0 | Team Lead | Vesting contracts for team/investor/ecosystem |
@@ -236,13 +236,34 @@ Every item must be completed (checked) before mainnet launch unless explicitly m
 
 ---
 
+## 12. Subdomain System (Decentralized CNAME)
+
+| # | Item | Status | Priority | Owner | Notes |
+|---|------|--------|----------|-------|-------|
+| SUB1 | BunkerRegistry.sol — on-chain subdomain registry contract | [x] | P1 | Smart Contract | v2.0.0, 174 Foundry tests, reserved names, deployed to Base Sepolia |
+| SUB2 | RegistryContract Go bindings (register, resolve, release, transfer) | [x] | P1 | Backend | Mock mode + production mode in registry_contract.go |
+| SUB3 | PaymentService subdomain facades (6 initial: register, resolve, release, transfer, update, list) | [x] | P1 | Backend | service.go — nil guard → delegate pattern |
+| SUB4 | PaymentService subdomain facades (10 remaining: renew, reserve, claim, cancel, metadata, primary, reclaim, isExpired, reverseResolve, getMetadata) | [x] | P1 | Backend | All 16 contract operations wired end-to-end |
+| SUB5 | Daemon handlers + API dispatch for all subdomain operations | [x] | P1 | Backend | 13 handlers in api_handlers.go, ownership checks on mutating ops |
+| SUB6 | IPC client methods for all subdomain operations | [x] | P1 | Backend | 13 methods in client/subdomain.go |
+| SUB7 | CLI commands: `subdomain register/resolve/release/transfer/update/list` | [x] | P1 | Backend | Initial 6 commands |
+| SUB8 | CLI commands: `subdomain renew/reserve/claim/cancel/metadata/primary/reclaim` | [x] | P1 | Backend | Remaining 7 commands |
+| SUB9 | Gossip `subdomain:` entries for local vanity routing | [x] | P1 | Backend | Set on register/claim, removed on release/cancel/reclaim |
+| SUB10 | Anti-spoofing: reject remote gossip `subdomain:` entries | [x] | P0 | Backend | StateValidator in gossip_adapter.go — prevents subdomain hijacking |
+| SUB11 | On-chain fallback for cross-node vanity routing | [x] | P1 | Backend | Step 5 in ingress resolver, ResolveOnChain() via BunkerRegistry |
+| SUB12 | Subdomain expiry cleanup goroutine | [x] | P1 | Backend | Hourly check of gossip entries against on-chain IsExpired() |
+| SUB13 | Mock registry tests | [x] | P1 | Testing | 17 tests in registry_contract_test.go |
+| SUB14 | Ingress 5-step resolution pipeline | [x] | P1 | Backend | Exact → prefix → vanity gossip → gossip refresh → on-chain fallback |
+
+---
+
 ## Summary Dashboard
 
 | Category | Total Items | P0 | P1 | P2 | Completed | In Progress |
 |----------|-----------|-----|-----|-----|-----------|-------------|
-| Networking | 13 | 7 | 5 | 1 | 10 / 13 | 0 |
+| Networking | 13 | 7 | 5 | 1 | 11 / 13 | 0 |
 | Security | 15 | 10 | 4 | 1 | 14 / 15 | 0 |
-| Smart Contracts | 15 | 12 | 2 | 1 | 7 / 15 | 0 |
+| Smart Contracts | 15 | 12 | 2 | 1 | 8 / 15 | 0 |
 | Container Runtime | 11 | 8 | 3 | 0 | 4 / 11 | 0 |
 | Testing | 13 | 7 | 5 | 1 | 10 / 13 | 0 |
 | Monitoring | 13 | 5 | 5 | 3 | 13 / 13 | 0 |
@@ -251,6 +272,7 @@ Every item must be completed (checked) before mainnet launch unless explicitly m
 | Documentation | 8 | 3 | 4 | 1 | 8 / 8 | 0 |
 | Molt Runtime | 24 | 0 | 19 | 5 | 19 / 24 | 0 |
 | P0 Services | 12 | 0 | 7 | 5 | 6 / 12 | 0 |
-| **Total** | **146** | **66** | **59** | **21** | **116 / 146** | **0** |
+| Subdomain System | 14 | 1 | 12 | 1 | 14 / 14 | 0 |
+| **Total** | **160** | **67** | **71** | **22** | **132 / 160** | **0** |
 
-**Launch requirement**: All P0 items (66 items) must be completed. P1 items are strongly recommended. P2 items can follow post-launch. Molt Runtime (section 10) is entirely P1/P2 — not blocking mainnet launch.
+**Launch requirement**: All P0 items (67 items) must be completed. P1 items are strongly recommended. P2 items can follow post-launch. Molt Runtime (section 10) and Subdomain System (section 12) are mostly P1 — not blocking mainnet launch.

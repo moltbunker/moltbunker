@@ -146,7 +146,7 @@ Phased plan from prototype to mainnet.
 | Document | Description |
 |----------|-------------|
 | [overview.md](08-production-roadmap/overview.md) | 4 phases over 18–26 weeks: Foundation → Testnet → Beta → Mainnet, team requirements, risk register, dependency graph |
-| [checklist.md](08-production-roadmap/checklist.md) | 110-item checklist across 9 categories (networking, security, contracts, containers, testing, monitoring, ops, economics, docs) with priority and owner |
+| [checklist.md](08-production-roadmap/checklist.md) | 160-item checklist across 12 categories (networking, security, contracts, containers, testing, monitoring, ops, economics, docs, molts, P0 services, subdomains) with priority and owner |
 
 **Phase 1 (Foundation) status:**
 - [x] Smart contracts: 9 contracts, 880 Foundry tests, Anvil-tested, Timelock governance
@@ -241,6 +241,7 @@ Systematic codebase audit for bugs, races, leaks, and logic errors.
 **Implementation status:**
 - [x] Research: security analysis, runtime comparison, industry survey
 - [x] Subdomain registry: BunkerRegistry.sol for `<name>.moltbunker.dev` routing
+- [x] Subdomain system fully wired: 16 contract ops end-to-end (CLI → client → daemon → PaymentService → contract), on-chain cross-node fallback, expiry cleanup, 17 mock tests
 - [x] `internal/molt/` package (runtime, module cache, HTTP handler, host functions, metrics)
 - [x] WASM host functions: 12 functions (result_size/read, error_message, random_bytes, time_now_ms, http_request, storage_put/get/delete/list, crawl_page)
 - [x] HostServices layer: shared between WASM and Deno runtimes (host_services.go, host_http.go, host_storage.go, host_crawl.go)
