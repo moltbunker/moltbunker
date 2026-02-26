@@ -34,6 +34,13 @@ import (
 	"github.com/moltbunker/moltbunker/internal/util"
 )
 
+// Build-time version information (set via -ldflags)
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
 var (
 	configPath  = flag.String("config", "", "Path to config file (default: ~/.moltbunker/config.yaml)")
 	port        = flag.Int("port", 0, "P2P port (overrides config)")
@@ -46,6 +53,8 @@ var (
 
 func main() {
 	flag.Parse()
+
+	log.Printf("moltbunkerd version=%s commit=%s built=%s", version, commit, buildDate)
 
 	// Load configuration
 	cfgPath := *configPath

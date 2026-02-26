@@ -21,6 +21,7 @@ var (
 	deployDisk         int64
 	deployMinTier      string
 	deployExposePorts  []int
+	deploySpot         bool
 )
 
 // Resource tier presets
@@ -73,6 +74,7 @@ Examples:
 	cmd.Flags().Int64Var(&deployDisk, "disk", 10737418240, "Disk limit in bytes")
 	cmd.Flags().StringVar(&deployMinTier, "min-tier", "", "Minimum provider tier (confidential, standard, dev)")
 	cmd.Flags().IntSliceVar(&deployExposePorts, "expose", nil, "Container ports to expose via ingress (repeatable)")
+	cmd.Flags().BoolVar(&deploySpot, "spot", false, "Use spot pricing (lower cost, preemptible)")
 
 	return cmd
 }
@@ -380,6 +382,7 @@ func runDeployDirect(image string) error {
 		OnionPort:       deployOnionPort,
 		MinProviderTier: deployMinTier,
 		ExposePorts:     toExposedPorts(deployExposePorts),
+		Spot:            deploySpot,
 	}
 
 	// Generate E2E exec key if wallet is available

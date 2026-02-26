@@ -174,6 +174,7 @@ type DeployRequest struct {
 	EncryptedExecKey []byte          `json:"encrypted_exec_key,omitempty"` // Exec key for E2E encrypted exec (32 bytes)
 	DeployNonce      string          `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key derivation
 	ExposePorts      []ExposedPort   `json:"expose_ports,omitempty"`       // Container ports to expose via ingress
+	Spot             bool            `json:"spot,omitempty"`               // Spot pricing (lower cost, preemptible)
 }
 
 // DeployResponse contains deployment result

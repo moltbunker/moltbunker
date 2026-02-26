@@ -40,6 +40,7 @@ type Deployment struct {
 	ExposedPorts     []ExposedPort         `json:"exposed_ports,omitempty"`      // Ports exposed publicly via ingress
 	PublicURLs       []string              `json:"public_urls,omitempty"`        // Generated public URLs
 	MinProviderTier  types.ProviderTier    `json:"min_provider_tier,omitempty"`  // Minimum provider tier required
+	Spot             bool                  `json:"spot,omitempty"`               // Spot pricing (lower cost, preemptible)
 	StoppedAt        time.Time             `json:"stopped_at,omitempty"`         // When container was stopped
 	VolumeExpiresAt  time.Time             `json:"volume_expires_at,omitempty"`  // When volume will be auto-deleted
 }

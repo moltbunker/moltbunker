@@ -44,9 +44,9 @@ builds:
         goarch: arm64
     ldflags:
       - -s -w
-      - -X main.version={{.Version}}
-      - -X main.commit={{.Commit}}
-      - -X main.date={{.Date}}
+      - -X github.com/moltbunker/moltbunker/cmd/cli/commands.Version={{.Version}}
+      - -X github.com/moltbunker/moltbunker/cmd/cli/commands.Commit={{.Commit}}
+      - -X github.com/moltbunker/moltbunker/cmd/cli/commands.BuildDate={{.Date}}
 
   - id: api
     binary: moltbunker-api

@@ -48,6 +48,7 @@ type DeployRequest struct {
 	OnionService    bool                 `json:"onion_service"`
 	ReservationID   string               `json:"reservation_id,omitempty"`
 	MinProviderTier string               `json:"min_provider_tier,omitempty"`
+	Spot            bool                 `json:"spot,omitempty"`
 }
 
 // DeployResponse is the response for POST /deploy
@@ -520,6 +521,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 			ReservationID:   req.ReservationID,
 			Owner:           wallet,
 			MinProviderTier: req.MinProviderTier,
+			Spot:            req.Spot,
 		}
 		if req.Resources.CPUQuota > 0 || req.Resources.MemoryLimit > 0 {
 			daemonReq.Resources = &client.ResourceLimits{

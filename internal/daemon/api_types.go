@@ -104,6 +104,9 @@ type DeployRequest struct {
 	ExecKeyNonce     []byte `json:"exec_key_nonce,omitempty"`     // Nonce for exec key decryption
 	DeployNonce      string `json:"deploy_nonce,omitempty"`       // Deploy nonce used to derive exec_key
 
+	// Spot pricing (optional — lower cost, preemptible)
+	Spot bool `json:"spot,omitempty"`
+
 	// Service exposure (optional)
 	ExposePorts []ExposedPort `json:"expose_ports,omitempty"` // Ports to expose publicly
 }

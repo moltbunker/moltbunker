@@ -405,6 +405,7 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 		OriginatorID:    cm.node.nodeInfo.ID, // Local node is the originator
 		Owner:           req.Owner,
 		MinProviderTier: types.ProviderTier(req.MinProviderTier),
+		Spot:            req.Spot,
 	}
 
 	// Determine regions from actual network topology
