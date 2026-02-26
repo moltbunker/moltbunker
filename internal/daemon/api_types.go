@@ -233,6 +233,51 @@ type SubdomainUpdateRequest struct {
 	DeploymentID string `json:"deployment_id"`
 }
 
+// SubdomainRenewRequest contains subdomain renewal parameters.
+type SubdomainRenewRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainReserveRequest contains subdomain reservation parameters.
+type SubdomainReserveRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainClaimRequest contains subdomain claim parameters.
+type SubdomainClaimRequest struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+}
+
+// SubdomainCancelRequest contains subdomain reservation cancellation parameters.
+type SubdomainCancelRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainMetadataRequest contains subdomain metadata update parameters.
+type SubdomainMetadataRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	AvatarURL   string `json:"avatar_url"`
+}
+
+// SubdomainPrimaryRequest contains subdomain primary name parameters.
+type SubdomainPrimaryRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainReclaimRequest contains subdomain reclaim parameters.
+type SubdomainReclaimRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainMetadataResponse contains subdomain metadata.
+type SubdomainMetadataResponse struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	AvatarURL   string `json:"avatar_url"`
+}
+
 // --- Molt (WASM serverless) API types ---
 
 // MoltDeployRequest is the API request to deploy a Molt serverless function.

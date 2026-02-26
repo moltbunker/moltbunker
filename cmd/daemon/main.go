@@ -310,6 +310,11 @@ func main() {
 		cm.StartDiskEnforcer(ctx, 60*time.Second)
 	}
 
+	// Start subdomain expiry cleanup (removes expired gossip entries hourly)
+	if cm := apiServer.GetContainerManager(); cm != nil && cm.GossipProtocol() != nil {
+		daemon.StartSubdomainCleanup(ctx, cm.GossipProtocol(), paymentSvc)
+	}
+
 	// ── Ingress + Tunnel wiring ──
 
 	// Provider nodes: start tunnel server so ingress nodes can proxy traffic to containers
@@ -362,6 +367,7 @@ func main() {
 			// Set gossip state validator to prevent expose: key poisoning
 			cm.GossipProtocol().SetStateValidator(daemon.NewGossipStateValidator(node.NodeInfo().ID))
 			gossipAdapter := daemon.NewGossipServiceAdapter(cm.GossipProtocol())
+			gossipAdapter.SetPaymentService(paymentSvc) // Enable on-chain subdomain resolution fallback
 			tunnelDialer := daemon.NewTLSTunnelDialer(node.TLSClientConfig())
 			tunnelClient := tunnel.NewClient(tunnelDialer)
 			resolver := ingress.NewResolver(gossipAdapter, gossipAdapter) // implements both GossipReader and SubdomainResolver

@@ -223,6 +223,20 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 		response = s.handleSubdomainTransfer(ctx, req)
 	case "subdomain_update":
 		response = s.handleSubdomainUpdate(ctx, req)
+	case "subdomain_renew":
+		response = s.handleSubdomainRenew(ctx, req)
+	case "subdomain_reserve":
+		response = s.handleSubdomainReserve(ctx, req)
+	case "subdomain_claim":
+		response = s.handleSubdomainClaim(ctx, req)
+	case "subdomain_cancel":
+		response = s.handleSubdomainCancel(ctx, req)
+	case "subdomain_metadata":
+		response = s.handleSubdomainMetadata(ctx, req)
+	case "subdomain_primary":
+		response = s.handleSubdomainPrimary(ctx, req)
+	case "subdomain_reclaim":
+		response = s.handleSubdomainReclaim(ctx, req)
 	// Molt (WASM serverless) handlers
 	case "molt_deploy":
 		response = s.handleMoltDeploy(ctx, req)

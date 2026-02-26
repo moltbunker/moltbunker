@@ -94,3 +94,52 @@ func (c *DaemonClient) SubdomainUpdate(name, deploymentID string) error {
 	})
 	return err
 }
+
+// SubdomainRenew extends a subdomain's expiration by 365 days.
+func (c *DaemonClient) SubdomainRenew(name string) error {
+	_, err := c.call("subdomain_renew", map[string]string{"name": name})
+	return err
+}
+
+// SubdomainReserve reserves a subdomain name for 48 hours.
+func (c *DaemonClient) SubdomainReserve(name string) error {
+	_, err := c.call("subdomain_reserve", map[string]string{"name": name})
+	return err
+}
+
+// SubdomainClaim finalizes a reserved subdomain with a deployment ID.
+func (c *DaemonClient) SubdomainClaim(name, deploymentID string) error {
+	_, err := c.call("subdomain_claim", map[string]string{
+		"name":          name,
+		"deployment_id": deploymentID,
+	})
+	return err
+}
+
+// SubdomainCancel cancels a pending subdomain reservation.
+func (c *DaemonClient) SubdomainCancel(name string) error {
+	_, err := c.call("subdomain_cancel", map[string]string{"name": name})
+	return err
+}
+
+// SubdomainSetMetadata sets description and avatar URL for a subdomain.
+func (c *DaemonClient) SubdomainSetMetadata(name, description, avatarURL string) error {
+	_, err := c.call("subdomain_metadata", map[string]interface{}{
+		"name":        name,
+		"description": description,
+		"avatar_url":  avatarURL,
+	})
+	return err
+}
+
+// SubdomainSetPrimary sets a subdomain as the primary name for reverse resolution.
+func (c *DaemonClient) SubdomainSetPrimary(name string) error {
+	_, err := c.call("subdomain_primary", map[string]string{"name": name})
+	return err
+}
+
+// SubdomainReclaim reclaims a squatted subdomain name.
+func (c *DaemonClient) SubdomainReclaim(name string) error {
+	_, err := c.call("subdomain_reclaim", map[string]string{"name": name})
+	return err
+}

@@ -1,11 +1,16 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/moltbunker/moltbunker/internal/ingress"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/p2p"
+	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -16,12 +21,18 @@ import (
 // It also implements SubdomainResolver by reading "subdomain:<name>" entries
 // from gossip state to resolve vanity names to deployment IDs.
 type GossipServiceAdapter struct {
-	gossip *p2p.GossipProtocol
+	gossip         *p2p.GossipProtocol
+	paymentService *payment.PaymentService
 }
 
 // NewGossipServiceAdapter creates a new gossip service adapter.
 func NewGossipServiceAdapter(gossip *p2p.GossipProtocol) *GossipServiceAdapter {
 	return &GossipServiceAdapter{gossip: gossip}
+}
+
+// SetPaymentService sets the payment service for on-chain subdomain resolution.
+func (a *GossipServiceAdapter) SetPaymentService(ps *payment.PaymentService) {
+	a.paymentService = ps
 }
 
 // GetExposedServices implements ingress.GossipReader.
@@ -57,6 +68,30 @@ func (a *GossipServiceAdapter) ResolveVanityName(name string) (string, bool) {
 		return depID, true
 	}
 	return "", false
+}
+
+// ResolveOnChain implements ingress.SubdomainResolver.
+// It queries the BunkerRegistry smart contract as a fallback for cross-node
+// vanity routing when gossip state doesn't have the mapping.
+func (a *GossipServiceAdapter) ResolveOnChain(name string) (string, bool) {
+	if a.paymentService == nil {
+		return "", false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	reg, err := a.paymentService.ResolveSubdomain(ctx, name)
+	if err != nil || reg == nil {
+		logging.Debug("on-chain subdomain resolution failed",
+			"name", name,
+			logging.Err(err),
+			logging.Component("ingress"))
+		return "", false
+	}
+	depID := bytes32ToDeploymentID(reg.DeploymentID)
+	if depID == "" || depID == fmt.Sprintf("%x", [32]byte{}) {
+		return "", false
+	}
+	return depID, true
 }
 
 // toServiceEntry converts a gossip value to *ingress.ServiceEntry.

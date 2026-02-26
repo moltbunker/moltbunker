@@ -27,6 +27,13 @@ you pick a custom name (e.g., myapp.moltbunker.dev) for 1,000,000 BUNKER.`,
 		newSubdomainResolveCmd(),
 		newSubdomainTransferCmd(),
 		newSubdomainUpdateCmd(),
+		newSubdomainRenewCmd(),
+		newSubdomainReserveCmd(),
+		newSubdomainClaimCmd(),
+		newSubdomainCancelCmd(),
+		newSubdomainMetadataCmd(),
+		newSubdomainPrimaryCmd(),
+		newSubdomainReclaimCmd(),
 	)
 
 	return cmd
@@ -302,5 +309,273 @@ func runSubdomainUpdate(cmd *cobra.Command, args []string) error {
 
 	fmt.Println(StatusBox("Subdomain Updated", fields))
 
+	return nil
+}
+
+func newSubdomainRenewCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "renew <name>",
+		Short: "Extend subdomain expiration by 365 days",
+		Long: `Renew a subdomain to extend its expiration by another year.
+Anyone can renew any name (useful for keeping names alive).
+Costs the registration fee for the name.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runSubdomainRenew,
+	}
+}
+
+func newSubdomainReserveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reserve <name>",
+		Short: "Reserve a subdomain name for 48 hours",
+		Long: `Reserve a subdomain name without assigning a deployment yet.
+The reservation lasts 48 hours. Use 'subdomain claim' to finalize
+with a deployment ID, or 'subdomain cancel' to release.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runSubdomainReserve,
+	}
+}
+
+func newSubdomainClaimCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "claim <name>",
+		Short: "Finalize a reserved subdomain",
+		Long: `Claim a previously reserved subdomain by assigning a deployment ID.
+Must be called within the 48-hour reservation window.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runSubdomainClaim,
+	}
+
+	cmd.Flags().StringP("deployment", "d", "", "Deployment ID to point to (required)")
+	cmd.MarkFlagRequired("deployment")
+
+	return cmd
+}
+
+func newSubdomainCancelCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "cancel <name>",
+		Short: "Cancel a subdomain reservation",
+		Long:  `Cancel a pending subdomain reservation, making the name available again.`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  runSubdomainCancel,
+	}
+}
+
+func newSubdomainMetadataCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "metadata <name>",
+		Short: "Set subdomain description and avatar",
+		Long: `Set metadata (description, avatar URL) for a subdomain you own.
+Costs the change fee.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runSubdomainMetadata,
+	}
+
+	cmd.Flags().String("description", "", "Description for the subdomain")
+	cmd.Flags().String("avatar", "", "Avatar URL for the subdomain")
+
+	return cmd
+}
+
+func newSubdomainPrimaryCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "primary <name>",
+		Short: "Set as primary name for reverse resolution",
+		Long:  `Set a subdomain as the primary name, enabling reverse resolution from deployment ID to name.`,
+		Args:  cobra.ExactArgs(1),
+		RunE:  runSubdomainPrimary,
+	}
+}
+
+func newSubdomainReclaimCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reclaim <name>",
+		Short: "Reclaim a squatted subdomain",
+		Long: `Reclaim a subdomain that has been squatted (registered but pointing to
+a non-existent or inactive deployment). Anyone can call this.`,
+		Args: cobra.ExactArgs(1),
+		RunE: runSubdomainReclaim,
+	}
+}
+
+func runSubdomainRenew(cmd *cobra.Command, args []string) error {
+	name := strings.ToLower(args[0])
+
+	c, err := GetClient()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	err = WithSpinner("Renewing subdomain", func() error {
+		return c.DaemonClient().SubdomainRenew(name)
+	})
+	if err != nil {
+		return fmt.Errorf("renewal failed: %w", err)
+	}
+
+	Success(fmt.Sprintf("Renewed subdomain: %s (+365 days)", name))
+	return nil
+}
+
+func runSubdomainReserve(cmd *cobra.Command, args []string) error {
+	name := strings.ToLower(args[0])
+
+	c, err := GetClient()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	err = WithSpinner("Reserving subdomain", func() error {
+		return c.DaemonClient().SubdomainReserve(name)
+	})
+	if err != nil {
+		return fmt.Errorf("reservation failed: %w", err)
+	}
+
+	fields := [][2]string{
+		{"Name", name},
+		{"Status", "Reserved (48h)"},
+	}
+	fmt.Println(StatusBox("Subdomain Reserved", fields))
+	fmt.Println(Hint("Finalize with: moltbunker subdomain claim " + name + " --deployment <id>"))
+	return nil
+}
+
+func runSubdomainClaim(cmd *cobra.Command, args []string) error {
+	name := strings.ToLower(args[0])
+	deploymentID, _ := cmd.Flags().GetString("deployment")
+
+	c, err := GetClient()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	err = WithSpinner("Claiming subdomain", func() error {
+		return c.DaemonClient().SubdomainClaim(name, deploymentID)
+	})
+	if err != nil {
+		return fmt.Errorf("claim failed: %w", err)
+	}
+
+	fields := [][2]string{
+		{"Name", name},
+		{"Deployment", FormatNodeID(deploymentID)},
+		{"URL", fmt.Sprintf("https://%s.moltbunker.dev", name)},
+	}
+	fmt.Println(StatusBox("Subdomain Claimed", fields))
+	return nil
+}
+
+func runSubdomainCancel(cmd *cobra.Command, args []string) error {
+	name := strings.ToLower(args[0])
+
+	c, err := GetClient()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	err = WithSpinner("Cancelling reservation", func() error {
+		return c.DaemonClient().SubdomainCancel(name)
+	})
+	if err != nil {
+		return fmt.Errorf("cancellation failed: %w", err)
+	}
+
+	Success(fmt.Sprintf("Cancelled reservation: %s", name))
+	return nil
+}
+
+func runSubdomainMetadata(cmd *cobra.Command, args []string) error {
+	name := strings.ToLower(args[0])
+	description, _ := cmd.Flags().GetString("description")
+	avatarURL, _ := cmd.Flags().GetString("avatar")
+
+	c, err := GetClient()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	err = WithSpinner("Updating metadata", func() error {
+		return c.DaemonClient().SubdomainSetMetadata(name, description, avatarURL)
+	})
+	if err != nil {
+		return fmt.Errorf("metadata update failed: %w", err)
+	}
+
+	Success(fmt.Sprintf("Updated metadata for: %s", name))
+	return nil
+}
+
+func runSubdomainPrimary(cmd *cobra.Command, args []string) error {
+	name := strings.ToLower(args[0])
+
+	c, err := GetClient()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	err = WithSpinner("Setting primary name", func() error {
+		return c.DaemonClient().SubdomainSetPrimary(name)
+	})
+	if err != nil {
+		return fmt.Errorf("set primary failed: %w", err)
+	}
+
+	Success(fmt.Sprintf("Set primary name: %s", name))
+	return nil
+}
+
+func runSubdomainReclaim(cmd *cobra.Command, args []string) error {
+	name := strings.ToLower(args[0])
+
+	c, err := GetClient()
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+
+	if err := c.RequireDaemon(); err != nil {
+		return err
+	}
+
+	err = WithSpinner("Reclaiming subdomain", func() error {
+		return c.DaemonClient().SubdomainReclaim(name)
+	})
+	if err != nil {
+		return fmt.Errorf("reclaim failed: %w", err)
+	}
+
+	Success(fmt.Sprintf("Reclaimed subdomain: %s", name))
 	return nil
 }

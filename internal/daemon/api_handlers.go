@@ -955,6 +955,218 @@ func (s *APIServer) verifySubdomainOwnership(ctx context.Context, ps *payment.Pa
 	return nil
 }
 
+// handleSubdomainRenew extends a subdomain's expiration by 365 days.
+func (s *APIServer) handleSubdomainRenew(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainRenewRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	if err := ps.RenewSubdomain(ctx, params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("renewal failed: %v", err), ID: req.ID}
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "renewed", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainReserve reserves a subdomain name for 48 hours.
+func (s *APIServer) handleSubdomainReserve(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainReserveRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	if err := ps.ReserveSubdomain(ctx, params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("reservation failed: %v", err), ID: req.ID}
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "reserved", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainClaim finalizes a reserved subdomain with a deployment ID.
+func (s *APIServer) handleSubdomainClaim(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainClaimRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" || params.DeploymentID == "" {
+		return &APIResponse{Error: "name and deployment_id are required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	depID, err := deploymentIDToBytes32(params.DeploymentID)
+	if err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid deployment ID: %v", err), ID: req.ID}
+	}
+	if err := ps.ClaimSubdomainReservation(ctx, params.Name, depID); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("claim failed: %v", err), ID: req.ID}
+	}
+
+	// Gossip update after successful on-chain claim
+	if s.containerManager != nil && s.containerManager.GossipProtocol() != nil {
+		s.containerManager.GossipProtocol().UpdateState(
+			fmt.Sprintf("subdomain:%s", params.Name), params.DeploymentID)
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "claimed", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainCancel cancels a pending subdomain reservation.
+func (s *APIServer) handleSubdomainCancel(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainCancelRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	// Verify caller owns this subdomain
+	if err := s.verifySubdomainOwnership(ctx, ps, params.Name); err != nil {
+		return &APIResponse{Error: err.Error(), ID: req.ID}
+	}
+
+	if err := ps.CancelSubdomainReservation(ctx, params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("cancellation failed: %v", err), ID: req.ID}
+	}
+
+	// Remove gossip mapping
+	if s.containerManager != nil && s.containerManager.GossipProtocol() != nil {
+		s.containerManager.GossipProtocol().UpdateState(
+			fmt.Sprintf("subdomain:%s", params.Name), nil)
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "cancelled", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainMetadata sets description and avatar URL for a subdomain.
+func (s *APIServer) handleSubdomainMetadata(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainMetadataRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	// Verify caller owns this subdomain
+	if err := s.verifySubdomainOwnership(ctx, ps, params.Name); err != nil {
+		return &APIResponse{Error: err.Error(), ID: req.ID}
+	}
+
+	if err := ps.SetSubdomainMetadata(ctx, params.Name, params.Description, params.AvatarURL); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("metadata update failed: %v", err), ID: req.ID}
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "updated", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainPrimary sets a subdomain as the primary name for reverse resolution.
+func (s *APIServer) handleSubdomainPrimary(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainPrimaryRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	// Verify caller owns this subdomain
+	if err := s.verifySubdomainOwnership(ctx, ps, params.Name); err != nil {
+		return &APIResponse{Error: err.Error(), ID: req.ID}
+	}
+
+	if err := ps.SetSubdomainPrimaryName(ctx, params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("set primary failed: %v", err), ID: req.ID}
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "set_primary", "name": params.Name}, ID: req.ID}
+}
+
+// handleSubdomainReclaim reclaims a squatted subdomain name.
+func (s *APIServer) handleSubdomainReclaim(ctx context.Context, req *APIRequest) *APIResponse {
+	var params SubdomainReclaimRequest
+	if err := json.Unmarshal(req.Params, &params); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid params: %v", err), ID: req.ID}
+	}
+	if params.Name == "" {
+		return &APIResponse{Error: "name is required", ID: req.ID}
+	}
+	if err := types.ValidateSubdomainName(params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("invalid subdomain name: %v", err), ID: req.ID}
+	}
+
+	ps := s.node.PaymentService()
+	if ps == nil {
+		return &APIResponse{Error: "payment service not available", ID: req.ID}
+	}
+
+	if err := ps.ReclaimSubdomain(ctx, params.Name); err != nil {
+		return &APIResponse{Error: fmt.Sprintf("reclaim failed: %v", err), ID: req.ID}
+	}
+
+	// Remove gossip mapping since the name is being reclaimed
+	if s.containerManager != nil && s.containerManager.GossipProtocol() != nil {
+		s.containerManager.GossipProtocol().UpdateState(
+			fmt.Sprintf("subdomain:%s", params.Name), nil)
+	}
+
+	return &APIResponse{Result: map[string]string{"status": "reclaimed", "name": params.Name}, ID: req.ID}
+}
+
 // sendError sends an error response and returns any encoding error
 func (s *APIServer) sendError(encoder *json.Encoder, id int, message string) error {
 	if err := encoder.Encode(&APIResponse{

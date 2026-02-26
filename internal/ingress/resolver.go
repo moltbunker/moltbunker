@@ -27,8 +27,12 @@ type GossipReader interface {
 
 // SubdomainResolver resolves vanity subdomain names to deployment IDs.
 type SubdomainResolver interface {
-	// ResolveVanityName resolves a vanity name to a deployment ID.
+	// ResolveVanityName resolves a vanity name to a deployment ID via gossip state.
 	ResolveVanityName(name string) (deploymentID string, ok bool)
+
+	// ResolveOnChain resolves a vanity name to a deployment ID via on-chain lookup.
+	// Used as a fallback when gossip doesn't have the mapping (cross-node routing).
+	ResolveOnChain(name string) (deploymentID string, ok bool)
 }
 
 // Resolver maps subdomains to provider addresses using gossip state.
@@ -90,6 +94,15 @@ func (r *Resolver) Resolve(subdomain string) (*ServiceEntry, error) {
 		}
 	}
 
+	// Step 5: On-chain fallback for cross-node vanity routing.
+	// Gossip subdomain entries are local-only (rejected from remote peers to
+	// prevent spoofing). If this ingress node didn't register the name, the
+	// gossip lookup fails. Fall back to the BunkerRegistry contract as the
+	// trusted source of truth.
+	if entry := r.resolveOnChain(subdomain); entry != nil {
+		return entry, nil
+	}
+
 	return nil, fmt.Errorf("service not found: %s", subdomain)
 }
 
@@ -133,6 +146,38 @@ func (r *Resolver) resolveVanity(name string) *ServiceEntry {
 	r.mu.RUnlock()
 	if ok && time.Since(entry.LastSeen) < 5*time.Minute {
 		return entry
+	}
+	return nil
+}
+
+// resolveOnChain resolves a vanity name via on-chain lookup, then finds the service.
+func (r *Resolver) resolveOnChain(name string) *ServiceEntry {
+	if r.subdomainResolver == nil {
+		return nil
+	}
+	depID, ok := r.subdomainResolver.ResolveOnChain(name)
+	if !ok || depID == "" {
+		return nil
+	}
+	return r.findServiceByDeploymentID(depID)
+}
+
+// findServiceByDeploymentID searches for a service entry by deployment ID (exact or prefix).
+func (r *Resolver) findServiceByDeploymentID(depID string) *ServiceEntry {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	// Exact match first
+	if entry, ok := r.services[depID]; ok && time.Since(entry.LastSeen) < 5*time.Minute {
+		return entry
+	}
+
+	// Prefix match (deployment IDs may have "dep-" prefix in gossip)
+	for key, entry := range r.services {
+		bare := strings.TrimPrefix(key, "dep-")
+		if bare == depID && time.Since(entry.LastSeen) < 5*time.Minute {
+			return entry
+		}
 	}
 	return nil
 }

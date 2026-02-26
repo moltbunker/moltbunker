@@ -70,6 +70,11 @@ func NewRegistryContract(baseClient *BaseClient, tokenContract *TokenContract, c
 	return rc, nil
 }
 
+// mockDefaultOwner is a deterministic non-zero address used as the default
+// owner in mock mode when no baseClient is available. This avoids the issue
+// where Resolve rejects zero-address owners as "not registered".
+var mockDefaultOwner = common.HexToAddress("0x0000000000000000000000000000000000000001")
+
 // NewMockRegistryContract creates a mock registry contract for testing.
 func NewMockRegistryContract() *RegistryContract {
 	return &RegistryContract{
@@ -86,7 +91,7 @@ func (rc *RegistryContract) Register(ctx context.Context, name string, deploymen
 		if _, exists := rc.mockNames[name]; exists {
 			return nil, fmt.Errorf("name already registered: %s", name)
 		}
-		owner := common.Address{}
+		owner := mockDefaultOwner
 		if rc.baseClient != nil {
 			owner = rc.baseClient.Address()
 		}
@@ -127,7 +132,7 @@ func (rc *RegistryContract) RegisterWithReferral(ctx context.Context, name strin
 		if _, exists := rc.mockNames[name]; exists {
 			return nil, fmt.Errorf("name already registered: %s", name)
 		}
-		owner := common.Address{}
+		owner := mockDefaultOwner
 		if rc.baseClient != nil {
 			owner = rc.baseClient.Address()
 		}
@@ -246,7 +251,7 @@ func (rc *RegistryContract) Reserve(ctx context.Context, name string) (*types.Tr
 		if _, exists := rc.mockNames[name]; exists {
 			return nil, fmt.Errorf("name already registered: %s", name)
 		}
-		owner := common.Address{}
+		owner := mockDefaultOwner
 		if rc.baseClient != nil {
 			owner = rc.baseClient.Address()
 		}
