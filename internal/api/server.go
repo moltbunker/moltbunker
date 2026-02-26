@@ -23,6 +23,8 @@ import (
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
+	"github.com/moltbunker/moltbunker/internal/proxy"
+	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
 )
 
@@ -63,6 +65,10 @@ type Server struct {
 	adminStore   *AdminMetadataStore
 	policyStore  *PolicyStore
 	catalogStore *CatalogStore
+
+	// P0 service handlers
+	storageHandler *storage.RESTHandler
+	proxyHandler   *proxy.RESTHandler
 
 	// Per-IP rate limiters
 	rateLimiters    sync.Map
@@ -227,6 +233,16 @@ func (s *Server) SetCatalogStore(store *CatalogStore) {
 // GetAdminStore returns the admin metadata store (for daemon badge merging)
 func (s *Server) GetAdminStore() *AdminMetadataStore {
 	return s.adminStore
+}
+
+// SetStorageHandler sets the storage REST handler for object storage API.
+func (s *Server) SetStorageHandler(handler *storage.RESTHandler) {
+	s.storageHandler = handler
+}
+
+// SetProxyHandler sets the proxy REST handler for proxy management API.
+func (s *Server) SetProxyHandler(handler *proxy.RESTHandler) {
+	s.proxyHandler = handler
 }
 
 // Start starts the HTTP API server
@@ -460,6 +476,22 @@ func (s *Server) buildRouter() http.Handler {
 	// Subdomain management (GET=read, POST/DELETE=write)
 	mux.HandleFunc("/v1/subdomains", s.withMethodPermissions(s.handleSubdomains, []string{"GET"}, []string{"POST", "DELETE"}))
 	mux.HandleFunc("/v1/subdomains/", s.withMethodPermissions(s.handleSubdomainByName, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
+
+	// Object Storage endpoints (read/write permission)
+	if s.storageHandler != nil {
+		s.storageHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
+
+	// Proxy management endpoints (read/write permission)
+	if s.proxyHandler != nil {
+		s.proxyHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
 
 	// Health endpoints (no auth required)
 	mux.HandleFunc("/v1/health", s.handleHealth)

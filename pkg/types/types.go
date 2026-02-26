@@ -159,6 +159,12 @@ const (
 
 	// Identity exchange
 	MessageTypeAnnounce MessageType = "announce" // Wallet ownership proof after TLS handshake
+
+	// P0 service message types
+	MessageTypeStorageSync  MessageType = "storage_sync"  // Object replication commands
+	MessageTypeProxyConnect MessageType = "proxy_connect" // Proxy relay establishment
+	MessageTypeCrawlTask    MessageType = "crawl_task"    // Distributed crawl task assignment
+	MessageTypeCrawlResult  MessageType = "crawl_result"  // Crawl result relay
 )
 
 // Message represents a P2P message

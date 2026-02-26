@@ -25,6 +25,12 @@ var allBuckets = []string{
 	BucketPeers,
 	BucketCertPins,
 	BucketAPIKeys,
+	// P0 service buckets (schema v2)
+	BucketStorageBuckets,
+	BucketStorageObjects,
+	BucketProxySessions,
+	BucketCrawlJobs,
+	BucketAgentState,
 }
 
 // NewBboltStore opens or creates a bbolt database at the given path.
@@ -191,6 +197,96 @@ func (s *BboltStore) DeleteAPIKey(_ context.Context, id string) error {
 
 func (s *BboltStore) ListAPIKeys(_ context.Context) (map[string][]byte, error) {
 	return s.list(BucketAPIKeys)
+}
+
+// --- Storage Buckets ---
+
+func (s *BboltStore) PutStorageBucket(_ context.Context, name string, data []byte) error {
+	return s.put(BucketStorageBuckets, name, data)
+}
+
+func (s *BboltStore) GetStorageBucket(_ context.Context, name string) ([]byte, error) {
+	return s.get(BucketStorageBuckets, name)
+}
+
+func (s *BboltStore) DeleteStorageBucket(_ context.Context, name string) error {
+	return s.del(BucketStorageBuckets, name)
+}
+
+func (s *BboltStore) ListStorageBuckets(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketStorageBuckets)
+}
+
+// --- Storage Objects ---
+
+func (s *BboltStore) PutStorageObject(_ context.Context, key string, data []byte) error {
+	return s.put(BucketStorageObjects, key, data)
+}
+
+func (s *BboltStore) GetStorageObject(_ context.Context, key string) ([]byte, error) {
+	return s.get(BucketStorageObjects, key)
+}
+
+func (s *BboltStore) DeleteStorageObject(_ context.Context, key string) error {
+	return s.del(BucketStorageObjects, key)
+}
+
+func (s *BboltStore) ListStorageObjects(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketStorageObjects)
+}
+
+// --- Proxy Sessions ---
+
+func (s *BboltStore) PutProxySession(_ context.Context, id string, data []byte) error {
+	return s.put(BucketProxySessions, id, data)
+}
+
+func (s *BboltStore) GetProxySession(_ context.Context, id string) ([]byte, error) {
+	return s.get(BucketProxySessions, id)
+}
+
+func (s *BboltStore) DeleteProxySession(_ context.Context, id string) error {
+	return s.del(BucketProxySessions, id)
+}
+
+func (s *BboltStore) ListProxySessions(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketProxySessions)
+}
+
+// --- Crawl Jobs ---
+
+func (s *BboltStore) PutCrawlJob(_ context.Context, id string, data []byte) error {
+	return s.put(BucketCrawlJobs, id, data)
+}
+
+func (s *BboltStore) GetCrawlJob(_ context.Context, id string) ([]byte, error) {
+	return s.get(BucketCrawlJobs, id)
+}
+
+func (s *BboltStore) DeleteCrawlJob(_ context.Context, id string) error {
+	return s.del(BucketCrawlJobs, id)
+}
+
+func (s *BboltStore) ListCrawlJobs(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketCrawlJobs)
+}
+
+// --- Agent State ---
+
+func (s *BboltStore) PutAgentState(_ context.Context, id string, data []byte) error {
+	return s.put(BucketAgentState, id, data)
+}
+
+func (s *BboltStore) GetAgentState(_ context.Context, id string) ([]byte, error) {
+	return s.get(BucketAgentState, id)
+}
+
+func (s *BboltStore) DeleteAgentState(_ context.Context, id string) error {
+	return s.del(BucketAgentState, id)
+}
+
+func (s *BboltStore) ListAgentState(_ context.Context) (map[string][]byte, error) {
+	return s.list(BucketAgentState)
 }
 
 // --- Schema ---

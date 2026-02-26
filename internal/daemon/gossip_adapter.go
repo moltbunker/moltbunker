@@ -99,9 +99,10 @@ func ExposeKeyParts(key string) (deploymentID string, port string, ok bool) {
 // on security-sensitive gossip keys:
 //   - "expose:*" entries: the ProviderNodeID in the ServiceEntry must match
 //     the sender's NodeID (only the actual provider can advertise its services)
-//   - "subdomain:*" entries: only accepted from the local node (set via UpdateState)
-//     or if the sender is known. Remote subdomain entries are validated by requiring
-//     the deployment ID to exist in a known expose: entry for that sender.
+//   - "subdomain:*" entries: rejected from all remote peers. Subdomain mappings
+//     are only set locally via handleSubdomainRegister, which verifies on-chain
+//     ownership before writing to gossip state. This prevents subdomain hijacking
+//     where a malicious peer injects a gossip entry to redirect traffic.
 //   - All other keys: accepted (default gossip behavior)
 func NewGossipStateValidator(localNodeID types.NodeID) p2p.StateValidator {
 	return func(senderID types.NodeID, key string, value interface{}) bool {
@@ -114,9 +115,15 @@ func NewGossipStateValidator(localNodeID types.NodeID) p2p.StateValidator {
 			return validateExposeEntry(senderID, value)
 		}
 
-		// subdomain: keys from remote peers are informational only —
-		// the ingress resolver always falls back to on-chain resolution.
-		// We allow them but the resolver treats on-chain as authoritative.
+		// subdomain: keys must only come from the local node (via
+		// handleSubdomainRegister, which verifies on-chain ownership).
+		// Reject all remote subdomain entries to prevent gossip-based
+		// subdomain hijacking — a malicious peer could inject
+		// "subdomain:victim-app" pointing to their own deployment.
+		if strings.HasPrefix(key, "subdomain:") {
+			return false
+		}
+
 		return true
 	}
 }

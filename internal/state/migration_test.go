@@ -287,7 +287,7 @@ func TestMigrateFromJSON_BboltStore(t *testing.T) {
 	}
 
 	v, _ := store.SchemaVersion(ctx)
-	if v != 1 {
-		t.Errorf("schema version: got %d, want 1", v)
+	if v != CurrentSchemaVersion {
+		t.Errorf("schema version: got %d, want %d", v, CurrentSchemaVersion)
 	}
 }

@@ -18,12 +18,17 @@ type MemoryStore struct {
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
 		buckets: map[string]map[string][]byte{
-			BucketMeta:        {},
-			BucketDeployments: {},
-			BucketBans:        {},
-			BucketPeers:       {},
-			BucketCertPins:    {},
-			BucketAPIKeys:     {},
+			BucketMeta:           {},
+			BucketDeployments:    {},
+			BucketBans:           {},
+			BucketPeers:          {},
+			BucketCertPins:       {},
+			BucketAPIKeys:        {},
+			BucketStorageBuckets: {},
+			BucketStorageObjects: {},
+			BucketProxySessions:  {},
+			BucketCrawlJobs:      {},
+			BucketAgentState:     {},
 		},
 	}
 }
@@ -175,6 +180,96 @@ func (m *MemoryStore) DeleteAPIKey(_ context.Context, id string) error {
 
 func (m *MemoryStore) ListAPIKeys(_ context.Context) (map[string][]byte, error) {
 	return m.list(BucketAPIKeys)
+}
+
+// --- Storage Buckets ---
+
+func (m *MemoryStore) PutStorageBucket(_ context.Context, name string, data []byte) error {
+	return m.put(BucketStorageBuckets, name, data)
+}
+
+func (m *MemoryStore) GetStorageBucket(_ context.Context, name string) ([]byte, error) {
+	return m.get(BucketStorageBuckets, name)
+}
+
+func (m *MemoryStore) DeleteStorageBucket(_ context.Context, name string) error {
+	return m.del(BucketStorageBuckets, name)
+}
+
+func (m *MemoryStore) ListStorageBuckets(_ context.Context) (map[string][]byte, error) {
+	return m.list(BucketStorageBuckets)
+}
+
+// --- Storage Objects ---
+
+func (m *MemoryStore) PutStorageObject(_ context.Context, key string, data []byte) error {
+	return m.put(BucketStorageObjects, key, data)
+}
+
+func (m *MemoryStore) GetStorageObject(_ context.Context, key string) ([]byte, error) {
+	return m.get(BucketStorageObjects, key)
+}
+
+func (m *MemoryStore) DeleteStorageObject(_ context.Context, key string) error {
+	return m.del(BucketStorageObjects, key)
+}
+
+func (m *MemoryStore) ListStorageObjects(_ context.Context) (map[string][]byte, error) {
+	return m.list(BucketStorageObjects)
+}
+
+// --- Proxy Sessions ---
+
+func (m *MemoryStore) PutProxySession(_ context.Context, id string, data []byte) error {
+	return m.put(BucketProxySessions, id, data)
+}
+
+func (m *MemoryStore) GetProxySession(_ context.Context, id string) ([]byte, error) {
+	return m.get(BucketProxySessions, id)
+}
+
+func (m *MemoryStore) DeleteProxySession(_ context.Context, id string) error {
+	return m.del(BucketProxySessions, id)
+}
+
+func (m *MemoryStore) ListProxySessions(_ context.Context) (map[string][]byte, error) {
+	return m.list(BucketProxySessions)
+}
+
+// --- Crawl Jobs ---
+
+func (m *MemoryStore) PutCrawlJob(_ context.Context, id string, data []byte) error {
+	return m.put(BucketCrawlJobs, id, data)
+}
+
+func (m *MemoryStore) GetCrawlJob(_ context.Context, id string) ([]byte, error) {
+	return m.get(BucketCrawlJobs, id)
+}
+
+func (m *MemoryStore) DeleteCrawlJob(_ context.Context, id string) error {
+	return m.del(BucketCrawlJobs, id)
+}
+
+func (m *MemoryStore) ListCrawlJobs(_ context.Context) (map[string][]byte, error) {
+	return m.list(BucketCrawlJobs)
+}
+
+// --- Agent State ---
+
+func (m *MemoryStore) PutAgentState(_ context.Context, id string, data []byte) error {
+	return m.put(BucketAgentState, id, data)
+}
+
+func (m *MemoryStore) GetAgentState(_ context.Context, id string) ([]byte, error) {
+	return m.get(BucketAgentState, id)
+}
+
+func (m *MemoryStore) DeleteAgentState(_ context.Context, id string) error {
+	return m.del(BucketAgentState, id)
+}
+
+func (m *MemoryStore) ListAgentState(_ context.Context) (map[string][]byte, error) {
+	return m.list(BucketAgentState)
 }
 
 // --- Schema ---

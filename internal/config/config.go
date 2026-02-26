@@ -24,6 +24,12 @@ type Config struct {
 	Redundancy  RedundancyConfig  `yaml:"redundancy"`
 	Economics   EconomicsConfig   `yaml:"economics"`
 	Encryption  EncryptionConfig  `yaml:"encryption"`
+
+	// P0 services
+	Storage StorageConfig `yaml:"storage"`
+	Proxy   ProxyConfig   `yaml:"proxy"`
+	Agent   AgentConfig   `yaml:"agent"`
+	Crawl   CrawlConfig   `yaml:"crawl"`
 }
 
 // DaemonConfig contains daemon settings
@@ -432,6 +438,92 @@ type EncryptionConfig struct {
 	KeyStoreEncrypt bool   `yaml:"key_store_encrypt"`
 }
 
+// StorageConfig contains object storage service settings.
+type StorageConfig struct {
+	Enabled       bool   `yaml:"enabled"`        // Enable object storage service
+	DataDir       string `yaml:"data_dir"`        // Directory for object blobs (default: <data_dir>/storage)
+	MaxBuckets    int    `yaml:"max_buckets"`     // Max buckets per wallet (default: 100)
+	MaxObjectSize int64  `yaml:"max_object_size"` // Max single object size in bytes (default: 5GB)
+	S3Port        int    `yaml:"s3_port"`         // S3-compatible API port (default: 9300)
+	EnableS3      bool   `yaml:"enable_s3"`       // Enable S3-compatible endpoint
+}
+
+// DefaultStorageConfig returns the default storage configuration.
+func DefaultStorageConfig() StorageConfig {
+	return StorageConfig{
+		Enabled:       false,
+		DataDir:       "", // resolved at runtime
+		MaxBuckets:    100,
+		MaxObjectSize: 5 * 1024 * 1024 * 1024, // 5GB
+		S3Port:        9300,
+		EnableS3:      false,
+	}
+}
+
+// ProxyConfig contains decentralized proxy service settings.
+type ProxyConfig struct {
+	Enabled     bool   `yaml:"enabled"`      // Enable proxy service
+	SOCKS5Addr  string `yaml:"socks5_addr"`  // SOCKS5 listen address (default: :1080)
+	HTTPAddr    string `yaml:"http_addr"`    // HTTP proxy listen address (default: :8118)
+	UseTor      bool   `yaml:"use_tor"`      // Route through Tor by default
+	MaxSessions int    `yaml:"max_sessions"` // Max concurrent proxy sessions (default: 1000)
+}
+
+// DefaultProxyConfig returns the default proxy configuration.
+func DefaultProxyConfig() ProxyConfig {
+	return ProxyConfig{
+		Enabled:     false,
+		SOCKS5Addr:  ":1080",
+		HTTPAddr:    ":8118",
+		UseTor:      false,
+		MaxSessions: 1000,
+	}
+}
+
+// AgentConfig contains AI agent runtime settings.
+type AgentConfig struct {
+	Enabled          bool     `yaml:"enabled"`            // Enable agent runtime
+	Frameworks       []string `yaml:"frameworks"`         // Enabled frameworks: langgraph, crewai, autogen, custom
+	DefaultMemoryMB  int      `yaml:"default_memory_mb"`  // Default agent container memory (default: 2048)
+	MaxAgentsPerWallet int    `yaml:"max_agents_per_wallet"` // Max concurrent agents per wallet (default: 10)
+	SyncIntervalSecs int      `yaml:"sync_interval_secs"` // Memory sync interval (default: 60)
+}
+
+// DefaultAgentConfig returns the default agent configuration.
+func DefaultAgentConfig() AgentConfig {
+	return AgentConfig{
+		Enabled:            false,
+		Frameworks:         []string{"langgraph", "crewai", "autogen", "custom"},
+		DefaultMemoryMB:    2048,
+		MaxAgentsPerWallet: 10,
+		SyncIntervalSecs:   60,
+	}
+}
+
+// CrawlConfig contains web crawling service settings.
+type CrawlConfig struct {
+	Enabled        bool   `yaml:"enabled"`          // Enable crawl service
+	MaxDepth       int    `yaml:"max_depth"`        // Default max crawl depth (default: 3)
+	MaxPages       int    `yaml:"max_pages"`         // Max pages per job (default: 1000)
+	MaxConcurrent  int    `yaml:"max_concurrent"`   // Max concurrent crawl workers (default: 10)
+	BrowserImage   string `yaml:"browser_image"`    // Chromium container image CID
+	RespectRobots  bool   `yaml:"respect_robots"`   // Respect robots.txt (default: true)
+	DefaultDelay   int    `yaml:"default_delay_ms"` // Default per-domain delay in ms (default: 1000)
+}
+
+// DefaultCrawlConfig returns the default crawl configuration.
+func DefaultCrawlConfig() CrawlConfig {
+	return CrawlConfig{
+		Enabled:       false,
+		MaxDepth:      3,
+		MaxPages:      1000,
+		MaxConcurrent: 10,
+		BrowserImage:  "", // set after image is published to IPFS
+		RespectRobots: true,
+		DefaultDelay:  1000,
+	}
+}
+
 // DefaultConfig returns the default configuration
 func DefaultConfig() *Config {
 	homeDir, _ := os.UserHomeDir()
@@ -596,6 +688,16 @@ func DefaultConfig() *Config {
 			KeyStorePath:            filepath.Join(dataDir, "keys", "deployments"),
 			KeyStoreEncrypt:         true,
 		},
+
+		// P0 services (all disabled by default)
+		Storage: func() StorageConfig {
+			cfg := DefaultStorageConfig()
+			cfg.DataDir = filepath.Join(dataDir, "storage")
+			return cfg
+		}(),
+		Proxy: DefaultProxyConfig(),
+		Agent: DefaultAgentConfig(),
+		Crawl: DefaultCrawlConfig(),
 	}
 }
 
@@ -755,6 +857,7 @@ func (c *Config) expandPaths() {
 	c.Encryption.KeyStorePath = expandPath(c.Encryption.KeyStorePath)
 	c.Node.WalletKeyFile = expandPath(c.Node.WalletKeyFile)
 	c.Node.WalletPasswordFile = expandPath(c.Node.WalletPasswordFile)
+	c.Storage.DataDir = expandPath(c.Storage.DataDir)
 }
 
 // expandPath expands ~ to home directory
