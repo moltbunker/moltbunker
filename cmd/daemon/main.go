@@ -430,7 +430,64 @@ func main() {
 					"port", ingressPort,
 					"domain", ingressDomain,
 					logging.Component("ingress"))
+
+				// Reverse tunnel server (ingress-side): accept connections from NAT'd providers
+				if cfg.Node.Provider.ReverseTunnelPort > 0 {
+					revTLSCfg := node.TLSServerConfig()
+					revTLSCfg.ClientAuth = tls.RequireAnyClientCert // Providers must present a cert
+					revPort := cfg.Node.Provider.ReverseTunnelPort
+					revListener, revErr := tls.Listen("tcp", fmt.Sprintf(":%d", revPort), revTLSCfg)
+					if revErr != nil {
+						logging.Warn("failed to start reverse tunnel server",
+							"port", revPort,
+							logging.Err(revErr),
+							logging.Component("reverse-tunnel"))
+					} else {
+						revOpts := []tunnel.ReverseServerOption{
+							tunnel.WithDomain(ingressDomain),
+						}
+						if cfg.Node.Provider.ReverseTunnelMaxConns > 0 {
+							revOpts = append(revOpts, tunnel.WithMaxConns(cfg.Node.Provider.ReverseTunnelMaxConns))
+						}
+						reverseServer := tunnel.NewReverseServer(revListener, revOpts...)
+						ingressProxy.SetReverseStreamOpener(reverseServer)
+						util.SafeGoWithName("reverse-tunnel-server", func() {
+							if srvErr := reverseServer.Serve(ctx); srvErr != nil && ctx.Err() == nil {
+								logging.Error("reverse tunnel server error",
+									logging.Err(srvErr),
+									logging.Component("reverse-tunnel"))
+							}
+						})
+						logging.Info("reverse tunnel server started",
+							"port", revPort,
+							"domain", ingressDomain,
+							logging.Component("reverse-tunnel"))
+					}
+				}
 			}
+		}
+	}
+
+	// Provider-side reverse tunnel: wire into ContainerManager so deployments
+	// with exposed ports automatically get a reverse tunnel to the ingress.
+	if cfg.Node.Provider.ReverseTunnelEnabled && cfg.Node.Provider.ReverseTunnelIngress != "" {
+		cm := apiServer.GetContainerManager()
+		if cm != nil && cm.NetworkManager() != nil {
+			portResolver := daemon.NewDeploymentPortResolver(cm.NetworkManager())
+			revTLSCfg := node.TLSClientConfig()
+			ingressAddr := cfg.Node.Provider.ReverseTunnelIngress
+
+			// Factory creates a new ReverseClient per deployment+port
+			clientFactory := func() *tunnel.ReverseClient {
+				return tunnel.NewReverseClient(ingressAddr, portResolver, revTLSCfg)
+			}
+
+			rtm := daemon.NewReverseTunnelManager(ctx, clientFactory)
+			cm.SetReverseTunnelManager(rtm)
+
+			logging.Info("reverse tunnel manager enabled",
+				"ingress", ingressAddr,
+				logging.Component("reverse-tunnel"))
 		}
 	}
 

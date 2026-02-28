@@ -174,6 +174,14 @@ type ProviderNodeConfig struct {
 	IngressAutoTLS   bool   `yaml:"ingress_auto_tls,omitempty"`   // Enable automatic TLS via Let's Encrypt
 	IngressCertDir   string `yaml:"ingress_cert_dir,omitempty"`   // Directory for autocert cache
 	IngressACMEEmail string `yaml:"ingress_acme_email,omitempty"` // ACME account email for Let's Encrypt
+
+	// Reverse tunnel (expose local containers via *.moltbunker.dev — like ngrok)
+	ReverseTunnelEnabled  bool   `yaml:"reverse_tunnel_enabled,omitempty"`  // Enable reverse tunnel client (provider side)
+	ReverseTunnelIngress  string `yaml:"reverse_tunnel_ingress,omitempty"`  // Ingress address to dial (e.g., "tunnel.moltbunker.dev:9443")
+
+	// Reverse tunnel server (ingress-side — accepts incoming reverse tunnels from providers)
+	ReverseTunnelPort     int    `yaml:"reverse_tunnel_port,omitempty"`      // Listen port (default: 9443)
+	ReverseTunnelMaxConns int    `yaml:"reverse_tunnel_max_conns,omitempty"` // Global max connections (default: 10000)
 }
 
 // RequesterNodeConfig contains requester-specific configuration

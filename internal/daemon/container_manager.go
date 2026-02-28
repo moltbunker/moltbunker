@@ -71,6 +71,9 @@ type ContainerManager struct {
 	// Molt (WASM serverless) manager
 	moltManager *MoltManager
 
+	// Reverse tunnel manager (optional, set via SetReverseTunnelManager)
+	reverseTunnel *ReverseTunnelManager
+
 	// P1-10: Container lifecycle event counters (atomic, lock-free)
 	deploysTotal  atomic.Int64
 	stopsTotal    atomic.Int64
@@ -1586,6 +1589,12 @@ func (cm *ContainerManager) NetworkManager() *networking.NetworkManager {
 	return cm.networkManager
 }
 
+// SetReverseTunnelManager sets the reverse tunnel manager for exposing
+// deployments via reverse tunnels to NAT'd providers.
+func (cm *ContainerManager) SetReverseTunnelManager(rtm *ReverseTunnelManager) {
+	cm.reverseTunnel = rtm
+}
+
 // MoltManager returns the Molt (WASM serverless) manager.
 // Returns nil if the Molt runtime failed to initialize.
 func (cm *ContainerManager) MoltManager() *MoltManager {
@@ -1646,6 +1655,11 @@ func (cm *ContainerManager) publishServiceExposure(deploymentID string, containe
 		"container_port", containerPort,
 		"host_port", hostPort,
 		"key", key)
+
+	// Also expose via reverse tunnel if configured (for NAT'd providers)
+	if cm.reverseTunnel != nil {
+		cm.reverseTunnel.Expose(deploymentID, containerPort)
+	}
 }
 
 // removeServiceExposure removes all exposed service entries for a deployment from gossip.
@@ -1665,6 +1679,11 @@ func (cm *ContainerManager) removeServiceExposure(containerID string) {
 	for _, p := range dep.ExposedPorts {
 		key := fmt.Sprintf("expose:%s:%d", containerID, p.ContainerPort)
 		cm.gossip.UpdateState(key, nil) // nil = removed
+	}
+
+	// Disconnect reverse tunnel if active
+	if cm.reverseTunnel != nil {
+		cm.reverseTunnel.Unexpose(containerID)
 	}
 }
 

@@ -16,14 +16,23 @@ import (
 	"github.com/moltbunker/moltbunker/internal/tunnel"
 )
 
+// ReverseStreamOpener opens yamux streams to providers via reverse tunnels.
+// Implemented by tunnel.ReverseServer.
+type ReverseStreamOpener interface {
+	OpenStream(subdomain string) (net.Conn, error)
+}
+
 // Proxy is an HTTP reverse proxy that routes subdomain requests to container services.
 // Incoming requests like "a1b2c3d4.moltbunker.dev" are parsed to extract the deployment ID,
 // resolved via the gossip-based service resolver, and proxied through a TLS tunnel.
+// It supports both forward tunnels (ingress dials provider) and reverse tunnels
+// (provider dials ingress, traffic multiplexed via yamux).
 type Proxy struct {
-	resolver     *Resolver
-	tunnelClient *tunnel.Client
-	domain       string // e.g., "moltbunker.dev"
-	server       *http.Server
+	resolver       *Resolver
+	tunnelClient   *tunnel.Client
+	reverseOpener  ReverseStreamOpener // reverse tunnel (optional)
+	domain         string              // e.g., "moltbunker.dev"
+	server         *http.Server
 }
 
 // NewProxy creates a new ingress proxy.
@@ -45,6 +54,13 @@ func NewProxy(resolver *Resolver, tunnelClient *tunnel.Client, domain string) *P
 	}
 
 	return p
+}
+
+// SetReverseStreamOpener sets the reverse tunnel stream opener.
+// When set, the proxy will try reverse tunnels as a fallback if forward tunnel
+// resolution fails (i.e., the subdomain is not in gossip state).
+func (p *Proxy) SetReverseStreamOpener(opener ReverseStreamOpener) {
+	p.reverseOpener = opener
 }
 
 // Serve starts the proxy on the given listener. Blocks until stopped.
@@ -74,6 +90,19 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Resolve service location (prefix match or vanity name)
 	service, err := p.resolver.Resolve(subdomain)
 	if err != nil {
+		// Fallback: try reverse tunnel registry
+		if p.reverseOpener != nil {
+			if stream, streamErr := p.reverseOpener.OpenStream(subdomain); streamErr == nil {
+				defer stream.Close()
+				if isWebSocketUpgrade(r) {
+					p.handleWebSocketViaStream(w, r, stream)
+					return
+				}
+				p.proxyHTTPViaStream(w, r, stream, subdomain)
+				return
+			}
+		}
+
 		logging.Debug("service not found",
 			"subdomain", subdomain,
 			"error", err.Error(),
@@ -184,6 +213,85 @@ func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tun
 			return
 		}
 	}
+}
+
+// proxyHTTPViaStream forwards an HTTP request through a reverse tunnel yamux stream.
+func (p *Proxy) proxyHTTPViaStream(w http.ResponseWriter, r *http.Request, stream net.Conn, subdomain string) {
+	// Write the HTTP request through the stream
+	if err := r.Write(stream); err != nil {
+		http.Error(w, "proxy write failed", http.StatusBadGateway)
+		return
+	}
+
+	// Read the response from the stream
+	resp, err := http.ReadResponse(bufio.NewReader(stream), r)
+	if err != nil {
+		http.Error(w, "proxy read failed", http.StatusBadGateway)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Apply same response header allowlist as forward tunnels
+	for k, vv := range resp.Header {
+		canonical := http.CanonicalHeaderKey(k)
+		if !allowedResponseHeaders[canonical] {
+			continue
+		}
+		for _, v := range vv {
+			w.Header().Add(k, v)
+		}
+	}
+
+	// Set security headers — containers must NOT control these
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("X-Frame-Options", "DENY")
+	w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
+	w.Header().Set("X-Moltbunker-Tunnel", "reverse")
+	w.Header().Set("X-Moltbunker-Subdomain", subdomain)
+
+	w.WriteHeader(resp.StatusCode)
+
+	// Stream response body
+	buf := make([]byte, 32*1024)
+	for {
+		n, err := resp.Body.Read(buf)
+		if n > 0 {
+			if _, wErr := w.Write(buf[:n]); wErr != nil {
+				return
+			}
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+		}
+		if err != nil {
+			return
+		}
+	}
+}
+
+// handleWebSocketViaStream hijacks and proxies WebSocket through a reverse tunnel stream.
+func (p *Proxy) handleWebSocketViaStream(w http.ResponseWriter, r *http.Request, stream net.Conn) {
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		http.Error(w, "websocket not supported", http.StatusInternalServerError)
+		return
+	}
+
+	clientConn, _, err := hijacker.Hijack()
+	if err != nil {
+		http.Error(w, "hijack failed", http.StatusInternalServerError)
+		return
+	}
+	defer clientConn.Close()
+
+	// Forward the original request to the stream
+	if err := r.Write(stream); err != nil {
+		return
+	}
+
+	// Proxy bidirectionally
+	_ = tunnel.ProxyBidirectional(r.Context(), clientConn, stream)
 }
 
 // handleWebSocket hijacks the HTTP connection and proxies WebSocket bidirectionally.
