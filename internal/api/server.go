@@ -827,11 +827,28 @@ func (s *Server) withPermissionMiddleware(handler http.HandlerFunc, permission s
 			}
 		}
 
+		// Strip any client-supplied internal header to prevent spoofing
+		r.Header.Del("X-Moltbunker-Verified-Wallet")
+
 		// Authentication
 		if s.config.EnableAuth {
 			if !s.authenticate(r) {
 				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
 				return
+			}
+
+			// Inject verified identity into request for downstream handlers.
+			// Uses an internal header because storage/crawl packages cannot
+			// import api (circular dependency prevents using context keys).
+			wallet := s.extractWalletAddress(r)
+			if wallet != "" {
+				r.Header.Set("X-Moltbunker-Verified-Wallet", wallet)
+			} else if s.isAPIKeyAuth(r) {
+				// API key users get a deterministic namespace from the key prefix
+				token := s.extractAPIKeyToken(r)
+				if token != "" && len(token) >= 8 {
+					r.Header.Set("X-Moltbunker-Verified-Wallet", "apikey:"+token[:8])
+				}
 			}
 
 			// Permission check for API key auth only (wallet auth has full access)

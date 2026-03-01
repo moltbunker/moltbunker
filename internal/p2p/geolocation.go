@@ -44,7 +44,8 @@ func (gl *GeoLocator) GetLocationFromIP(ip string) (*GeoLocation, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	const maxGeoResponseBytes = 64 * 1024 // 64KB — ip-api.com JSON is always <1KB
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxGeoResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}

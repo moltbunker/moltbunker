@@ -71,9 +71,9 @@ func (h *RESTHandler) handleUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wallet := r.Header.Get("X-Wallet-Address")
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
 	if wallet == "" {
-		wallet = "api-key-user"
+		wallet = "unknown"
 	}
 	wallet = strings.ToLower(wallet)
 

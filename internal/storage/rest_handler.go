@@ -29,15 +29,15 @@ func (h *RESTHandler) RegisterRoutes(mux *http.ServeMux, wrapRead, wrapWrite fun
 	mux.HandleFunc("/v1/storage/usage", wrapRead(h.handleUsage))
 }
 
-// extractWallet extracts the wallet address from the request context or headers.
-// This should be set by the auth middleware.
+// extractWallet extracts the verified wallet address from the request context.
+// The identity is injected by the auth middleware after signature verification.
+// Falls back to X-Moltbunker-Verified-Wallet header set by the middleware.
 func extractWallet(r *http.Request) string {
-	// Check wallet session token or inline wallet headers
-	if addr := r.Header.Get("X-Wallet-Address"); addr != "" {
-		return strings.ToLower(addr)
+	// Read from the internal verified header (set by auth middleware, not from client)
+	if wallet := r.Header.Get("X-Moltbunker-Verified-Wallet"); wallet != "" {
+		return strings.ToLower(wallet)
 	}
-	// Fallback: use a test wallet for API key auth
-	return "api-key-user"
+	return ""
 }
 
 // --- Bucket endpoints ---

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/hashicorp/yamux"
@@ -515,15 +516,14 @@ func (s *ReverseServer) heartbeatLoop(ctx context.Context, ctrl net.Conn,
 func (s *ReverseServer) checkIPLimit(ip string) bool {
 	val, _ := s.ipTracker.LoadOrStore(ip, new(int32))
 	counter := val.(*int32)
-	// Atomic increment
 	for {
-		old := *counter
+		old := atomic.LoadInt32(counter)
 		if int(old) >= s.maxPerIP {
 			return false
 		}
-		// CAS-like: we're the only incrementer for this goroutine
-		*counter = old + 1
-		return true
+		if atomic.CompareAndSwapInt32(counter, old, old+1) {
+			return true
+		}
 	}
 }
 
@@ -531,8 +531,7 @@ func (s *ReverseServer) checkIPLimit(ip string) bool {
 func (s *ReverseServer) releaseIPSlot(ip string) {
 	if val, ok := s.ipTracker.Load(ip); ok {
 		counter := val.(*int32)
-		*counter--
-		if *counter <= 0 {
+		if atomic.AddInt32(counter, -1) <= 0 {
 			s.ipTracker.Delete(ip)
 		}
 	}

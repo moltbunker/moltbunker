@@ -156,6 +156,9 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 	if input.Key == "" {
 		return nil, fmt.Errorf("object key is required")
 	}
+	if strings.ContainsAny(input.Key, "\x00\n\r") || strings.HasPrefix(input.Key, "/") {
+		return nil, fmt.Errorf("object key contains invalid characters")
+	}
 	if strings.Contains(input.Key, "..") {
 		return nil, fmt.Errorf("object key must not contain '..'")
 	}
@@ -173,7 +176,10 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 	}
 
 	// Write blob to local file
-	blobPath := e.blobPath(input.Bucket, input.Key)
+	blobPath, err := e.blobPath(input.Bucket, input.Key)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(blobPath), 0700); err != nil {
 		return nil, fmt.Errorf("create blob dir: %w", err)
 	}
@@ -251,7 +257,10 @@ func (e *StorageEngine) GetObject(ctx context.Context, bucket, key string) (*Get
 		return nil, fmt.Errorf("object %q not found in bucket %q", key, bucket)
 	}
 
-	blobPath := e.blobPath(bucket, key)
+	blobPath, err := e.blobPath(bucket, key)
+	if err != nil {
+		return nil, err
+	}
 	f, err := os.Open(blobPath)
 	if err != nil {
 		return nil, fmt.Errorf("open blob: %w", err)
@@ -300,7 +309,10 @@ func (e *StorageEngine) DeleteObject(ctx context.Context, bucket, key, owner str
 	}
 
 	// Delete blob file
-	blobPath := e.blobPath(bucket, key)
+	blobPath, pathErr := e.blobPath(bucket, key)
+	if pathErr != nil {
+		return pathErr
+	}
 	if err := os.Remove(blobPath); err != nil && !os.IsNotExist(err) {
 		logging.Warn("failed to delete blob file",
 			"path", blobPath,
@@ -344,6 +356,13 @@ func (e *StorageEngine) GetUsage(ctx context.Context, owner string) (*UsageRepor
 
 // blobPath returns the local filesystem path for an object's blob.
 // Uses a flat directory structure under blobs/<bucket>/<key-path>.
-func (e *StorageEngine) blobPath(bucket, key string) string {
-	return filepath.Join(e.dataDir, "blobs", bucket, key)
+// Returns an error if the resolved path escapes the data directory.
+func (e *StorageEngine) blobPath(bucket, key string) (string, error) {
+	p := filepath.Join(e.dataDir, "blobs", bucket, key)
+	absPath := filepath.Clean(p)
+	absRoot := filepath.Clean(filepath.Join(e.dataDir, "blobs")) + string(filepath.Separator)
+	if !strings.HasPrefix(absPath+string(filepath.Separator), absRoot) {
+		return "", fmt.Errorf("path traversal detected")
+	}
+	return absPath, nil
 }

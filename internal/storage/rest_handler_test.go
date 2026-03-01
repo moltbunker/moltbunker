@@ -36,8 +36,8 @@ func doRequest(mux http.Handler, method, path string, body io.Reader, headers ma
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	if _, ok := headers["X-Wallet-Address"]; !ok {
-		req.Header.Set("X-Wallet-Address", testOwner)
+	if _, ok := headers["X-Moltbunker-Verified-Wallet"]; !ok {
+		req.Header.Set("X-Moltbunker-Verified-Wallet", testOwner)
 	}
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)

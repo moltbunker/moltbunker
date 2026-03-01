@@ -677,7 +677,7 @@ func TestRESTHandler_Usage(t *testing.T) {
 	handler.RegisterRoutes(mux, pass, pass)
 
 	req := httptest.NewRequest("GET", "/v1/proxy/usage", nil)
-	req.Header.Set("X-Wallet-Address", "w1")
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "w1")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 

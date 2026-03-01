@@ -130,9 +130,15 @@ func NewConfigEditCmd() *cobra.Command {
 
 			fmt.Printf("Opening %s with %s...\n", configPath, editor)
 
-			// Use exec to replace current process
-			editorCmd := fmt.Sprintf("%s %s", editor, configPath)
-			return runCommand(editorCmd)
+			// Split editor to support "code --wait" style values,
+			// but pass configPath as a separate argument to prevent injection.
+			parts := strings.Fields(editor)
+			editorArgs := append(parts[1:], configPath)
+			c := exec.Command(parts[0], editorArgs...)
+			c.Stdin = os.Stdin
+			c.Stdout = os.Stdout
+			c.Stderr = os.Stderr
+			return c.Run()
 		},
 	}
 }
@@ -222,16 +228,3 @@ func setNestedValue(config map[string]interface{}, key string, value interface{}
 	}
 }
 
-func runCommand(command string) error {
-	parts := strings.Fields(command)
-	if len(parts) == 0 {
-		return fmt.Errorf("empty command")
-	}
-
-	// Use os/exec to run the command
-	cmd := exec.Command(parts[0], parts[1:]...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}

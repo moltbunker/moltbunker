@@ -114,7 +114,7 @@ func (h *RESTHandler) createJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner := r.Header.Get("X-Wallet-Address")
+	owner := r.Header.Get("X-Moltbunker-Verified-Wallet")
 	if owner == "" {
 		owner = "anonymous"
 	}
@@ -217,7 +217,7 @@ func (h *RESTHandler) handleCrawlPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	owner := r.Header.Get("X-Wallet-Address")
+	owner := r.Header.Get("X-Moltbunker-Verified-Wallet")
 	if owner == "" {
 		owner = "anonymous"
 	}

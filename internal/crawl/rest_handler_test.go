@@ -27,7 +27,7 @@ func TestHandler_CreateJob(t *testing.T) {
 	body := `{"urls":["https://example.com"],"max_pages":10}`
 	req := httptest.NewRequest("POST", "/v1/crawl/jobs", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Wallet-Address", "0xtest")
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xtest")
 
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
@@ -197,7 +197,7 @@ func TestHandler_CrawlPage(t *testing.T) {
 	body := `{"url":"https://example.com","selectors":["h1"]}`
 	req := httptest.NewRequest("POST", "/v1/crawl/pages", bytes.NewBufferString(body))
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Wallet-Address", "0xtest")
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xtest")
 
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
