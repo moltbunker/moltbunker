@@ -10,12 +10,22 @@ import httpx
 from moltbunker.auth import APIKeyAuth, AuthStrategy, WalletSessionAuth
 from moltbunker.exceptions import raise_for_status
 from moltbunker.models import (
+    AgentDeployment,
+    AgentInvokeRequest,
+    AgentInvokeResponse,
+    AgentSpec,
     BalanceResponse,
     CloneRequest,
     CloneResponse,
     ContainerInfo,
+    CrawlJob,
+    CrawlJobRequest,
+    CrawlPageRequest,
+    CrawlResult,
+    CrawlStats,
     DeployRequest,
     DeployResponse,
+    MemoryEntry,
     MoltDeployRequest,
     MoltDeployResponse,
     MoltInfo,
@@ -169,7 +179,7 @@ class AsyncMoltbunkerClient:
     # --- Molts (Serverless) ---
 
     async def deploy_molt(self, request: MoltDeployRequest) -> MoltDeployResponse:
-        data = await self._post("/v1/molts/deploy", json=request.model_dump(exclude_none=True))
+        data = await self._post("/v1/molts", json=request.model_dump(exclude_none=True))
         return MoltDeployResponse.model_validate(data)
 
     async def list_molts(self) -> List[MoltInfo]:
@@ -214,7 +224,7 @@ class AsyncMoltbunkerClient:
         import base64
 
         body = {"bucket": bucket, "key": key, "data": base64.b64encode(data).decode(), "content_type": content_type}
-        return StorageObject.model_validate(await self._post(f"/v1/storage/objects/{bucket}/{key}", json=body))
+        return StorageObject.model_validate(await self._put(f"/v1/storage/objects/{bucket}/{key}", json=body))
 
     async def get_object(self, bucket: str, key: str) -> bytes:
         import base64
@@ -241,3 +251,63 @@ class AsyncMoltbunkerClient:
 
     async def proxy_usage(self) -> ProxyUsage:
         return ProxyUsage.model_validate(await self._get("/v1/proxy/usage"))
+
+    # --- Crawling ---
+
+    async def create_crawl_job(self, request: CrawlJobRequest) -> CrawlJob:
+        data = await self._post("/v1/crawl/jobs", json=request.model_dump())
+        return CrawlJob.model_validate(data)
+
+    async def list_crawl_jobs(self) -> List[CrawlJob]:
+        data = await self._get("/v1/crawl/jobs")
+        return [CrawlJob.model_validate(j) for j in data.get("jobs", [])]
+
+    async def get_crawl_job(self, job_id: str) -> CrawlJob:
+        return CrawlJob.model_validate(await self._get(f"/v1/crawl/jobs/{job_id}"))
+
+    async def get_crawl_results(self, job_id: str) -> List[CrawlResult]:
+        data = await self._get(f"/v1/crawl/jobs/{job_id}/results")
+        return [CrawlResult.model_validate(r) for r in data.get("results", [])]
+
+    async def cancel_crawl_job(self, job_id: str) -> None:
+        await self._post(f"/v1/crawl/jobs/{job_id}/cancel")
+
+    async def crawl_page(self, request: CrawlPageRequest) -> CrawlJob:
+        data = await self._post("/v1/crawl/pages", json=request.model_dump())
+        return CrawlJob.model_validate(data)
+
+    async def get_crawl_stats(self) -> CrawlStats:
+        return CrawlStats.model_validate(await self._get("/v1/crawl/stats"))
+
+    # --- Agents ---
+
+    async def deploy_agent(self, spec: AgentSpec) -> AgentDeployment:
+        data = await self._post("/v1/agents", json=spec.model_dump())
+        return AgentDeployment.model_validate(data)
+
+    async def list_agents(self) -> List[AgentDeployment]:
+        data = await self._get("/v1/agents")
+        return [AgentDeployment.model_validate(a) for a in data.get("agents", [])]
+
+    async def get_agent(self, agent_id: str) -> AgentDeployment:
+        return AgentDeployment.model_validate(await self._get(f"/v1/agents/{agent_id}"))
+
+    async def delete_agent(self, agent_id: str) -> None:
+        await self._delete(f"/v1/agents/{agent_id}")
+
+    async def invoke_agent(self, agent_id: str, request: AgentInvokeRequest) -> AgentInvokeResponse:
+        data = await self._post(f"/v1/agents/{agent_id}/invoke", json=request.model_dump())
+        return AgentInvokeResponse.model_validate(data)
+
+    async def stop_agent(self, agent_id: str) -> None:
+        await self._post(f"/v1/agents/{agent_id}/stop")
+
+    async def list_agent_memory(self, agent_id: str) -> List[MemoryEntry]:
+        data = await self._get(f"/v1/agents/{agent_id}/memory")
+        return [MemoryEntry.model_validate(e) for e in data.get("entries", [])]
+
+    async def set_agent_memory(self, agent_id: str, entry: MemoryEntry) -> None:
+        await self._post(f"/v1/agents/{agent_id}/memory", json=entry.model_dump())
+
+    async def delete_agent_memory(self, agent_id: str, key: str) -> None:
+        await self._delete(f"/v1/agents/{agent_id}/memory", params={"key": key})

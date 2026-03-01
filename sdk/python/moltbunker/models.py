@@ -149,7 +149,6 @@ class MoltDeployResponse(BaseModel):
 
 
 class MoltInvokeRequest(BaseModel):
-    deployment_id: str
     method: str = "GET"
     path: str = "/"
     headers: Dict[str, str] = Field(default_factory=dict)
@@ -247,3 +246,144 @@ class ThreatResponse(BaseModel):
     active_signals: List[str] = Field(default_factory=list)
     recommendation: str = ""
     timestamp: Optional[datetime] = None
+
+
+# --- Crawling ---
+
+
+class CrawlConfig(BaseModel):
+    urls: List[str] = Field(default_factory=list)
+    max_depth: int = 0
+    max_pages: int = 100
+    allowed_domains: List[str] = Field(default_factory=list)
+    selectors: List[str] = Field(default_factory=list)
+    screenshot: bool = False
+    javascript: bool = False
+    user_agent: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    timeout_sec: int = 0
+    respect_robots: bool = False
+    use_tor: bool = False
+    storage_bucket: str = ""
+
+
+class CrawlJobRequest(BaseModel):
+    urls: List[str]
+    max_depth: int = 0
+    max_pages: int = 100
+    allowed_domains: List[str] = Field(default_factory=list)
+    selectors: List[str] = Field(default_factory=list)
+    screenshot: bool = False
+    javascript: bool = False
+    user_agent: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    timeout_sec: int = 0
+    respect_robots: bool = False
+    use_tor: bool = False
+    storage_bucket: str = ""
+
+
+class CrawlResult(BaseModel):
+    url: str = ""
+    status_code: int = 0
+    content_type: str = ""
+    title: str = ""
+    html: str = ""
+    text: str = ""
+    links: List[str] = Field(default_factory=list)
+    selectors: Dict[str, str] = Field(default_factory=dict)
+    screenshot_cid: str = ""
+    crawled_at: Optional[datetime] = None
+    duration_ms: int = 0
+    error: str = ""
+    byte_size: int = 0
+
+
+class CrawlJob(BaseModel):
+    id: str
+    owner: str = ""
+    status: str = ""
+    config: Optional[CrawlConfig] = None
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+    error: str = ""
+    pages_crawled: int = 0
+    total_bytes: int = 0
+    results: List[CrawlResult] = Field(default_factory=list)
+
+
+class CrawlPageRequest(BaseModel):
+    url: str
+    selectors: List[str] = Field(default_factory=list)
+    screenshot: bool = False
+    javascript: bool = False
+    user_agent: str = ""
+    headers: Dict[str, str] = Field(default_factory=dict)
+    timeout_sec: int = 0
+
+
+class CrawlStats(BaseModel):
+    total_jobs: int = 0
+    running_jobs: int = 0
+    completed_jobs: int = 0
+    failed_jobs: int = 0
+    total_pages_crawled: int = 0
+    total_bytes: int = 0
+
+
+# --- Agents ---
+
+
+class MCPToolDef(BaseModel):
+    name: str = ""
+    description: str = ""
+    parameters: Dict[str, str] = Field(default_factory=dict)
+
+
+class AgentSpec(BaseModel):
+    name: str
+    framework: str = "custom"
+    image: str = ""
+    config: Dict[str, str] = Field(default_factory=dict)
+    env: Dict[str, str] = Field(default_factory=dict)
+    mcp_tools: List[MCPToolDef] = Field(default_factory=list)
+    memory_bucket: str = ""
+    max_tokens: int = 0
+    timeout_sec: int = 0
+    memory_limit_mb: int = 0
+    cpu_cores: int = 0
+
+
+class AgentDeployment(BaseModel):
+    id: str
+    spec: Optional[AgentSpec] = None
+    status: str = ""
+    container_id: str = ""
+    node_id: str = ""
+    created_at: Optional[datetime] = None
+    started_at: Optional[datetime] = None
+    stopped_at: Optional[datetime] = None
+    error: str = ""
+    tokens_used: int = 0
+    invocation_count: int = 0
+    total_cost_wei: str = ""
+
+
+class AgentInvokeRequest(BaseModel):
+    message: str
+    context: Dict[str, str] = Field(default_factory=dict)
+
+
+class AgentInvokeResponse(BaseModel):
+    agent_id: str = ""
+    response: str = ""
+    tokens_used: int = 0
+    duration_ms: int = 0
+    error: str = ""
+
+
+class MemoryEntry(BaseModel):
+    key: str = ""
+    value: str = ""
+    updated_at: Optional[datetime] = None
