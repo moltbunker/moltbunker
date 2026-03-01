@@ -9,6 +9,7 @@ import (
 
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/molt"
+	"github.com/moltbunker/moltbunker/internal/security"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -27,10 +28,11 @@ type MoltDeployment struct {
 // MoltManager manages the lifecycle of Molt (WASM) deployments.
 // It owns the MoltRuntime from internal/molt and tracks active deployments.
 type MoltManager struct {
-	runtime     *molt.MoltRuntime
-	deployments map[string]*MoltDeployment
-	mu          sync.RWMutex
-	closed      bool
+	runtime       *molt.MoltRuntime
+	encryptionMgr *security.DeploymentEncryptionManager // optional — enables E2E encrypted I/O
+	deployments   map[string]*MoltDeployment
+	mu            sync.RWMutex
+	closed        bool
 }
 
 // NewMoltManager creates a new MoltManager with the given runtime.
@@ -40,6 +42,13 @@ func NewMoltManager(runtime *molt.MoltRuntime) *MoltManager {
 		runtime:     runtime,
 		deployments: make(map[string]*MoltDeployment),
 	}
+}
+
+// SetEncryptionManager configures E2E encryption for Molt deployments.
+// When set, HTTP handlers will decrypt incoming requests and encrypt responses
+// for deployments that have encryption keys registered.
+func (m *MoltManager) SetEncryptionManager(em *security.DeploymentEncryptionManager) {
+	m.encryptionMgr = em
 }
 
 // Available returns true if the Molt runtime is initialized.
@@ -73,6 +82,9 @@ func (m *MoltManager) Deploy(ctx context.Context, deploymentID string, wasmBytes
 
 	// Create the HTTP handler for this deployment
 	handler := molt.NewMoltHTTPHandler(m.runtime, compiled, deploymentID)
+	if m.encryptionMgr != nil {
+		handler.SetEncryptionManager(m.encryptionMgr)
+	}
 
 	deployment := &MoltDeployment{
 		ID:        deploymentID,
