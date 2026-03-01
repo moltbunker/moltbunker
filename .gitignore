@@ -122,6 +122,7 @@ build/
 # Test data
 .e2e-test-data/
 test-data/
+tests/chaos/
 *.test.json
 coverage/
 
