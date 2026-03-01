@@ -149,6 +149,7 @@ contracts/lib/
 # ===================
 # PYTHON SDK
 # ===================
+sdk/
 __pycache__/
 *.py[cod]
 *$py.class
