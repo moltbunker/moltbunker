@@ -23,6 +23,10 @@ import (
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
+	"github.com/moltbunker/moltbunker/internal/agent"
+	"github.com/moltbunker/moltbunker/internal/crawl"
+	"github.com/moltbunker/moltbunker/internal/proxy"
+	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
 )
 
@@ -63,6 +67,12 @@ type Server struct {
 	adminStore   *AdminMetadataStore
 	policyStore  *PolicyStore
 	catalogStore *CatalogStore
+
+	// P0 service handlers
+	storageHandler *storage.RESTHandler
+	proxyHandler   *proxy.RESTHandler
+	crawlHandler   *crawl.RESTHandler
+	agentHandler   *agent.RESTHandler
 
 	// Per-IP rate limiters
 	rateLimiters    sync.Map
@@ -229,6 +239,26 @@ func (s *Server) GetAdminStore() *AdminMetadataStore {
 	return s.adminStore
 }
 
+// SetStorageHandler sets the storage REST handler for object storage API.
+func (s *Server) SetStorageHandler(handler *storage.RESTHandler) {
+	s.storageHandler = handler
+}
+
+// SetProxyHandler sets the proxy REST handler for proxy management API.
+func (s *Server) SetProxyHandler(handler *proxy.RESTHandler) {
+	s.proxyHandler = handler
+}
+
+// SetCrawlHandler sets the crawl REST handler for web crawling API.
+func (s *Server) SetCrawlHandler(handler *crawl.RESTHandler) {
+	s.crawlHandler = handler
+}
+
+// SetAgentHandler sets the agent REST handler for AI agent runtime API.
+func (s *Server) SetAgentHandler(handler *agent.RESTHandler) {
+	s.agentHandler = handler
+}
+
 // Start starts the HTTP API server
 func (s *Server) Start(ctx context.Context) error {
 	s.mu.Lock()
@@ -389,43 +419,45 @@ func (s *Server) buildRouter() http.Handler {
 	mux.HandleFunc("/v1/auth/challenge", s.withCORS(s.handleAuthChallenge))
 	mux.HandleFunc("/v1/auth/verify", s.withCORS(s.handleAuthVerify))
 
-	// API v1 routes (auth required)
-	mux.HandleFunc("/v1/status", s.withMiddleware(s.handleStatus))
-	mux.HandleFunc("/v1/deploy", s.withMiddleware(s.handleDeploy))
-	mux.HandleFunc("/v1/reserve", s.withMiddleware(s.handleReserve))
-	mux.HandleFunc("/v1/clone", s.withMiddleware(s.handleClone))
-	mux.HandleFunc("/v1/migrate", s.withMiddleware(s.handleMigrate))
-	mux.HandleFunc("/v1/balance", s.withMiddleware(s.handleBalance))
-	mux.HandleFunc("/v1/snapshot", s.withMiddleware(s.handleSnapshot))
-	mux.HandleFunc("/v1/restore", s.withMiddleware(s.handleRestore))
-	mux.HandleFunc("/v1/threat", s.withMiddleware(s.handleThreat))
+	// API v1 routes — read endpoints
+	mux.HandleFunc("/v1/status", s.withPermissionMiddleware(s.handleStatus, "read"))
+	mux.HandleFunc("/v1/balance", s.withPermissionMiddleware(s.handleBalance, "read"))
+	mux.HandleFunc("/v1/threat", s.withPermissionMiddleware(s.handleThreat, "read"))
 
-	// Bot management
-	mux.HandleFunc("/v1/bots", s.withMiddleware(s.handleBots))
-	mux.HandleFunc("/v1/bots/", s.withMiddleware(s.handleBotByID))
+	// API v1 routes — write endpoints
+	mux.HandleFunc("/v1/deploy", s.withPermissionMiddleware(s.handleDeploy, "write"))
+	mux.HandleFunc("/v1/reserve", s.withPermissionMiddleware(s.handleReserve, "write"))
+	mux.HandleFunc("/v1/clone", s.withPermissionMiddleware(s.handleClone, "write"))
+	mux.HandleFunc("/v1/migrate", s.withPermissionMiddleware(s.handleMigrate, "write"))
+	mux.HandleFunc("/v1/snapshot", s.withPermissionMiddleware(s.handleSnapshot, "write"))
+	mux.HandleFunc("/v1/restore", s.withPermissionMiddleware(s.handleRestore, "write"))
+
+	// Bot management (GET=read, POST/PUT/DELETE=write)
+	mux.HandleFunc("/v1/bots", s.withMethodPermissions(s.handleBots, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
+	mux.HandleFunc("/v1/bots/", s.withMethodPermissions(s.handleBotByID, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
 
 	// Runtime management
-	mux.HandleFunc("/v1/runtimes/reserve", s.withMiddleware(s.handleRuntimeReserve))
-	mux.HandleFunc("/v1/runtimes/", s.withMiddleware(s.handleRuntimeByID))
+	mux.HandleFunc("/v1/runtimes/reserve", s.withPermissionMiddleware(s.handleRuntimeReserve, "write"))
+	mux.HandleFunc("/v1/runtimes/", s.withMethodPermissions(s.handleRuntimeByID, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
 
-	// Deployment management
-	mux.HandleFunc("/v1/deployments", s.withMiddleware(s.handleDeployments))
-	mux.HandleFunc("/v1/deployments/", s.withMiddleware(s.handleDeploymentByID))
+	// Deployment management (GET=read, POST/PUT/DELETE=write)
+	mux.HandleFunc("/v1/deployments", s.withPermissionMiddleware(s.handleDeployments, "read"))
+	mux.HandleFunc("/v1/deployments/", s.withMethodPermissions(s.handleDeploymentByID, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
 
-	// Snapshot management
-	mux.HandleFunc("/v1/snapshots", s.withMiddleware(s.handleSnapshots))
-	mux.HandleFunc("/v1/snapshots/", s.withMiddleware(s.handleSnapshotByID))
+	// Snapshot management (GET=read, POST/PUT/DELETE=write)
+	mux.HandleFunc("/v1/snapshots", s.withPermissionMiddleware(s.handleSnapshots, "read"))
+	mux.HandleFunc("/v1/snapshots/", s.withMethodPermissions(s.handleSnapshotByID, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
 
-	// Clone management
-	mux.HandleFunc("/v1/clones", s.withMiddleware(s.handleClones))
-	mux.HandleFunc("/v1/clones/", s.withMiddleware(s.handleCloneByID))
+	// Clone management (GET=read, POST/PUT/DELETE=write)
+	mux.HandleFunc("/v1/clones", s.withPermissionMiddleware(s.handleClones, "read"))
+	mux.HandleFunc("/v1/clones/", s.withMethodPermissions(s.handleCloneByID, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
 
-	// Container management
-	mux.HandleFunc("/v1/containers", s.withMiddleware(s.handleContainers))
-	mux.HandleFunc("/v1/containers/", s.withMiddleware(s.handleContainerByID))
+	// Container management (GET=read, POST/PUT/DELETE=write)
+	mux.HandleFunc("/v1/containers", s.withPermissionMiddleware(s.handleContainers, "read"))
+	mux.HandleFunc("/v1/containers/", s.withMethodPermissions(s.handleContainerByID, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
 
-	// Exec terminal endpoints
-	mux.HandleFunc("/v1/exec/challenge", s.withMiddleware(s.handleExecChallenge))
+	// Exec terminal endpoints (write — exec is a mutating action)
+	mux.HandleFunc("/v1/exec/challenge", s.withPermissionMiddleware(s.handleExecChallenge, "write"))
 	mux.HandleFunc("/v1/exec/ws", s.handleExecWebSocket) // Auth via challenge/signature, not middleware
 
 	// Admin endpoints (admin auth required)
@@ -455,6 +487,42 @@ func (s *Server) buildRouter() http.Handler {
 	mux.HandleFunc("/v1/admin/catalog/categories/", s.withAdminMiddleware(s.handleAdminCatalogCategoryByID))
 	mux.HandleFunc("/v1/admin/catalog/tiers/", s.withAdminMiddleware(s.handleAdminCatalogTierByID))
 
+	// Subdomain management (GET=read, POST/DELETE=write)
+	mux.HandleFunc("/v1/subdomains", s.withMethodPermissions(s.handleSubdomains, []string{"GET"}, []string{"POST", "DELETE"}))
+	mux.HandleFunc("/v1/subdomains/", s.withMethodPermissions(s.handleSubdomainByName, []string{"GET"}, []string{"POST", "PUT", "DELETE"}))
+
+	// Object Storage endpoints (read/write permission)
+	if s.storageHandler != nil {
+		s.storageHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
+
+	// Proxy management endpoints (read/write permission)
+	if s.proxyHandler != nil {
+		s.proxyHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
+
+	// Web Crawling endpoints (read/write permission)
+	if s.crawlHandler != nil {
+		s.crawlHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
+
+	// AI Agent Runtime endpoints (read/write permission)
+	if s.agentHandler != nil {
+		s.agentHandler.RegisterRoutes(mux,
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
+			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
+		)
+	}
+
 	// Health endpoints (no auth required)
 	mux.HandleFunc("/v1/health", s.handleHealth)
 	mux.HandleFunc("/v1/healthz", s.handleHealthz)
@@ -466,9 +534,9 @@ func (s *Server) buildRouter() http.Handler {
 	// Top-level health check for load balancer probes (no auth required)
 	mux.HandleFunc("/health", s.handleHealthCheck)
 
-	// WebSocket endpoint (auth required)
+	// WebSocket endpoint (read — real-time status updates)
 	if s.config.EnableWebSocket && s.wsHub != nil {
-		mux.HandleFunc("/v1/ws", s.withMiddleware(s.handleWebSocket))
+		mux.HandleFunc("/v1/ws", s.withPermissionMiddleware(s.handleWebSocket, "read"))
 	}
 
 	// pprof debug endpoints (admin-only — exposes heap dumps, goroutine stacks)
@@ -742,6 +810,129 @@ func (s *Server) authenticate(r *http.Request) bool {
 	}
 
 	return false
+}
+
+// withPermissionMiddleware wraps a handler with CORS, rate limiting, auth, and permission verification.
+// API key auth requires the specified permission; wallet auth always has full access.
+// For routes that need different permissions per method (e.g., GET=read, POST=write),
+// pass multiple method-permission pairs using withMethodPermissions instead.
+func (s *Server) withPermissionMiddleware(handler http.HandlerFunc, permission string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// CORS
+		if s.config.EnableCORS {
+			s.setCORSHeaders(w, r)
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+		}
+
+		// Strip any client-supplied internal header to prevent spoofing
+		r.Header.Del("X-Moltbunker-Verified-Wallet")
+
+		// Authentication
+		if s.config.EnableAuth {
+			if !s.authenticate(r) {
+				http.Error(w, `{"error": "unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+
+			// Inject verified identity into request for downstream handlers.
+			// Uses an internal header because storage/crawl packages cannot
+			// import api (circular dependency prevents using context keys).
+			wallet := s.extractWalletAddress(r)
+			if wallet != "" {
+				r.Header.Set("X-Moltbunker-Verified-Wallet", wallet)
+			} else if s.isAPIKeyAuth(r) {
+				// API key users get a deterministic namespace from the key prefix
+				token := s.extractAPIKeyToken(r)
+				if token != "" && len(token) >= 8 {
+					r.Header.Set("X-Moltbunker-Verified-Wallet", "apikey:"+token[:8])
+				}
+			}
+
+			// Permission check for API key auth only (wallet auth has full access)
+			if s.isAPIKeyAuth(r) {
+				token := s.extractAPIKeyToken(r)
+				if token != "" && s.apiKeyManager != nil {
+					if !s.apiKeyManager.ValidateKeyWithPermission(token, permission) {
+						http.Error(w, `{"error": "forbidden: insufficient API key permissions"}`, http.StatusForbidden)
+						return
+					}
+				}
+			}
+		}
+
+		// Rate limiting
+		if s.config.RateLimit > 0 {
+			ip := s.extractClientIP(r)
+			limiter := s.getRateLimiter(ip)
+			if !limiter.Allow() {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Retry-After", "60")
+				w.WriteHeader(http.StatusTooManyRequests)
+				w.Write([]byte(`{"error": "rate limit exceeded", "retry_after": 60}`))
+				return
+			}
+		}
+
+		handler(w, r)
+	}
+}
+
+// withMethodPermissions wraps a handler with per-method permission checks.
+// For example, GET requires "read" but POST/DELETE require "write".
+func (s *Server) withMethodPermissions(handler http.HandlerFunc, readMethods, writeMethods []string) http.HandlerFunc {
+	readSet := make(map[string]bool, len(readMethods))
+	for _, m := range readMethods {
+		readSet[m] = true
+	}
+	writeSet := make(map[string]bool, len(writeMethods))
+	for _, m := range writeMethods {
+		writeSet[m] = true
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		perm := "read" // default
+		if writeSet[r.Method] {
+			perm = "write"
+		} else if !readSet[r.Method] {
+			perm = "write" // unknown methods default to write
+		}
+		s.withPermissionMiddleware(handler, perm)(w, r)
+	}
+}
+
+// isAPIKeyAuth returns true if the request is authenticated via API key (not wallet).
+func (s *Server) isAPIKeyAuth(r *http.Request) bool {
+	// Check X-API-Key header
+	if r.Header.Get(s.config.APIKeyHeader) != "" {
+		return true
+	}
+	// Check Bearer mb_* token
+	auth := r.Header.Get("Authorization")
+	if auth != "" && len(auth) > 7 && auth[:7] == "Bearer " {
+		token := auth[7:]
+		if len(token) > 3 && token[:3] == "mb_" {
+			return true
+		}
+	}
+	return false
+}
+
+// extractAPIKeyToken extracts the API key token from the request headers.
+func (s *Server) extractAPIKeyToken(r *http.Request) string {
+	if key := r.Header.Get(s.config.APIKeyHeader); key != "" {
+		return key
+	}
+	auth := r.Header.Get("Authorization")
+	if auth != "" && len(auth) > 7 && auth[:7] == "Bearer " {
+		token := auth[7:]
+		if len(token) > 3 && token[:3] == "mb_" {
+			return token
+		}
+	}
+	return ""
 }
 
 // withAdminMiddleware wraps a handler with CORS, rate limiting, auth, and admin verification.

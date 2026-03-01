@@ -10,9 +10,10 @@ import "../src/BunkerTimelock.sol";
 import "../src/BunkerDelegation.sol";
 import "../src/BunkerReputation.sol";
 import "../src/BunkerVerification.sol";
+import "../src/BunkerRegistry.sol";
 
 /// @title DeployTestnet
-/// @notice Single-step deployment of all 8 Moltbunker contracts for testnet.
+/// @notice Single-step deployment of all 9 Moltbunker contracts for testnet.
 ///
 /// Required env vars:
 ///   DEPLOYER_PK    - Deployer private key
@@ -37,6 +38,7 @@ contract DeployTestnet is Script {
     address public delegationAddr;
     address public reputationAddr;
     address public verificationAddr;
+    address public registryAddr;
 
     function run() external {
         uint256 deployerPk = vm.envUint("DEPLOYER_PK");
@@ -92,6 +94,11 @@ contract DeployTestnet is Script {
 
         // 8. Verification
         verificationAddr = address(new BunkerVerification(deployer));
+
+        // 9. Registry (needs token, treasury, staking)
+        registryAddr = address(
+            new BunkerRegistry(tokenAddr, treasury, 1_000_000 * 1e18, deployer, stakingAddr)
+        );
 
         // Wire escrow → staking
         escrow.setStakingContract(stakingAddr);
@@ -151,6 +158,7 @@ contract DeployTestnet is Script {
         console.log("VITE_DELEGATION_ADDRESS=%s", delegationAddr);
         console.log("VITE_REPUTATION_ADDRESS=%s", reputationAddr);
         console.log("VITE_VERIFICATION_ADDRESS=%s", verificationAddr);
+        console.log("VITE_REGISTRY_ADDRESS=%s", registryAddr);
     }
 
     function _envOrDefault(string memory key, address fallback_) internal view returns (address) {

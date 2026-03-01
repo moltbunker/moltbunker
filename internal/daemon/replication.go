@@ -23,8 +23,16 @@ func (cm *ContainerManager) broadcastDeployment(ctx context.Context, deployment 
 		return fmt.Errorf("no peers available for replication")
 	}
 
-	// Find nodes in different regions for replication (returns best spread available)
-	selectedNodes, err := cm.geoRouter.SelectNodesForReplication(peers, deployment.MinProviderTier)
+	// W11: For Molt deployments, filter to Molt-capable nodes
+	var (
+		selectedNodes []*types.Node
+		err           error
+	)
+	if deployment.RuntimeType == types.RuntimeTypeMolt {
+		selectedNodes, err = cm.geoRouter.SelectMoltNodes(peers)
+	} else {
+		selectedNodes, err = cm.geoRouter.SelectNodesForReplication(peers, deployment.MinProviderTier)
+	}
 	if err != nil {
 		logging.Warn("geographic selection failed, using available peers",
 			logging.Err(err),
@@ -188,6 +196,26 @@ func (cm *ContainerManager) handleDeployRequest(ctx context.Context, msg *types.
 	originatorID := msg.From
 	cm.mu.Unlock()
 
+	// W9: Route Molt (WASM) deployments to MoltManager instead of containerd
+	if deploymentCopy.RuntimeType == types.RuntimeTypeMolt {
+		if cm.moltManager == nil || !cm.moltManager.Available() {
+			logging.Warn("rejecting molt deployment: runtime not available",
+				logging.ContainerID(deploymentCopy.ID))
+			cm.sendDeployAck(ctx, msg.From, deploymentCopy.ID, false, "molt runtime not available")
+			return nil
+		}
+		util.SafeGoWithName("deploy-molt-replica", func() {
+			deployCtx, deployCancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer deployCancel()
+			if err := cm.deployMoltReplica(deployCtx, &deploymentCopy, originatorID); err != nil {
+				logging.Warn("failed to deploy molt replica",
+					logging.ContainerID(deploymentCopy.ID),
+					logging.Err(err))
+			}
+		})
+		return nil
+	}
+
 	// If we have containerd and this is for our region, deploy locally
 	if cm.containerd != nil {
 		myRegion := p2p.GetRegionFromCountry(cm.node.nodeInfo.Country)
@@ -261,6 +289,38 @@ func (cm *ContainerManager) deployReplica(ctx context.Context, deployment *Deplo
 	// Send acknowledgment back to originator
 	cm.sendDeployAck(ctx, originatorID, deployment.ID, true, "")
 
+	return nil
+}
+
+// deployMoltReplica deploys a Molt (WASM) replica and sends acknowledgment
+func (cm *ContainerManager) deployMoltReplica(ctx context.Context, deployment *Deployment, originatorID types.NodeID) error {
+	if deployment.MoltSpec == nil {
+		cm.sendDeployAck(ctx, originatorID, deployment.ID, false, "molt spec missing")
+		return fmt.Errorf("molt spec missing for deployment %s", deployment.ID)
+	}
+
+	// Fetch WASM bytes from IPFS (would need distribution layer — for now, require inline bytes)
+	// TODO: integrate with IPFS distribution to pull WASM module by CID
+	logging.Info("deploying molt replica",
+		logging.ContainerID(deployment.ID),
+		"module_cid", deployment.MoltSpec.ModuleCID)
+
+	// Deploy via MoltManager (it handles compilation and handler creation)
+	_, err := cm.moltManager.Deploy(ctx, deployment.ID, nil, deployment.MoltSpec, deployment.Owner)
+	if err != nil {
+		cm.sendDeployAck(ctx, originatorID, deployment.ID, false, err.Error())
+		return fmt.Errorf("failed to deploy molt replica: %w", err)
+	}
+
+	cm.mu.Lock()
+	deployment.Status = types.ContainerStatusRunning
+	deployment.StartedAt = time.Now()
+	cm.mu.Unlock()
+
+	logging.Info("molt replica deployed successfully",
+		logging.ContainerID(deployment.ID))
+
+	cm.sendDeployAck(ctx, originatorID, deployment.ID, true, "")
 	return nil
 }
 

@@ -6,18 +6,48 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"sync/atomic"
 )
 
 // containerSubnet is the private range used for container networks.
 const containerSubnet = "10.88.0.0/16"
 
-// ipCounter tracks the next available IP in the container subnet.
-var ipCounter atomic.Uint32
+// maxContainerIPs is the max number of IPs in the /16 subnet (minus .0 and .1).
+const maxContainerIPs = 65534
 
-func init() {
-	// Start at 10.88.0.2 (skip .0 network and .1 gateway)
-	ipCounter.Store(2)
+// ipPool manages IP allocation with recycling. When containers are torn down,
+// their IPs are returned to the pool for reuse instead of being lost forever.
+type ipPool struct {
+	mu      sync.Mutex
+	freed   []uint32 // stack of reusable IP indices
+	nextNew uint32   // next fresh index when freed is empty
+}
+
+var defaultIPPool = &ipPool{nextNew: 2} // Start at 10.88.0.2 (skip .0 and .1)
+
+func (p *ipPool) Allocate() (uint32, bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Prefer reusing a freed IP
+	if len(p.freed) > 0 {
+		idx := p.freed[len(p.freed)-1]
+		p.freed = p.freed[:len(p.freed)-1]
+		return idx, true
+	}
+
+	// Allocate a fresh IP
+	if p.nextNew > maxContainerIPs {
+		return 0, false // exhausted
+	}
+	idx := p.nextNew
+	p.nextNew++
+	return idx, true
+}
+
+func (p *ipPool) Release(idx uint32) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.freed = append(p.freed, idx)
 }
 
 // linuxContainerNetwork implements ContainerNetwork using veth pairs and netns on Linux.
@@ -25,6 +55,7 @@ type linuxContainerNetwork struct {
 	deploymentID string
 	ports        []ExposedPort
 	containerIP  string
+	ipIndex      uint32      // index in the IP pool (for release on teardown)
 	portMap      map[int]int // containerPort → hostPort
 	mu           sync.RWMutex
 }
@@ -45,8 +76,12 @@ func newContainerNetwork(deploymentID string, ports []ExposedPort) ContainerNetw
 
 // Setup creates a veth pair, assigns an IP, and configures nftables forwarding.
 func (n *linuxContainerNetwork) Setup() error {
-	// Assign container IP from the private subnet
-	idx := ipCounter.Add(1)
+	// Assign container IP from the private subnet (recycling pool)
+	idx, ok := defaultIPPool.Allocate()
+	if !ok {
+		return fmt.Errorf("IP address pool exhausted (max %d containers)", maxContainerIPs)
+	}
+	n.ipIndex = idx
 	n.containerIP = fmt.Sprintf("10.88.%d.%d", (idx>>8)&0xFF, idx&0xFF)
 
 	// Create veth pair
@@ -70,7 +105,7 @@ func (n *linuxContainerNetwork) Setup() error {
 	return nil
 }
 
-// Teardown removes the veth pair and nftables rules.
+// Teardown removes the veth pair and nftables rules, and returns the IP to the pool.
 func (n *linuxContainerNetwork) Teardown() error {
 	vethHost := fmt.Sprintf("veth-%.8s", n.deploymentID)
 
@@ -81,6 +116,11 @@ func (n *linuxContainerNetwork) Teardown() error {
 
 	// Remove veth pair (removing one end removes both)
 	_ = deleteLink(vethHost)
+
+	// Return IP to the pool for reuse
+	if n.ipIndex > 0 {
+		defaultIPPool.Release(n.ipIndex)
+	}
 
 	return nil
 }

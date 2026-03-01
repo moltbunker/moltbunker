@@ -50,9 +50,12 @@ func main() {
 
 	// Containers
 	addCmd(commands.NewDeployCmd(), groupContainers)
+	addCmd(commands.NewMoltCmd(), groupContainers)
 	addCmd(commands.NewPsCmd(), groupContainers)
 	addCmd(commands.NewLogsCmd(), groupContainers)
 	addCmd(commands.NewExecCmd(), groupContainers)
+	addCmd(commands.NewSubdomainCmd(), groupContainers)
+	addCmd(commands.NewStorageCmd(), groupContainers)
 
 	// Wallet & Payments
 	addCmd(commands.NewWalletCmd(), groupWallet)
@@ -62,6 +65,7 @@ func main() {
 	addCmd(commands.NewStatusCmd(), groupNetwork)
 	addCmd(commands.NewPeersCmd(), groupNetwork)
 	addCmd(commands.NewMonitorCmd(), groupNetwork)
+	addCmd(commands.NewProxyCmd(), groupNetwork)
 
 	// Provider (shown to all, but some subcommands require daemon)
 	addCmd(commands.NewProviderCmd(), groupProvider)

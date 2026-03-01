@@ -48,6 +48,17 @@ type NodeCapabilities struct {
 	ContainerRuntime bool
 	TorSupport       bool
 	StakingAmount    uint64 // BUNKER tokens staked
+
+	// Molt (WASM serverless) capabilities
+	MoltAvailable    bool `json:"molt_available,omitempty"`
+	MoltMaxMemoryMB  int  `json:"molt_max_memory_mb,omitempty"`
+	MoltMaxInstances int  `json:"molt_max_instances,omitempty"`
+
+	// P0 service capabilities
+	StorageAvailable bool `json:"storage_available,omitempty"`
+	ProxyAvailable   bool `json:"proxy_available,omitempty"`
+	CrawlAvailable   bool `json:"crawl_available,omitempty"`
+	AgentAvailable   bool `json:"agent_available,omitempty"`
 }
 
 // Container represents a running container instance
@@ -61,6 +72,12 @@ type Container struct {
 	Health      HealthStatus
 	Encrypted   bool
 	OnionAddr   string // .onion address if Tor-enabled
+
+	// RuntimeType is "container" (default) or "molt" for WASM workloads.
+	RuntimeType RuntimeType `json:"runtime_type,omitempty"`
+
+	// MoltMetrics holds invocation metrics for Molt deployments (nil for containers).
+	MoltMetrics *MoltDeploymentMetrics `json:"molt_metrics,omitempty"`
 }
 
 // ContainerStatus represents container state
@@ -148,6 +165,12 @@ const (
 
 	// Identity exchange
 	MessageTypeAnnounce MessageType = "announce" // Wallet ownership proof after TLS handshake
+
+	// P0 service message types
+	MessageTypeStorageSync  MessageType = "storage_sync"  // Object replication commands
+	MessageTypeProxyConnect MessageType = "proxy_connect" // Proxy relay establishment
+	MessageTypeCrawlTask    MessageType = "crawl_task"    // Distributed crawl task assignment
+	MessageTypeCrawlResult  MessageType = "crawl_result"  // Crawl result relay
 )
 
 // Message represents a P2P message
@@ -204,10 +227,19 @@ type DeploymentRequest struct {
 	// Minimum provider tier required for this deployment
 	MinProviderTier ProviderTier `json:"min_provider_tier,omitempty"`
 
+	// Molt serverless function (nil = container deployment, non-nil = Molt deployment).
+	// Mutually exclusive with ImageCID.
+	WasmModule *MoltSpec `json:"wasm_module,omitempty"`
+
 	// Exec encryption (optional — omit to disable exec for this container)
 	DeployNonce      string `json:"deploy_nonce,omitempty"`
 	EncryptedExecKey []byte `json:"encrypted_exec_key,omitempty"`
 	ExecKeyNonce     []byte `json:"exec_key_nonce,omitempty"`
+}
+
+// IsMolt returns true if this is a Molt (WASM) deployment rather than a container.
+func (r *DeploymentRequest) IsMolt() bool {
+	return r.WasmModule != nil
 }
 
 // ExecOpenPayload is sent from API node to provider to request an exec stream
@@ -245,8 +277,17 @@ type AnnouncePayload struct {
 	NodeID        string `json:"node_id"`         // Hex-encoded node ID (binds wallet to node)
 	Timestamp     int64  `json:"timestamp"`       // Unix timestamp (must be within 5 min)
 	Nonce         string `json:"nonce"`            // Random 32-byte hex string
-	EthSignature  string       `json:"eth_signature"`              // EIP-191 personal_sign (65 bytes, hex)
-	ProviderTier  ProviderTier `json:"provider_tier,omitempty"`    // Self-reported provider tier
+	EthSignature     string       `json:"eth_signature"`              // EIP-191 personal_sign (65 bytes, hex)
+	ProviderTier     ProviderTier `json:"provider_tier,omitempty"`    // Self-reported provider tier
+	MoltAvailable    bool         `json:"molt_available,omitempty"`   // Whether Molt (WASM) runtime is available
+	MoltMaxMemoryMB  int          `json:"molt_max_memory_mb,omitempty"` // Max WASM memory per instance
+	MoltMaxInstances int          `json:"molt_max_instances,omitempty"` // Max concurrent WASM instances
+
+	// P0 service capabilities
+	StorageAvailable bool `json:"storage_available,omitempty"` // Object storage service
+	ProxyAvailable   bool `json:"proxy_available,omitempty"`   // Decentralized proxy service
+	CrawlAvailable   bool `json:"crawl_available,omitempty"`   // Web crawling service
+	AgentAvailable   bool `json:"agent_available,omitempty"`   // AI agent runtime
 }
 
 // Bid represents a daemon's bid for hosting a container

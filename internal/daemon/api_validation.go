@@ -133,5 +133,38 @@ func validateDeployRequest(req *DeployRequest) error {
 		return fmt.Errorf("invalid onion port: must be between 0 and 65535")
 	}
 
+	// Validate exposed ports
+	if err := validateExposedPorts(req.ExposePorts); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// maxExposedPorts is the maximum number of ports a single deployment can expose.
+const maxExposedPorts = 10
+
+// validateExposedPorts validates the ExposePorts list for a deployment.
+func validateExposedPorts(ports []ExposedPort) error {
+	if len(ports) > maxExposedPorts {
+		return fmt.Errorf("too many exposed ports: %d (max %d)", len(ports), maxExposedPorts)
+	}
+	seen := make(map[int]bool, len(ports))
+	for _, p := range ports {
+		if p.ContainerPort < 1 || p.ContainerPort > 65535 {
+			return fmt.Errorf("invalid exposed port %d: must be 1-65535", p.ContainerPort)
+		}
+		proto := p.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+		if proto != "tcp" && proto != "udp" {
+			return fmt.Errorf("invalid protocol %q for port %d: must be tcp or udp", proto, p.ContainerPort)
+		}
+		if seen[p.ContainerPort] {
+			return fmt.Errorf("duplicate exposed port: %d", p.ContainerPort)
+		}
+		seen[p.ContainerPort] = true
+	}
 	return nil
 }

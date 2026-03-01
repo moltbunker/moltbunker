@@ -104,6 +104,9 @@ type DeployRequest struct {
 	ExecKeyNonce     []byte `json:"exec_key_nonce,omitempty"`     // Nonce for exec key decryption
 	DeployNonce      string `json:"deploy_nonce,omitempty"`       // Deploy nonce used to derive exec_key
 
+	// Spot pricing (optional — lower cost, preemptible)
+	Spot bool `json:"spot,omitempty"`
+
 	// Service exposure (optional)
 	ExposePorts []ExposedPort `json:"expose_ports,omitempty"` // Ports to expose publicly
 }
@@ -183,4 +186,144 @@ type ReadyzResponse struct {
 	Ready     bool      `json:"ready"`
 	Message   string    `json:"message,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
+}
+
+// SubdomainRegisterRequest contains subdomain registration parameters.
+type SubdomainRegisterRequest struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+}
+
+// SubdomainRegisterResponse contains the result of a subdomain registration.
+type SubdomainRegisterResponse struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+	URL          string `json:"url"`
+	TxHash       string `json:"tx_hash,omitempty"`
+}
+
+// SubdomainInfo contains subdomain details.
+type SubdomainInfo struct {
+	Name         string    `json:"name"`
+	DeploymentID string    `json:"deployment_id"`
+	Owner        string    `json:"owner"`
+	URL          string    `json:"url"`
+	RegisteredAt time.Time `json:"registered_at"`
+}
+
+// SubdomainReleaseRequest contains subdomain release parameters.
+type SubdomainReleaseRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainResolveRequest contains subdomain resolve parameters.
+type SubdomainResolveRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainTransferRequest contains subdomain transfer parameters.
+type SubdomainTransferRequest struct {
+	Name     string `json:"name"`
+	NewOwner string `json:"new_owner"`
+}
+
+// SubdomainUpdateRequest contains subdomain deployment update parameters.
+type SubdomainUpdateRequest struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+}
+
+// SubdomainRenewRequest contains subdomain renewal parameters.
+type SubdomainRenewRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainReserveRequest contains subdomain reservation parameters.
+type SubdomainReserveRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainClaimRequest contains subdomain claim parameters.
+type SubdomainClaimRequest struct {
+	Name         string `json:"name"`
+	DeploymentID string `json:"deployment_id"`
+}
+
+// SubdomainCancelRequest contains subdomain reservation cancellation parameters.
+type SubdomainCancelRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainMetadataRequest contains subdomain metadata update parameters.
+type SubdomainMetadataRequest struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	AvatarURL   string `json:"avatar_url"`
+}
+
+// SubdomainPrimaryRequest contains subdomain primary name parameters.
+type SubdomainPrimaryRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainReclaimRequest contains subdomain reclaim parameters.
+type SubdomainReclaimRequest struct {
+	Name string `json:"name"`
+}
+
+// SubdomainMetadataResponse contains subdomain metadata.
+type SubdomainMetadataResponse struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	AvatarURL   string `json:"avatar_url"`
+}
+
+// --- Molt (WASM serverless) API types ---
+
+// MoltDeployRequest is the API request to deploy a Molt serverless function.
+type MoltDeployRequest struct {
+	ModuleCID     string            `json:"module_cid"`                // IPFS CID of the .wasm binary
+	MemoryLimitMB uint32            `json:"memory_limit_mb,omitempty"` // Max WASM memory (default: 256MB)
+	TimeoutMs     int               `json:"timeout_ms,omitempty"`      // Max execution time (default: 30s)
+	MaxInstances  int               `json:"max_instances,omitempty"`   // Max concurrent instances (default: 100)
+	Environment   map[string]string `json:"environment,omitempty"`     // Env vars passed to WASM
+	Owner         string            `json:"owner,omitempty"`           // Deployer wallet address
+	WasmBytes     []byte            `json:"wasm_bytes,omitempty"`      // Inline WASM binary (if not using IPFS)
+}
+
+// MoltDeployResponse is the API response after deploying a Molt.
+type MoltDeployResponse struct {
+	DeploymentID string `json:"deployment_id"`
+	ModuleCID    string `json:"module_cid"`
+	Status       string `json:"status"`
+}
+
+// MoltInfo describes a deployed Molt for list/get responses.
+type MoltInfo struct {
+	ID           string                        `json:"id"`
+	ModuleCID    string                        `json:"module_cid"`
+	Status       string                        `json:"status"`
+	CreatedAt    time.Time                     `json:"created_at"`
+	Owner        string                        `json:"owner,omitempty"`
+	MemoryLimitMB uint32                       `json:"memory_limit_mb,omitempty"`
+	TimeoutMs    int                           `json:"timeout_ms,omitempty"`
+	Metrics      *types.MoltDeploymentMetrics  `json:"metrics,omitempty"`
+}
+
+// MoltInvokeRequest is the API request to invoke a Molt directly.
+type MoltInvokeRequest struct {
+	DeploymentID string            `json:"deployment_id"`
+	Method       string            `json:"method"`                // HTTP method (default: GET)
+	Path         string            `json:"path"`                  // HTTP path (default: /)
+	Headers      map[string]string `json:"headers,omitempty"`
+	Body         []byte            `json:"body,omitempty"`        // Request body
+}
+
+// MoltInvokeResponse is the API response from a Molt invocation.
+type MoltInvokeResponse struct {
+	StatusCode int               `json:"status_code"`
+	Headers    map[string]string `json:"headers,omitempty"`
+	Body       []byte            `json:"body,omitempty"`
+	DurationMs int64             `json:"duration_ms"`
+	Error      string            `json:"error,omitempty"`
 }

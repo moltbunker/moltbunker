@@ -253,6 +253,60 @@ func (b *DaemonBridge) Close() {
 	logging.Info("daemon bridge closed", logging.Component("api"))
 }
 
+// SubdomainRegister registers a vanity subdomain.
+func (b *DaemonBridge) SubdomainRegister(name, deploymentID string) (*client.SubdomainRegisterResponse, error) {
+	var result *client.SubdomainRegisterResponse
+	err := b.withClient(func(c *client.DaemonClient) error {
+		var err error
+		result, err = c.SubdomainRegister(name, deploymentID)
+		return err
+	})
+	return result, err
+}
+
+// SubdomainRelease releases a vanity subdomain.
+func (b *DaemonBridge) SubdomainRelease(name string) error {
+	return b.withClient(func(c *client.DaemonClient) error {
+		return c.SubdomainRelease(name)
+	})
+}
+
+// SubdomainList lists owned subdomains.
+func (b *DaemonBridge) SubdomainList() ([]client.SubdomainInfo, error) {
+	var result []client.SubdomainInfo
+	err := b.withClient(func(c *client.DaemonClient) error {
+		var err error
+		result, err = c.SubdomainList()
+		return err
+	})
+	return result, err
+}
+
+// SubdomainResolve resolves a subdomain.
+func (b *DaemonBridge) SubdomainResolve(name string) (*client.SubdomainInfo, error) {
+	var result *client.SubdomainInfo
+	err := b.withClient(func(c *client.DaemonClient) error {
+		var err error
+		result, err = c.SubdomainResolve(name)
+		return err
+	})
+	return result, err
+}
+
+// SubdomainTransfer transfers subdomain ownership.
+func (b *DaemonBridge) SubdomainTransfer(name, newOwner string) error {
+	return b.withClient(func(c *client.DaemonClient) error {
+		return c.SubdomainTransfer(name, newOwner)
+	})
+}
+
+// SubdomainUpdate updates a subdomain's deployment.
+func (b *DaemonBridge) SubdomainUpdate(name, deploymentID string) error {
+	return b.withClient(func(c *client.DaemonClient) error {
+		return c.SubdomainUpdate(name, deploymentID)
+	})
+}
+
 // IsConnected checks if daemon is reachable
 func (b *DaemonBridge) IsConnected() bool {
 	c, err := b.getClient()

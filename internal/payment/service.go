@@ -28,8 +28,17 @@ type PaymentService struct {
 	verificationContract *VerificationContract
 	onChainPricing       *OnChainPricingContract
 
+	// Subdomain registry
+	registryContract *RegistryContract
+
 	// Pricing calculator
 	pricingCalculator *PricingCalculator
+
+	// Molt credits (in-memory prepaid balances for serverless invocations)
+	moltCredits *MoltCreditManager
+
+	// P0 service metering (storage, proxy, crawl, agent)
+	serviceMeter *ServiceMeter
 
 	// Service state
 	started bool
@@ -47,15 +56,16 @@ type PaymentServiceConfig struct {
 	BlockConfirmations int
 
 	// Contract addresses
-	TokenAddress        common.Address
-	RegistryAddress     common.Address
-	EscrowAddress       common.Address
-	StakingAddress      common.Address
-	SlashingAddress     common.Address
-	DelegationAddress   common.Address
-	ReputationAddress   common.Address
-	VerificationAddress common.Address
-	PricingAddress      common.Address
+	TokenAddress              common.Address
+	RegistryAddress           common.Address
+	EscrowAddress             common.Address
+	StakingAddress            common.Address
+	SlashingAddress           common.Address
+	DelegationAddress         common.Address
+	ReputationAddress         common.Address
+	VerificationAddress       common.Address
+	PricingAddress            common.Address
+	SubdomainRegistryAddress  common.Address
 
 	// Wallet (nil for read-only mode)
 	PrivateKey *ecdsa.PrivateKey
@@ -148,12 +158,22 @@ func NewPaymentService(config *PaymentServiceConfig) (*PaymentService, error) {
 		return nil, fmt.Errorf("failed to create on-chain pricing contract: %w", err)
 	}
 
+	// Create subdomain registry contract (optional — zero address means disabled)
+	if config.SubdomainRegistryAddress != (common.Address{}) {
+		ps.registryContract, err = NewRegistryContract(ps.baseClient, ps.tokenContract, config.SubdomainRegistryAddress)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create registry contract: %w", err)
+		}
+	}
+
 	// Create pricing calculator
 	basePricePerHour := config.BasePricePerHour
 	if basePricePerHour == nil {
 		basePricePerHour = parseWei("1") // 1 BUNKER per hour default
 	}
 	ps.pricingCalculator = NewPricingCalculator(basePricePerHour)
+	ps.moltCredits = NewMoltCreditManager()
+	ps.serviceMeter = NewServiceMeter(DefaultServicePricing())
 
 	return ps, nil
 }
@@ -169,12 +189,15 @@ func (ps *PaymentService) setupMockMode() (*PaymentService, error) {
 	ps.reputationContract = NewMockReputationContract()
 	ps.verificationContract = NewMockVerificationContract()
 	ps.onChainPricing = NewMockOnChainPricingContract()
+	ps.registryContract = NewMockRegistryContract()
 
 	basePricePerHour := ps.config.BasePricePerHour
 	if basePricePerHour == nil {
 		basePricePerHour = parseWei("1")
 	}
 	ps.pricingCalculator = NewPricingCalculator(basePricePerHour)
+	ps.moltCredits = NewMoltCreditManager()
+	ps.serviceMeter = NewServiceMeter(DefaultServicePricing())
 
 	return ps, nil
 }
@@ -413,6 +436,98 @@ func (ps *PaymentService) CalculateProviderBid(resources pkgtypes.ResourceLimits
 	return ps.pricingCalculator.CalculateBid(resources, duration, stake)
 }
 
+// ===== Molt Pricing & Credits =====
+
+// CalculateMoltCost calculates the cost of a single Molt invocation based on
+// actual execution duration and memory used. Uses the minimum billing floor
+// from PricingConfig (default 100ms).
+func (ps *PaymentService) CalculateMoltCost(duration time.Duration, memoryUsedBytes int64) *big.Int {
+	pricingCfg := pkgtypes.DefaultPricingConfig()
+	return ps.pricingCalculator.CalculateMoltInvocationPrice(duration, memoryUsedBytes, pricingCfg)
+}
+
+// DepositMoltCredits adds prepaid credits for a requester's Molt invocations.
+func (ps *PaymentService) DepositMoltCredits(requesterAddress string, amount *big.Int) {
+	ps.moltCredits.Deposit(requesterAddress, amount)
+}
+
+// DeductMoltCredit subtracts an invocation cost from the requester's credit balance.
+func (ps *PaymentService) DeductMoltCredit(requesterAddress string, cost *big.Int) error {
+	return ps.moltCredits.Deduct(requesterAddress, cost)
+}
+
+// GetMoltCreditBalance returns the current prepaid credit balance.
+func (ps *PaymentService) GetMoltCreditBalance(requesterAddress string) *big.Int {
+	return ps.moltCredits.GetBalance(requesterAddress)
+}
+
+// RefundMoltCredits refunds all remaining credits and returns the amount.
+func (ps *PaymentService) RefundMoltCredits(requesterAddress string) *big.Int {
+	return ps.moltCredits.RefundAll(requesterAddress)
+}
+
+// ===== P0 Service Metering =====
+
+// RecordStorageUpload records a storage upload for billing.
+func (ps *PaymentService) RecordStorageUpload(wallet string, sizeBytes int64) {
+	ps.serviceMeter.RecordStorageUpload(wallet, sizeBytes)
+}
+
+// RecordStorageDelete records a storage deletion for billing.
+func (ps *PaymentService) RecordStorageDelete(wallet string, sizeBytes int64) {
+	ps.serviceMeter.RecordStorageDelete(wallet, sizeBytes)
+}
+
+// RecordProxySession records proxy bandwidth usage for billing.
+func (ps *PaymentService) RecordProxySession(wallet string, bytesIn, bytesOut int64) {
+	ps.serviceMeter.RecordProxySession(wallet, bytesIn, bytesOut)
+}
+
+// RecordCrawlJob records a crawl job for billing.
+func (ps *PaymentService) RecordCrawlJob(wallet string, pagesCrawled, resultBytes int64) {
+	ps.serviceMeter.RecordCrawlJob(wallet, pagesCrawled, resultBytes)
+}
+
+// RecordAgentInvocation records an agent invocation for billing.
+func (ps *PaymentService) RecordAgentInvocation(wallet string, tokensUsed int64) {
+	ps.serviceMeter.RecordAgentInvocation(wallet, tokensUsed)
+}
+
+// CalculateProxyCost calculates the cost for proxy bandwidth usage.
+func (ps *PaymentService) CalculateProxyCost(bytesIn, bytesOut int64) *big.Int {
+	return ps.serviceMeter.CalculateProxyCost(bytesIn, bytesOut)
+}
+
+// CalculateCrawlCost calculates the cost for a crawl job.
+func (ps *PaymentService) CalculateCrawlCost(pagesCrawled, resultBytes int64) *big.Int {
+	return ps.serviceMeter.CalculateCrawlCost(pagesCrawled, resultBytes)
+}
+
+// CalculateAgentCost calculates the cost for an agent invocation.
+func (ps *PaymentService) CalculateAgentCost(tokensUsed int64) *big.Int {
+	return ps.serviceMeter.CalculateAgentCost(tokensUsed)
+}
+
+// CalculateStorageBill calculates the monthly storage bill for a wallet.
+func (ps *PaymentService) CalculateStorageBill(wallet string) *big.Int {
+	return ps.serviceMeter.CalculateStorageBill(wallet)
+}
+
+// GetServiceUsage returns usage data for a wallet across all P0 services.
+func (ps *PaymentService) GetServiceUsage(wallet string) *WalletServiceUsage {
+	return ps.serviceMeter.GetUsage(wallet)
+}
+
+// RecordServiceCharge records that a charge was applied to a wallet.
+func (ps *PaymentService) RecordServiceCharge(wallet string, amount *big.Int) {
+	ps.serviceMeter.RecordCharge(wallet, amount)
+}
+
+// ActiveServiceWallets returns the number of wallets with recorded P0 service usage.
+func (ps *PaymentService) ActiveServiceWallets() int {
+	return ps.serviceMeter.ActiveWallets()
+}
+
 // ===== Delegation Operations =====
 
 // Delegate delegates tokens to a provider
@@ -608,6 +723,163 @@ func JobIDFromString(s string) [32]byte {
 // JobIDToHex converts a job ID to hex string
 func JobIDToHex(id [32]byte) string {
 	return fmt.Sprintf("%x", id)
+}
+
+// ===== Subdomain Registry Operations =====
+
+// RegisterSubdomain registers a vanity subdomain name on-chain.
+func (ps *PaymentService) RegisterSubdomain(ctx context.Context, name string, deploymentID [32]byte) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Register(ctx, name, deploymentID)
+	return err
+}
+
+// ReleaseSubdomain releases a subdomain name.
+func (ps *PaymentService) ReleaseSubdomain(ctx context.Context, name string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Release(ctx, name)
+	return err
+}
+
+// TransferSubdomain transfers a subdomain to a new owner.
+func (ps *PaymentService) TransferSubdomain(ctx context.Context, name string, newOwner common.Address) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Transfer(ctx, name, newOwner)
+	return err
+}
+
+// UpdateSubdomainDeployment updates the deployment ID a subdomain points to.
+func (ps *PaymentService) UpdateSubdomainDeployment(ctx context.Context, name string, newDeploymentID [32]byte) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.UpdateDeployment(ctx, name, newDeploymentID)
+	return err
+}
+
+// ResolveSubdomain resolves a subdomain name to its registration data.
+func (ps *PaymentService) ResolveSubdomain(ctx context.Context, name string) (*SubdomainRegistration, error) {
+	if ps.registryContract == nil {
+		return nil, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.Resolve(ctx, name)
+}
+
+// IsSubdomainAvailable checks if a subdomain name is available.
+func (ps *PaymentService) IsSubdomainAvailable(ctx context.Context, name string) (bool, error) {
+	if ps.registryContract == nil {
+		return false, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.IsAvailable(ctx, name)
+}
+
+// GetSubdomainRegistrationFee returns the current registration fee.
+func (ps *PaymentService) GetSubdomainRegistrationFee(ctx context.Context) (*big.Int, error) {
+	if ps.registryContract == nil {
+		return nil, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.GetRegistrationFee(ctx)
+}
+
+// ListOwnedSubdomains returns all subdomains owned by an address.
+func (ps *PaymentService) ListOwnedSubdomains(ctx context.Context, owner common.Address) ([]SubdomainRegistration, error) {
+	if ps.registryContract == nil {
+		return nil, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.ListOwnedNames(ctx, owner)
+}
+
+// RenewSubdomain extends a subdomain's expiration by 365 days.
+func (ps *PaymentService) RenewSubdomain(ctx context.Context, name string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Renew(ctx, name)
+	return err
+}
+
+// ReserveSubdomain reserves a subdomain name for 48 hours.
+func (ps *PaymentService) ReserveSubdomain(ctx context.Context, name string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.Reserve(ctx, name)
+	return err
+}
+
+// ClaimSubdomainReservation finalizes a reserved subdomain with a deployment ID.
+func (ps *PaymentService) ClaimSubdomainReservation(ctx context.Context, name string, deploymentID [32]byte) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.ClaimReservation(ctx, name, deploymentID)
+	return err
+}
+
+// CancelSubdomainReservation cancels a pending subdomain reservation.
+func (ps *PaymentService) CancelSubdomainReservation(ctx context.Context, name string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.CancelReservation(ctx, name)
+	return err
+}
+
+// SetSubdomainMetadata sets description and avatar URL for a subdomain.
+func (ps *PaymentService) SetSubdomainMetadata(ctx context.Context, name string, description, avatarURL string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.SetMetadata(ctx, name, description, avatarURL)
+	return err
+}
+
+// SetSubdomainPrimaryName sets a subdomain as the primary name for reverse resolution.
+func (ps *PaymentService) SetSubdomainPrimaryName(ctx context.Context, name string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.SetPrimaryName(ctx, name)
+	return err
+}
+
+// ReclaimSubdomain reclaims a squatted subdomain name.
+func (ps *PaymentService) ReclaimSubdomain(ctx context.Context, name string) error {
+	if ps.registryContract == nil {
+		return fmt.Errorf("subdomain registry not configured")
+	}
+	_, err := ps.registryContract.ReclaimSquatted(ctx, name)
+	return err
+}
+
+// IsSubdomainExpired checks if a subdomain name has expired.
+func (ps *PaymentService) IsSubdomainExpired(ctx context.Context, name string) (bool, error) {
+	if ps.registryContract == nil {
+		return false, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.IsExpired(ctx, name)
+}
+
+// ReverseResolveSubdomain looks up the primary name for a deployment ID.
+func (ps *PaymentService) ReverseResolveSubdomain(ctx context.Context, deploymentID [32]byte) (string, error) {
+	if ps.registryContract == nil {
+		return "", fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.ReverseResolve(ctx, deploymentID)
+}
+
+// GetSubdomainMetadata returns the metadata for a subdomain.
+func (ps *PaymentService) GetSubdomainMetadata(ctx context.Context, name string) (*SubdomainMetadata, error) {
+	if ps.registryContract == nil {
+		return nil, fmt.Errorf("subdomain registry not configured")
+	}
+	return ps.registryContract.GetMetadata(ctx, name)
 }
 
 // NewPaymentServiceFromConfig creates a payment service from daemon config

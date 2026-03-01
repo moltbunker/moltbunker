@@ -4,8 +4,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/moltbunker/moltbunker/internal/molt"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/runtime"
+	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -38,8 +40,11 @@ type Deployment struct {
 	ExposedPorts     []ExposedPort         `json:"exposed_ports,omitempty"`      // Ports exposed publicly via ingress
 	PublicURLs       []string              `json:"public_urls,omitempty"`        // Generated public URLs
 	MinProviderTier  types.ProviderTier    `json:"min_provider_tier,omitempty"`  // Minimum provider tier required
+	Spot             bool                  `json:"spot,omitempty"`               // Spot pricing (lower cost, preemptible)
 	StoppedAt        time.Time             `json:"stopped_at,omitempty"`         // When container was stopped
 	VolumeExpiresAt  time.Time             `json:"volume_expires_at,omitempty"`  // When volume will be auto-deleted
+	RuntimeType      types.RuntimeType     `json:"runtime_type,omitempty"`       // "container" (default) or "molt" for WASM workloads
+	MoltSpec         *types.MoltSpec       `json:"molt_spec,omitempty"`          // Molt spec for WASM deployments (nil for containers)
 }
 
 // pendingDeployment tracks replica acknowledgments for a deployment
@@ -98,4 +103,7 @@ type ContainerManagerConfig struct {
 	TorDataDir       string
 	EnableEncryption bool
 	PaymentService   *payment.PaymentService
+	MoltEnabled      bool             // Enable Molt WASM runtime
+	MoltConfig       *molt.MoltConfig // Molt runtime settings (nil = use defaults)
+	StateStore       state.StateStore // Persistent state store (nil = legacy JSON fallback)
 }

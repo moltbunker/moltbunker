@@ -254,10 +254,10 @@ func (m *APIKeyManager) ValidateKeyWithPermission(key, permission string) bool {
 		return false
 	}
 
-	// Check permission
+	// Check permission with hierarchy: admin > write > read
 	hasPermission := false
 	for _, p := range apiKey.Permissions {
-		if p == permission || p == "admin" {
+		if p == permission || p == "admin" || (p == "write" && permission == "read") {
 			hasPermission = true
 			break
 		}

@@ -55,6 +55,94 @@ func (pc *PricingCalculator) CalculatePrice(resources types.ResourceLimits, dura
 	return totalPrice
 }
 
+// CalculateMoltInvocationPrice calculates the cost of a single Molt invocation.
+// Pricing is per-invocation based on wall-clock execution time and memory used.
+// A minimum billing floor (MinimumFunctionMillis, default 100ms) prevents
+// micro-invocation abuse. Memory is billed per MB-second.
+//
+// Formula:
+//   cost = (cpuRate * billedMs / 3_600_000) + (memRate * memMB * billedMs / 3_600_000)
+//
+// where billedMs = max(actualMs, minimumMs) and rates are per-hour from PricingConfig.
+func (pc *PricingCalculator) CalculateMoltInvocationPrice(duration time.Duration, memoryUsedBytes int64, pricingCfg *types.PricingConfig) *big.Int {
+	// Apply minimum billing floor
+	minimumMs := int64(100)
+	if pricingCfg != nil && pricingCfg.MinimumFunctionMillis > 0 {
+		minimumMs = int64(pricingCfg.MinimumFunctionMillis)
+	}
+
+	billedMs := duration.Milliseconds()
+	if billedMs < minimumMs {
+		billedMs = minimumMs
+	}
+
+	// Parse per-hour rates from pricing config (BUNKER wei strings)
+	cpuRate := parsePricingRate(pricingCfg, "cpu")
+	memRate := parsePricingRate(pricingCfg, "memory")
+
+	// CPU component: (cpuRate * billedMs) / 3_600_000
+	// This gives the fraction of one CPU core-hour used by the invocation.
+	// Molt functions use a single core, so no core-count multiplier.
+	msPerHour := big.NewInt(3_600_000)
+	cpuCost := new(big.Int).Mul(cpuRate, big.NewInt(billedMs))
+	cpuCost.Div(cpuCost, msPerHour)
+
+	// Memory component: (memRate * memMB * billedMs) / 3_600_000
+	// Convert bytes to MB (round up to nearest MB for fairness).
+	memMB := (memoryUsedBytes + 1024*1024 - 1) / (1024 * 1024)
+	if memMB < 1 {
+		memMB = 1 // Minimum 1 MB billed
+	}
+	memCost := new(big.Int).Mul(memRate, big.NewInt(memMB))
+	memCost.Mul(memCost, big.NewInt(billedMs))
+	memCost.Div(memCost, msPerHour)
+
+	// Total = CPU + Memory
+	total := new(big.Int).Add(cpuCost, memCost)
+
+	// Ensure at least 1 wei for any valid invocation
+	if total.Sign() <= 0 {
+		return big.NewInt(1)
+	}
+
+	return total
+}
+
+// parsePricingRate extracts a per-hour rate from PricingConfig.
+func parsePricingRate(cfg *types.PricingConfig, resource string) *big.Int {
+	if cfg == nil {
+		return defaultRate(resource)
+	}
+	var rateStr string
+	switch resource {
+	case "cpu":
+		rateStr = cfg.CPUPerCoreHour
+	case "memory":
+		rateStr = cfg.MemoryPerGBHour
+	default:
+		return big.NewInt(0)
+	}
+	rate, ok := new(big.Int).SetString(rateStr, 10)
+	if !ok || rate.Sign() <= 0 {
+		return defaultRate(resource)
+	}
+	return rate
+}
+
+// defaultRate returns fallback per-hour rates (from DefaultPricingConfig).
+func defaultRate(resource string) *big.Int {
+	switch resource {
+	case "cpu":
+		rate, _ := new(big.Int).SetString("500000000000000000", 10) // 0.5 BUNKER
+		return rate
+	case "memory":
+		rate, _ := new(big.Int).SetString("100000000000000000", 10) // 0.1 BUNKER
+		return rate
+	default:
+		return big.NewInt(0)
+	}
+}
+
 // CalculateBid calculates a bid price for hosting
 func (pc *PricingCalculator) CalculateBid(resources types.ResourceLimits, duration time.Duration, stake *big.Int) *big.Int {
 	basePrice := pc.CalculatePrice(resources, duration)

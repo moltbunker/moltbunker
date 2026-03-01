@@ -1,0 +1,11 @@
+{
+  "image": "nginx:1.27-alpine",
+  "resources": {
+    "cpu_quota": 50000,
+    "memory_limit": 536870912,
+    "disk_limit": 5368709120
+  },
+  "expose_ports": [
+    { "container_port": 80, "protocol": "tcp" }
+  ]
+}

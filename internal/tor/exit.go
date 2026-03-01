@@ -125,7 +125,8 @@ func (ens *ExitNodeSelector) fetchExitNodes(ctx context.Context, countryCode str
 		return nil, fmt.Errorf("onionoo returned status: %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	const maxOnionooBytes = 10 * 1024 * 1024 // 10MB cap for onionoo responses
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxOnionooBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -204,7 +205,8 @@ func (ens *ExitNodeSelector) GetExitNodeLocation(ctx context.Context) (*ExitNode
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	const maxTorCheckBytes = 64 * 1024 // 64KB — Tor check API returns small JSON
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxTorCheckBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -246,7 +248,8 @@ func (ens *ExitNodeSelector) ListAvailableCountries(ctx context.Context) ([]stri
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	const maxSummaryBytes = 10 * 1024 * 1024 // 10MB cap for onionoo summary
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxSummaryBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -293,7 +296,8 @@ func (ens *ExitNodeSelector) GetExitNodesByBandwidth(ctx context.Context, limit 
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	const maxBandwidthBytes = 10 * 1024 * 1024 // 10MB cap for onionoo responses
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBandwidthBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}

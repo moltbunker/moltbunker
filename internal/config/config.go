@@ -24,6 +24,12 @@ type Config struct {
 	Redundancy  RedundancyConfig  `yaml:"redundancy"`
 	Economics   EconomicsConfig   `yaml:"economics"`
 	Encryption  EncryptionConfig  `yaml:"encryption"`
+
+	// P0 services
+	Storage StorageConfig `yaml:"storage"`
+	Proxy   ProxyConfig   `yaml:"proxy"`
+	Agent   AgentConfig   `yaml:"agent"`
+	Crawl   CrawlConfig   `yaml:"crawl"`
 }
 
 // DaemonConfig contains daemon settings
@@ -34,7 +40,8 @@ type DaemonConfig struct {
 	KeystoreDir string `yaml:"keystore_dir"`
 	SocketPath  string `yaml:"socket_path"`
 	LogLevel    string `yaml:"log_level"`
-	LogFormat   string `yaml:"log_format"` // "json" or "text"
+	LogFormat   string `yaml:"log_format"`    // "json" or "text"
+	StateDBPath string `yaml:"state_db_path"` // Path to bbolt state database (default: <data_dir>/moltbunker.db)
 }
 
 // APIConfig contains API server settings
@@ -156,6 +163,25 @@ type ProviderNodeConfig struct {
 	IngressEnabled bool   `yaml:"ingress_enabled"` // Act as ingress node for exposed services
 	IngressPort    int    `yaml:"ingress_port"`     // HTTP port for ingress proxy (default: 9090)
 	IngressDomain  string `yaml:"ingress_domain"`   // Domain for public URLs (e.g., "moltbunker.dev")
+	TunnelPort     int    `yaml:"tunnel_port"`      // TLS tunnel port for ingress→provider (default: base port + 2)
+
+	// Cloudflare DNS sync for subdomain A records
+	CloudflareAPIToken string `yaml:"cloudflare_api_token,omitempty"` // Cloudflare API bearer token
+	CloudflareZoneID   string `yaml:"cloudflare_zone_id,omitempty"`   // Cloudflare zone ID for the domain
+	IngressIP          string `yaml:"ingress_ip,omitempty"`           // Public IP for DNS A records
+
+	// Auto-TLS (Let's Encrypt)
+	IngressAutoTLS   bool   `yaml:"ingress_auto_tls,omitempty"`   // Enable automatic TLS via Let's Encrypt
+	IngressCertDir   string `yaml:"ingress_cert_dir,omitempty"`   // Directory for autocert cache
+	IngressACMEEmail string `yaml:"ingress_acme_email,omitempty"` // ACME account email for Let's Encrypt
+
+	// Reverse tunnel (expose local containers via *.moltbunker.dev — like ngrok)
+	ReverseTunnelEnabled  bool   `yaml:"reverse_tunnel_enabled,omitempty"`  // Enable reverse tunnel client (provider side)
+	ReverseTunnelIngress  string `yaml:"reverse_tunnel_ingress,omitempty"`  // Ingress address to dial (e.g., "tunnel.moltbunker.dev:9443")
+
+	// Reverse tunnel server (ingress-side — accepts incoming reverse tunnels from providers)
+	ReverseTunnelPort     int    `yaml:"reverse_tunnel_port,omitempty"`      // Listen port (default: 9443)
+	ReverseTunnelMaxConns int    `yaml:"reverse_tunnel_max_conns,omitempty"` // Global max connections (default: 10000)
 }
 
 // RequesterNodeConfig contains requester-specific configuration
@@ -277,10 +303,73 @@ type RuntimeConfig struct {
 	Namespace        string                `yaml:"namespace"`
 	RuntimeName      string                `yaml:"runtime_name"`    // "auto", "io.containerd.runc.v2", "io.containerd.kata.v2", etc.
 	Kata             KataConfig            `yaml:"kata"`
+	Molt             MoltRuntimeConfig     `yaml:"molt"`
 	DefaultResources types.ResourceLimits  `yaml:"default_resources"`
 	MaxResources     types.ResourceLimits  `yaml:"max_resources"`  // Maximum allocatable
 	LogsDir          string                `yaml:"logs_dir"`
 	VolumesDir       string                `yaml:"volumes_dir"`
+}
+
+// MoltRuntimeConfig contains Molt (WASM serverless) runtime settings.
+type MoltRuntimeConfig struct {
+	// Enabled controls whether the Molt WASM runtime is initialized at startup.
+	// When false, all Molt API calls return "molt runtime not available".
+	Enabled bool `yaml:"enabled"`
+
+	// MemoryLimitMB is the max linear memory each WASM instance can use (default: 256).
+	MemoryLimitMB uint32 `yaml:"memory_limit_mb"`
+
+	// TimeoutMs is the max execution time per invocation in milliseconds (default: 30000).
+	TimeoutMs int `yaml:"timeout_ms"`
+
+	// MaxInstances is the max concurrent WASM instances across all deployments (default: 100).
+	MaxInstances int `yaml:"max_instances"`
+
+	// CacheDir is the directory for wazero's on-disk compilation cache.
+	// Empty string defaults to ~/.moltbunker/molt-cache/.
+	CacheDir string `yaml:"cache_dir"`
+
+	// MaxCacheEntries is the max number of compiled modules kept in the in-memory LRU cache (default: 256).
+	MaxCacheEntries int `yaml:"max_cache_entries"`
+
+	// Host function capability flags (all default false — must be explicitly enabled per deployment)
+	HTTPEnabled      bool     `yaml:"http_enabled"`                        // Allow WASM host.http_request
+	StorageEnabled   bool     `yaml:"storage_enabled"`                     // Allow WASM host.storage_*
+	CrawlEnabled     bool     `yaml:"crawl_enabled"`                       // Allow WASM host.crawl_page
+	HTTPAllowedHosts []string `yaml:"http_allowed_hosts,omitempty"`        // Restrict HTTP to these hosts only
+	HTTPBlockedHosts []string `yaml:"http_blocked_hosts,omitempty"`        // Block HTTP to these hosts
+
+	// JS/TS runtime (Deno worker pool)
+	JSRuntime JSRuntimeConfig `yaml:"js_runtime"`
+}
+
+// JSRuntimeConfig contains Deno-based JavaScript/TypeScript runtime settings.
+type JSRuntimeConfig struct {
+	// Enabled controls whether the JS runtime (Deno worker pool) is available.
+	Enabled bool `yaml:"enabled"`
+
+	// DenoPath is the path to the Deno binary. Empty defaults to "deno" (found in PATH).
+	DenoPath string `yaml:"deno_path"`
+
+	// PoolSize is the number of warm Deno worker processes (default: 10).
+	PoolSize int `yaml:"pool_size"`
+
+	// TimeoutMs is the max execution time per JS invocation in milliseconds (default: 30000).
+	TimeoutMs int `yaml:"timeout_ms"`
+
+	// MaxMemoryMB is the V8 heap size limit in MB per worker (default: 128).
+	MaxMemoryMB int `yaml:"max_memory_mb"`
+}
+
+// DefaultJSRuntimeConfig returns sensible defaults for the JS runtime.
+func DefaultJSRuntimeConfig() JSRuntimeConfig {
+	return JSRuntimeConfig{
+		Enabled:     false,
+		DenoPath:    "deno",
+		PoolSize:    10,
+		TimeoutMs:   30000,
+		MaxMemoryMB: 128,
+	}
 }
 
 // KataConfig contains Kata Containers-specific settings
@@ -335,6 +424,7 @@ type EconomicsConfig struct {
 	DelegationAddress   string `yaml:"delegation_address"`   // BunkerDelegation contract
 	ReputationAddress   string `yaml:"reputation_address"`   // BunkerReputation contract
 	VerificationAddress string `yaml:"verification_address"` // BunkerVerification contract
+	SubdomainRegistryAddress string `yaml:"subdomain_registry_address"` // BunkerRegistry contract
 
 	// Payment mode
 	MockPayments     bool   `yaml:"mock_payments"`      // Use mock payment layer (default: true for dev)
@@ -403,6 +493,92 @@ type EncryptionConfig struct {
 	// Key storage
 	KeyStorePath    string `yaml:"key_store_path"`
 	KeyStoreEncrypt bool   `yaml:"key_store_encrypt"`
+}
+
+// StorageConfig contains object storage service settings.
+type StorageConfig struct {
+	Enabled       bool   `yaml:"enabled"`        // Enable object storage service
+	DataDir       string `yaml:"data_dir"`        // Directory for object blobs (default: <data_dir>/storage)
+	MaxBuckets    int    `yaml:"max_buckets"`     // Max buckets per wallet (default: 100)
+	MaxObjectSize int64  `yaml:"max_object_size"` // Max single object size in bytes (default: 5GB)
+	S3Port        int    `yaml:"s3_port"`         // S3-compatible API port (default: 9300)
+	EnableS3      bool   `yaml:"enable_s3"`       // Enable S3-compatible endpoint
+}
+
+// DefaultStorageConfig returns the default storage configuration.
+func DefaultStorageConfig() StorageConfig {
+	return StorageConfig{
+		Enabled:       false,
+		DataDir:       "", // resolved at runtime
+		MaxBuckets:    100,
+		MaxObjectSize: 5 * 1024 * 1024 * 1024, // 5GB
+		S3Port:        9300,
+		EnableS3:      false,
+	}
+}
+
+// ProxyConfig contains decentralized proxy service settings.
+type ProxyConfig struct {
+	Enabled     bool   `yaml:"enabled"`      // Enable proxy service
+	SOCKS5Addr  string `yaml:"socks5_addr"`  // SOCKS5 listen address (default: :1080)
+	HTTPAddr    string `yaml:"http_addr"`    // HTTP proxy listen address (default: :8118)
+	UseTor      bool   `yaml:"use_tor"`      // Route through Tor by default
+	MaxSessions int    `yaml:"max_sessions"` // Max concurrent proxy sessions (default: 1000)
+}
+
+// DefaultProxyConfig returns the default proxy configuration.
+func DefaultProxyConfig() ProxyConfig {
+	return ProxyConfig{
+		Enabled:     false,
+		SOCKS5Addr:  ":1080",
+		HTTPAddr:    ":8118",
+		UseTor:      false,
+		MaxSessions: 1000,
+	}
+}
+
+// AgentConfig contains AI agent runtime settings.
+type AgentConfig struct {
+	Enabled          bool     `yaml:"enabled"`            // Enable agent runtime
+	Frameworks       []string `yaml:"frameworks"`         // Enabled frameworks: langgraph, crewai, autogen, custom
+	DefaultMemoryMB  int      `yaml:"default_memory_mb"`  // Default agent container memory (default: 2048)
+	MaxAgentsPerWallet int    `yaml:"max_agents_per_wallet"` // Max concurrent agents per wallet (default: 10)
+	SyncIntervalSecs int      `yaml:"sync_interval_secs"` // Memory sync interval (default: 60)
+}
+
+// DefaultAgentConfig returns the default agent configuration.
+func DefaultAgentConfig() AgentConfig {
+	return AgentConfig{
+		Enabled:            false,
+		Frameworks:         []string{"langgraph", "crewai", "autogen", "custom"},
+		DefaultMemoryMB:    2048,
+		MaxAgentsPerWallet: 10,
+		SyncIntervalSecs:   60,
+	}
+}
+
+// CrawlConfig contains web crawling service settings.
+type CrawlConfig struct {
+	Enabled        bool   `yaml:"enabled"`          // Enable crawl service
+	MaxDepth       int    `yaml:"max_depth"`        // Default max crawl depth (default: 3)
+	MaxPages       int    `yaml:"max_pages"`         // Max pages per job (default: 1000)
+	MaxConcurrent  int    `yaml:"max_concurrent"`   // Max concurrent crawl workers (default: 10)
+	BrowserImage   string `yaml:"browser_image"`    // Chromium container image CID
+	RespectRobots  bool   `yaml:"respect_robots"`   // Respect robots.txt (default: true)
+	DefaultDelay   int    `yaml:"default_delay_ms"` // Default per-domain delay in ms (default: 1000)
+}
+
+// DefaultCrawlConfig returns the default crawl configuration.
+func DefaultCrawlConfig() CrawlConfig {
+	return CrawlConfig{
+		Enabled:       false,
+		MaxDepth:      3,
+		MaxPages:      1000,
+		MaxConcurrent: 10,
+		BrowserImage:  "", // set after image is published to IPFS
+		RespectRobots: true,
+		DefaultDelay:  1000,
+	}
 }
 
 // DefaultConfig returns the default configuration
@@ -492,6 +668,15 @@ func DefaultConfig() *Config {
 				VMMemoryMB: 256,
 				VMCPUs:     1,
 			},
+			Molt: MoltRuntimeConfig{
+				Enabled:         false, // Opt-in: provider must explicitly enable
+				MemoryLimitMB:   256,
+				TimeoutMs:       30000,
+				MaxInstances:    100,
+				CacheDir:        "", // resolved at runtime to ~/.moltbunker/molt-cache/
+				MaxCacheEntries: 256,
+				JSRuntime:       DefaultJSRuntimeConfig(),
+			},
 			DefaultResources: types.ResourceLimits{
 				CPUQuota:    100000,
 				CPUPeriod:   100000,
@@ -561,6 +746,16 @@ func DefaultConfig() *Config {
 			KeyStorePath:            filepath.Join(dataDir, "keys", "deployments"),
 			KeyStoreEncrypt:         true,
 		},
+
+		// P0 services (all disabled by default)
+		Storage: func() StorageConfig {
+			cfg := DefaultStorageConfig()
+			cfg.DataDir = filepath.Join(dataDir, "storage")
+			return cfg
+		}(),
+		Proxy: DefaultProxyConfig(),
+		Agent: DefaultAgentConfig(),
+		Crawl: DefaultCrawlConfig(),
 	}
 }
 
@@ -716,9 +911,11 @@ func (c *Config) expandPaths() {
 	c.Tor.DataDir = expandPath(c.Tor.DataDir)
 	c.Runtime.LogsDir = expandPath(c.Runtime.LogsDir)
 	c.Runtime.VolumesDir = expandPath(c.Runtime.VolumesDir)
+	c.Runtime.Molt.CacheDir = expandPath(c.Runtime.Molt.CacheDir)
 	c.Encryption.KeyStorePath = expandPath(c.Encryption.KeyStorePath)
 	c.Node.WalletKeyFile = expandPath(c.Node.WalletKeyFile)
 	c.Node.WalletPasswordFile = expandPath(c.Node.WalletPasswordFile)
+	c.Storage.DataDir = expandPath(c.Storage.DataDir)
 }
 
 // expandPath expands ~ to home directory

@@ -109,7 +109,7 @@ logs/
 
 # State files
 *.state
-state/
+/state/
 
 # ===================
 # BUILD & TEST
@@ -122,6 +122,7 @@ build/
 # Test data
 .e2e-test-data/
 test-data/
+tests/chaos/
 *.test.json
 coverage/
 
@@ -149,6 +150,7 @@ contracts/lib/
 # ===================
 # PYTHON SDK
 # ===================
+sdk/
 __pycache__/
 *.py[cod]
 *$py.class

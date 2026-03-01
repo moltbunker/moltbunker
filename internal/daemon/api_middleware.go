@@ -210,6 +210,46 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 		response = s.handleSnapshotRestore(ctx, req)
 	case "snapshot_stats":
 		response = s.handleSnapshotStats(ctx, req)
+	// Subdomain handlers
+	case "subdomain_register":
+		response = s.handleSubdomainRegister(ctx, req)
+	case "subdomain_release":
+		response = s.handleSubdomainRelease(ctx, req)
+	case "subdomain_list":
+		response = s.handleSubdomainList(ctx, req)
+	case "subdomain_resolve":
+		response = s.handleSubdomainResolve(ctx, req)
+	case "subdomain_transfer":
+		response = s.handleSubdomainTransfer(ctx, req)
+	case "subdomain_update":
+		response = s.handleSubdomainUpdate(ctx, req)
+	case "subdomain_renew":
+		response = s.handleSubdomainRenew(ctx, req)
+	case "subdomain_reserve":
+		response = s.handleSubdomainReserve(ctx, req)
+	case "subdomain_claim":
+		response = s.handleSubdomainClaim(ctx, req)
+	case "subdomain_cancel":
+		response = s.handleSubdomainCancel(ctx, req)
+	case "subdomain_metadata":
+		response = s.handleSubdomainMetadata(ctx, req)
+	case "subdomain_primary":
+		response = s.handleSubdomainPrimary(ctx, req)
+	case "subdomain_reclaim":
+		response = s.handleSubdomainReclaim(ctx, req)
+	// Molt (WASM serverless) handlers
+	case "molt_deploy":
+		response = s.handleMoltDeploy(ctx, req)
+	case "molt_list":
+		response = s.handleMoltList(ctx, req)
+	case "molt_get":
+		response = s.handleMoltGet(ctx, req)
+	case "molt_stop":
+		response = s.handleMoltStop(ctx, req)
+	case "molt_delete":
+		response = s.handleMoltDelete(ctx, req)
+	case "molt_invoke":
+		response = s.handleMoltInvoke(ctx, req)
 	// Exec helpers
 	case "container_detail":
 		response = s.handleContainerDetail(ctx, req)

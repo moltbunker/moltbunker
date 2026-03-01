@@ -1,0 +1,9 @@
+{
+  "image": "redis:7-alpine",
+  "resources": {
+    "cpu_quota": 100000,
+    "memory_limit": 1073741824,
+    "disk_limit": 10737418240
+  },
+  "min_provider_tier": "standard"
+}

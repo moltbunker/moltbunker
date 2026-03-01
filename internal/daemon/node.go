@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"crypto/x509"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/moltbunker/moltbunker/internal/config"
@@ -39,6 +42,7 @@ const (
 type Node struct {
 	keyManager     *identity.KeyManager
 	walletManager  *identity.WalletManager
+	certManager    *identity.CertificateManager
 	paymentService *payment.PaymentService
 	dht            *p2p.DHT
 	router         *p2p.Router
@@ -129,6 +133,7 @@ func NewNode(ctx context.Context, keyPath string, keystoreDir string, port int) 
 	return &Node{
 		keyManager:         keyManager,
 		walletManager:      walletManager,
+		certManager:        certManager,
 		dht:                dht,
 		router:             router,
 		transport:          transport,
@@ -254,6 +259,10 @@ func NewNodeWithConfig(ctx context.Context, cfg *config.Config) (*Node, error) {
 		Capabilities: types.NodeCapabilities{
 			ContainerRuntime: true,
 			TorSupport:       cfg.Tor.Enabled,
+			StorageAvailable: cfg.Storage.Enabled,
+			ProxyAvailable:   cfg.Proxy.Enabled,
+			CrawlAvailable:   cfg.Crawl.Enabled,
+			AgentAvailable:   cfg.Agent.Enabled,
 		},
 	}
 
@@ -300,6 +309,7 @@ func NewNodeWithConfig(ctx context.Context, cfg *config.Config) (*Node, error) {
 	return &Node{
 		keyManager:         keyManager,
 		walletManager:      walletManager,
+		certManager:        certManager,
 		dht:                dht,
 		router:             router,
 		transport:          transport,
@@ -731,8 +741,17 @@ func (n *Node) sendAnnounce(conn *tls.Conn) {
 		return
 	}
 
-	// Include local provider tier in announce
+	// Include local provider tier and Molt capabilities in announce
 	payload.ProviderTier = n.nodeInfo.ProviderTier
+	payload.MoltAvailable = n.nodeInfo.Capabilities.MoltAvailable
+	payload.MoltMaxMemoryMB = n.nodeInfo.Capabilities.MoltMaxMemoryMB
+	payload.MoltMaxInstances = n.nodeInfo.Capabilities.MoltMaxInstances
+
+	// Include P0 service capabilities in announce
+	payload.StorageAvailable = n.nodeInfo.Capabilities.StorageAvailable
+	payload.ProxyAvailable = n.nodeInfo.Capabilities.ProxyAvailable
+	payload.CrawlAvailable = n.nodeInfo.Capabilities.CrawlAvailable
+	payload.AgentAvailable = n.nodeInfo.Capabilities.AgentAvailable
 
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -809,10 +828,22 @@ func (n *Node) handleAnnounceMessage(msg *types.Message, peerNode *types.Node) {
 		peerNode.ProviderTier = payload.ProviderTier
 	}
 
+	// W11: Set Molt capabilities from announce
+	peerNode.Capabilities.MoltAvailable = payload.MoltAvailable
+	peerNode.Capabilities.MoltMaxMemoryMB = payload.MoltMaxMemoryMB
+	peerNode.Capabilities.MoltMaxInstances = payload.MoltMaxInstances
+
+	// Set P0 service capabilities from announce
+	peerNode.Capabilities.StorageAvailable = payload.StorageAvailable
+	peerNode.Capabilities.ProxyAvailable = payload.ProxyAvailable
+	peerNode.Capabilities.CrawlAvailable = payload.CrawlAvailable
+	peerNode.Capabilities.AgentAvailable = payload.AgentAvailable
+
 	logging.Info("peer announced wallet",
 		logging.NodeID(peerNode.ID.String()[:16]),
 		"wallet", recoveredAddr.Hex()[:10],
 		"tier", string(payload.ProviderTier),
+		"molt", payload.MoltAvailable,
 		logging.Component("node"))
 }
 
@@ -964,4 +995,87 @@ func (n *Node) BanList() *p2p.BanList {
 		return n.router.BanList()
 	}
 	return nil
+}
+
+// TLSServerConfig returns a TLS config suitable for the tunnel server.
+// Uses the same node certificate as P2P with mutual TLS (self-signed).
+// Computes the SPKI-based NodeID of connecting clients and logs unrecognized peers.
+func (n *Node) TLSServerConfig() *tls.Config {
+	baseCfg := n.certManager.TLSConfig()
+	return &tls.Config{
+		Certificates: baseCfg.Certificates,
+		MinVersion:   tls.VersionTLS13,
+		MaxVersion:   tls.VersionTLS13,
+		CipherSuites: []uint16{
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
+			tls.TLS_AES_128_GCM_SHA256,
+		},
+		ClientAuth: tls.RequireAnyClientCert,
+		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+			if len(rawCerts) == 0 {
+				return fmt.Errorf("client certificate required")
+			}
+			cert, err := x509.ParseCertificate(rawCerts[0])
+			if err != nil {
+				return fmt.Errorf("invalid client certificate: %w", err)
+			}
+			now := time.Now()
+			if now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
+				return fmt.Errorf("client certificate expired")
+			}
+
+			// Compute the SPKI-based NodeID of the connecting peer
+			spki := cert.RawSubjectPublicKeyInfo
+			fingerprint := sha256.Sum256(spki)
+			peerNodeID := hex.EncodeToString(fingerprint[:])
+
+			// Reject peers not in our routing table — tunnel access requires
+			// the peer to have completed the P2P handshake (TLS + announce).
+			// Without this check, any self-signed cert can tunnel into containers.
+			if n.router == nil {
+				return fmt.Errorf("tunnel server not ready: no router")
+			}
+
+			known := false
+			for _, p := range n.router.GetPeers() {
+				if p.ID.String() == peerNodeID {
+					known = true
+					break
+				}
+			}
+			if !known {
+				// Also check the ban list — explicitly banned peers are always rejected
+				var nodeID types.NodeID
+				if decoded, decErr := hex.DecodeString(peerNodeID); decErr == nil && len(decoded) == 32 {
+					copy(nodeID[:], decoded)
+					if bl := n.router.BanList(); bl != nil && bl.IsBanned(nodeID) {
+						logging.Warn("tunnel client is banned — rejecting",
+							"peer_node_id", peerNodeID[:16],
+							logging.Component("tunnel"))
+						return fmt.Errorf("tunnel client banned: %s", peerNodeID[:16])
+					}
+				}
+				logging.Warn("tunnel client not in peer list — rejecting",
+					"peer_node_id", peerNodeID[:16],
+					logging.Component("tunnel"))
+				return fmt.Errorf("tunnel client not in peer list: %s", peerNodeID[:16])
+			}
+
+			return nil
+		},
+	}
+}
+
+// TLSClientConfig returns a base TLS config for the tunnel client (ingress dialer).
+// Presents the node certificate. Per-connection SPKI verification is added by the
+// TLSTunnelDialer — do NOT set InsecureSkipVerify here without VerifyConnection.
+func (n *Node) TLSClientConfig() *tls.Config {
+	baseCfg := n.certManager.TLSConfig()
+	return &tls.Config{
+		Certificates:       baseCfg.Certificates,
+		MinVersion:         tls.VersionTLS13,
+		MaxVersion:         tls.VersionTLS13,
+		InsecureSkipVerify: true, // Overridden per-connection by TLSTunnelDialer.DialProvider with SPKI check
+	}
 }

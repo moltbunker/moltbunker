@@ -17,7 +17,11 @@ var streamCounter atomic.Uint32
 // for authenticated connections.
 type Dialer interface {
 	// DialProvider connects to a provider's tunnel port.
-	DialProvider(providerAddr string) (net.Conn, error)
+	// expectedNodeID is the hex-encoded NodeID (SHA256 of SPKI) of the
+	// provider's TLS certificate. Implementations MUST verify the peer
+	// certificate matches this NodeID after the TLS handshake.
+	// If empty, verification is skipped (test/mock use only).
+	DialProvider(providerAddr string, expectedNodeID string) (net.Conn, error)
 }
 
 // Client opens tunnels to providers on behalf of ingress nodes.
@@ -32,8 +36,9 @@ func NewClient(dialer Dialer) *Client {
 
 // OpenTunnel connects to a provider and opens a tunnel to the specified deployment port.
 // Returns a Tunnel that can be used for bidirectional TCP proxying.
-func (c *Client) OpenTunnel(providerAddr string, deploymentID string, port int) (Tunnel, error) {
-	conn, err := c.dialer.DialProvider(providerAddr)
+// providerNodeID is the expected NodeID for TLS SPKI verification.
+func (c *Client) OpenTunnel(providerAddr string, deploymentID string, port int, providerNodeID string) (Tunnel, error) {
+	conn, err := c.dialer.DialProvider(providerAddr, providerNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("dial provider %s: %w", providerAddr, err)
 	}

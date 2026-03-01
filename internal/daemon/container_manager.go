@@ -15,11 +15,15 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
+	"github.com/moltbunker/moltbunker/internal/molt"
+	"github.com/moltbunker/moltbunker/internal/networking"
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/redundancy"
 	"github.com/moltbunker/moltbunker/internal/runtime"
+	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/internal/tor"
 	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
@@ -39,6 +43,7 @@ type ContainerManager struct {
 	node          *Node
 	payment       *payment.PaymentService
 
+	stateStore  state.StateStore // nil = legacy JSON fallback
 	deployments map[string]*Deployment
 	mu          sync.RWMutex
 
@@ -53,6 +58,8 @@ type ContainerManager struct {
 	execRelays   map[string]*ExecRelay
 	execRelaysMu sync.RWMutex
 
+	networkManager   *networking.NetworkManager
+
 	dataDir          string
 	containerdSocket string
 	runtimeName      string          // resolved OCI runtime name for reconnection
@@ -60,6 +67,12 @@ type ContainerManager struct {
 	imageGC          *runtime.ImageGC    // image garbage collector (nil if no containerd)
 	cleanupMgr       *runtime.CleanupManager // P1-1: orphan container cleanup
 	healthChecker    *runtime.HealthChecker  // P1-2: container-level health probes
+
+	// Molt (WASM serverless) manager
+	moltManager *MoltManager
+
+	// Reverse tunnel manager (optional, set via SetReverseTunnelManager)
+	reverseTunnel *ReverseTunnelManager
 
 	// P1-10: Container lifecycle event counters (atomic, lock-free)
 	deploysTotal  atomic.Int64
@@ -134,6 +147,8 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		torService:         torService,
 		node:               node,
 		payment:            config.PaymentService,
+		networkManager:     networking.NewNetworkManager(),
+		stateStore:         config.StateStore,
 		deployments:        make(map[string]*Deployment),
 		pendingDeployments: make(map[string]*pendingDeployment),
 		execStreams:        NewExecStreamManager(),
@@ -142,6 +157,25 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		containerdSocket:   config.ContainerdSocket,
 		runtimeName:        rtCaps.RuntimeName,
 		kataConfig:         config.KataConfig,
+	}
+
+	// Initialize Molt (WASM serverless) runtime if enabled
+	if config.MoltEnabled {
+		moltCfg := molt.DefaultMoltConfig()
+		if config.MoltConfig != nil {
+			moltCfg = *config.MoltConfig
+		}
+		moltRuntime, moltErr := molt.NewMoltRuntime(ctx, moltCfg)
+		if moltErr != nil {
+			logging.Warn("molt runtime not available", logging.Err(moltErr))
+		} else {
+			cm.moltManager = NewMoltManager(moltRuntime)
+			logging.Info("molt runtime initialized",
+				"memory_limit_mb", moltCfg.MemoryLimitMB,
+				"timeout_ms", moltCfg.TimeoutMs,
+				"max_instances", moltCfg.MaxInstances,
+			)
+		}
 	}
 
 	// Set up health probe function if containerd is available
@@ -374,6 +408,7 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 		OriginatorID:    cm.node.nodeInfo.ID, // Local node is the originator
 		Owner:           req.Owner,
 		MinProviderTier: types.ProviderTier(req.MinProviderTier),
+		Spot:            req.Spot,
 	}
 
 	// Determine regions from actual network topology
@@ -586,6 +621,33 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 	// P1-10: Track deploy success
 	cm.deploysTotal.Add(1)
 
+	// Set up networking for exposed ports
+	if len(req.ExposePorts) > 0 && cm.networkManager != nil {
+		netPorts := convertExposedPorts(req.ExposePorts)
+		containerNet, err := cm.networkManager.SetupNetwork(deploymentID, netPorts)
+		if err != nil {
+			logging.Warn("network setup failed for exposed ports",
+				logging.ContainerID(deploymentID),
+				logging.Err(err))
+		} else {
+			deployment.ExposedPorts = req.ExposePorts
+			ingressDomain := "moltbunker.dev"
+			if cm.node != nil && cm.node.nodeInfo != nil {
+				// Could be overridden by config; use default for now
+			}
+			subdomain := deploymentID[len("dep-"):]
+			if len(subdomain) > 8 {
+				subdomain = subdomain[:8]
+			}
+			for _, p := range netPorts {
+				hostPort, _ := containerNet.ResolvePort(p.ContainerPort)
+				deployment.PublicURLs = append(deployment.PublicURLs,
+					fmt.Sprintf("https://%s.%s", subdomain, ingressDomain))
+				cm.publishServiceExposure(deploymentID, p.ContainerPort, hostPort)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -754,6 +816,15 @@ func (cm *ContainerManager) Stop(ctx context.Context, containerID string) error 
 		}
 	}
 
+	// Tear down networking for exposed ports
+	if cm.networkManager != nil {
+		if err := cm.networkManager.TeardownNetwork(containerID); err != nil {
+			logging.Warn("failed to teardown network on stop",
+				logging.ContainerID(containerID), logging.Err(err))
+		}
+	}
+	cm.removeServiceExposure(containerID)
+
 	// Close any active exec sessions for this container
 	if cm.execStreams != nil {
 		cm.execStreams.CloseAllForContainer(containerID)
@@ -894,6 +965,22 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 		}
 	}
 
+	// C2: Record job failure in reputation contract for failed/error deployments.
+	// RecordJobCompleted is already called on Stop() (line 843). Here we track
+	// deployments that never ran successfully (error, failed, pending states).
+	if cm.payment != nil && isOriginator {
+		if deployment.Status == types.ContainerStatusFailed || deployment.Status == types.ContainerStatusPending {
+			providerAddr := cm.node.WalletAddress()
+			if providerAddr != (common.Address{}) {
+				if err := cm.payment.RecordJobFailed(ctx, providerAddr); err != nil {
+					logging.Warn("failed to record job failure in reputation",
+						logging.ContainerID(containerID),
+						logging.Err(err))
+				}
+			}
+		}
+	}
+
 	// Clean up pending deployment tracker
 	cm.pendingMu.Lock()
 	if pending, exists := cm.pendingDeployments[containerID]; exists {
@@ -901,6 +988,16 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 		delete(cm.pendingDeployments, containerID)
 	}
 	cm.pendingMu.Unlock()
+
+	// Tear down networking
+	if cm.networkManager != nil {
+		if err := cm.networkManager.TeardownNetwork(containerID); err != nil {
+			logging.Warn("failed to teardown network on delete",
+				logging.ContainerID(containerID),
+				logging.Err(err))
+		}
+	}
+	cm.removeServiceExposure(containerID)
 
 	// Delete container
 	if cm.containerd != nil {
@@ -927,8 +1024,8 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 	// P1-10: Track delete event
 	cm.deletesTotal.Add(1)
 
-	// Persist state to disk
-	cm.saveStateAsync()
+	// Persist state: delete just this deployment (more efficient than full re-save)
+	cm.deleteDeploymentState(containerID)
 
 	return nil
 }
@@ -1302,6 +1399,13 @@ func (cm *ContainerManager) Close() error {
 		cm.imageGC.Stop()
 	}
 
+	// Close Molt (WASM) manager and runtime
+	if cm.moltManager != nil {
+		if err := cm.moltManager.Close(context.Background()); err != nil {
+			logging.Error("failed to close molt manager", logging.Err(err))
+		}
+	}
+
 	// Close containerd client (does NOT stop containers)
 	if cm.containerd != nil {
 		cm.containerd.Close()
@@ -1473,4 +1577,138 @@ func (cm *ContainerManager) unmarkImageInUse(imageRef string) {
 	if cm.imageGC != nil {
 		cm.imageGC.UnmarkInUse(imageRef)
 	}
+}
+
+// GossipProtocol returns the gossip protocol instance.
+func (cm *ContainerManager) GossipProtocol() *p2p.GossipProtocol {
+	return cm.gossip
+}
+
+// NetworkManager returns the network manager for port resolution.
+func (cm *ContainerManager) NetworkManager() *networking.NetworkManager {
+	return cm.networkManager
+}
+
+// SetReverseTunnelManager sets the reverse tunnel manager for exposing
+// deployments via reverse tunnels to NAT'd providers.
+func (cm *ContainerManager) SetReverseTunnelManager(rtm *ReverseTunnelManager) {
+	cm.reverseTunnel = rtm
+}
+
+// MoltManager returns the Molt (WASM serverless) manager.
+// Returns nil if the Molt runtime failed to initialize.
+func (cm *ContainerManager) MoltManager() *MoltManager {
+	return cm.moltManager
+}
+
+// convertExposedPorts converts daemon ExposedPort to networking ExposedPort.
+func convertExposedPorts(ports []ExposedPort) []networking.ExposedPort {
+	result := make([]networking.ExposedPort, len(ports))
+	for i, p := range ports {
+		proto := p.Protocol
+		if proto == "" {
+			proto = "tcp"
+		}
+		result[i] = networking.ExposedPort{
+			ContainerPort: p.ContainerPort,
+			Protocol:      proto,
+		}
+	}
+	return result
+}
+
+// publishServiceExposure writes an exposed service entry to gossip state
+// so ingress nodes can discover and route traffic to this container.
+func (cm *ContainerManager) publishServiceExposure(deploymentID string, containerPort, hostPort int) {
+	if cm.gossip == nil {
+		return
+	}
+
+	nodeAddr := ""
+	if cm.node != nil && cm.node.nodeInfo != nil {
+		nodeAddr = fmt.Sprintf("%s:%d", cm.node.nodeInfo.Address, cm.node.nodeInfo.Port+2) // tunnel port
+	}
+
+	entry := &ingress.ServiceEntry{
+		DeploymentID:   deploymentID,
+		ProviderNodeID: cm.node.nodeInfo.ID.String(),
+		ProviderAddr:   nodeAddr,
+		ContainerPort:  containerPort,
+		HostPort:       hostPort,
+		RuntimeType:    "container",
+	}
+
+	// Validate deploymentID has no colons to prevent gossip key injection
+	for i := 0; i < len(deploymentID); i++ {
+		if deploymentID[i] == ':' {
+			logging.Error("deployment ID contains colon, refusing to publish gossip key",
+				logging.ContainerID(deploymentID))
+			return
+		}
+	}
+
+	key := fmt.Sprintf("expose:%s:%d", deploymentID, containerPort)
+	cm.gossip.UpdateState(key, entry)
+
+	logging.Info("published service exposure to gossip",
+		logging.ContainerID(deploymentID),
+		"container_port", containerPort,
+		"host_port", hostPort,
+		"key", key)
+
+	// Also expose via reverse tunnel if configured (for NAT'd providers)
+	if cm.reverseTunnel != nil {
+		cm.reverseTunnel.Expose(deploymentID, containerPort)
+	}
+}
+
+// removeServiceExposure removes all exposed service entries for a deployment from gossip.
+// Gossip has no DeleteState, so we set values to nil — the adapter filters these out.
+func (cm *ContainerManager) removeServiceExposure(containerID string) {
+	if cm.gossip == nil {
+		return
+	}
+
+	cm.mu.RLock()
+	dep, exists := cm.deployments[containerID]
+	cm.mu.RUnlock()
+	if !exists || len(dep.ExposedPorts) == 0 {
+		return
+	}
+
+	for _, p := range dep.ExposedPorts {
+		key := fmt.Sprintf("expose:%s:%d", containerID, p.ContainerPort)
+		cm.gossip.UpdateState(key, nil) // nil = removed
+	}
+
+	// Disconnect reverse tunnel if active
+	if cm.reverseTunnel != nil {
+		cm.reverseTunnel.Unexpose(containerID)
+	}
+}
+
+// publishMoltServiceExposure writes a Molt deployment's service entry to gossip.
+// Molt deployments expose port 80 (HTTP handler) and are marked with RuntimeType "molt".
+func (cm *ContainerManager) publishMoltServiceExposure(deploymentID string) {
+	if cm.gossip == nil || cm.node == nil || cm.node.nodeInfo == nil {
+		return
+	}
+
+	nodeAddr := fmt.Sprintf("%s:%d", cm.node.nodeInfo.Address, cm.node.nodeInfo.Port+2)
+
+	entry := &ingress.ServiceEntry{
+		DeploymentID:   deploymentID,
+		ProviderNodeID: cm.node.nodeInfo.ID.String(),
+		ProviderAddr:   nodeAddr,
+		ContainerPort:  80,
+		HostPort:       0, // Molt uses HTTP handler, not host port mapping
+		RuntimeType:    "molt",
+	}
+
+	key := fmt.Sprintf("expose:%s:%d", deploymentID, 80)
+	cm.gossip.UpdateState(key, entry)
+
+	logging.Info("published molt service exposure to gossip",
+		"deployment_id", deploymentID,
+		"key", key)
 }

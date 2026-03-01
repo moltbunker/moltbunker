@@ -18,17 +18,31 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/moltbunker/moltbunker/internal/agent"
 	"github.com/moltbunker/moltbunker/internal/api"
 	"github.com/moltbunker/moltbunker/internal/cloning"
 	"github.com/moltbunker/moltbunker/internal/config"
+	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/daemon"
 	"github.com/moltbunker/moltbunker/internal/identity"
+	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
+	"github.com/moltbunker/moltbunker/internal/proxy"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
+	"github.com/moltbunker/moltbunker/internal/state"
+	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
+	"github.com/moltbunker/moltbunker/internal/tunnel"
 	"github.com/moltbunker/moltbunker/internal/util"
+)
+
+// Build-time version information (set via -ldflags)
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
 )
 
 var (
@@ -43,6 +57,8 @@ var (
 
 func main() {
 	flag.Parse()
+
+	log.Printf("moltbunkerd version=%s commit=%s built=%s", version, commit, buildDate)
 
 	// Load configuration
 	cfgPath := *configPath
@@ -84,8 +100,25 @@ func main() {
 	}
 	defer os.Remove(pidPath)
 
+	// C1: Open persistent state database (bbolt)
+	stateDBPath := cfg.Daemon.StateDBPath
+	if stateDBPath == "" {
+		stateDBPath = filepath.Join(cfg.Daemon.DataDir, "moltbunker.db")
+	}
+	stateStore, err := state.NewBboltStore(stateDBPath)
+	if err != nil {
+		log.Fatalf("Failed to open state database: %v", err)
+	}
+	defer stateStore.Close()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Run JSON → bbolt migration (no-op if already migrated or no JSON files)
+	if err := state.MigrateFromJSON(ctx, stateStore, cfg.Daemon.DataDir); err != nil {
+		logging.Warn("state migration failed, continuing",
+			logging.Err(err), logging.Component("daemon"))
+	}
 
 	// Handle signals
 	sigChan := make(chan os.Signal, 1)
@@ -165,22 +198,23 @@ func main() {
 
 	// Initialize payment service
 	paymentCfg := &payment.PaymentServiceConfig{
-		RPCURL:              cfg.Economics.RPCURL,
-		WSEndpoint:          cfg.Economics.WSEndpoint,
-		RPCURLs:             cfg.Economics.RPCURLs,
-		WSEndpoints:         cfg.Economics.WSEndpoints,
-		ChainID:             cfg.Economics.ChainID,
-		BlockConfirmations:  cfg.Economics.BlockConfirmations,
-		TokenAddress:        common.HexToAddress(cfg.Economics.TokenAddress),
-		StakingAddress:      common.HexToAddress(cfg.Economics.StakingAddress),
-		EscrowAddress:       common.HexToAddress(cfg.Economics.EscrowAddress),
-		SlashingAddress:     common.HexToAddress(cfg.Economics.SlashingAddress),
-		DelegationAddress:   common.HexToAddress(cfg.Economics.DelegationAddress),
-		ReputationAddress:   common.HexToAddress(cfg.Economics.ReputationAddress),
-		VerificationAddress: common.HexToAddress(cfg.Economics.VerificationAddress),
-		PricingAddress:      common.HexToAddress(cfg.Economics.PricingAddress),
-		PrivateKey:          walletPrivKey,
-		MockMode:            cfg.Economics.MockPayments,
+		RPCURL:                   cfg.Economics.RPCURL,
+		WSEndpoint:               cfg.Economics.WSEndpoint,
+		RPCURLs:                  cfg.Economics.RPCURLs,
+		WSEndpoints:              cfg.Economics.WSEndpoints,
+		ChainID:                  cfg.Economics.ChainID,
+		BlockConfirmations:       cfg.Economics.BlockConfirmations,
+		TokenAddress:             common.HexToAddress(cfg.Economics.TokenAddress),
+		StakingAddress:           common.HexToAddress(cfg.Economics.StakingAddress),
+		EscrowAddress:            common.HexToAddress(cfg.Economics.EscrowAddress),
+		SlashingAddress:          common.HexToAddress(cfg.Economics.SlashingAddress),
+		DelegationAddress:        common.HexToAddress(cfg.Economics.DelegationAddress),
+		ReputationAddress:        common.HexToAddress(cfg.Economics.ReputationAddress),
+		VerificationAddress:      common.HexToAddress(cfg.Economics.VerificationAddress),
+		PricingAddress:           common.HexToAddress(cfg.Economics.PricingAddress),
+		SubdomainRegistryAddress: common.HexToAddress(cfg.Economics.SubdomainRegistryAddress),
+		PrivateKey:               walletPrivKey,
+		MockMode:                 cfg.Economics.MockPayments,
 	}
 	paymentSvc, err := payment.NewPaymentService(paymentCfg)
 	if err != nil {
@@ -266,6 +300,7 @@ func main() {
 
 	// Create and start API server for CLI communication
 	apiServer := daemon.NewAPIServerWithFullConfig(node, cfg)
+	apiServer.SetStateStore(stateStore)
 	if err := apiServer.Start(ctx); err != nil {
 		log.Fatalf("Failed to start API server: %v", err)
 	}
@@ -273,6 +308,187 @@ func main() {
 	// Start disk usage enforcer (monitors container writable layer, stops if over limit)
 	if cm := apiServer.GetContainerManager(); cm != nil {
 		cm.StartDiskEnforcer(ctx, 60*time.Second)
+	}
+
+	// Start subdomain expiry cleanup (removes expired gossip entries hourly)
+	if cm := apiServer.GetContainerManager(); cm != nil && cm.GossipProtocol() != nil {
+		daemon.StartSubdomainCleanup(ctx, cm.GossipProtocol(), paymentSvc)
+	}
+
+	// ── Ingress + Tunnel wiring ──
+
+	// Provider nodes: start tunnel server so ingress nodes can proxy traffic to containers
+	var tunnelSrv *tunnel.Server
+	if cfg.IsProvider() {
+		cm := apiServer.GetContainerManager()
+		if cm != nil && cm.NetworkManager() != nil {
+			tunnelPort := cfg.Node.Provider.TunnelPort
+			if tunnelPort == 0 {
+				tunnelPort = cfg.Daemon.Port + 2 // Convention: base+1=TLS P2P, base+2=tunnel
+			}
+			portResolver := daemon.NewDeploymentPortResolver(cm.NetworkManager())
+			tunnelListener, listenErr := tls.Listen("tcp", fmt.Sprintf(":%d", tunnelPort), node.TLSServerConfig())
+			if listenErr != nil {
+				logging.Warn("failed to start tunnel server",
+					"port", tunnelPort,
+					logging.Err(listenErr),
+					logging.Component("tunnel"))
+			} else {
+				tunnelSrv = tunnel.NewServer(tunnelListener, portResolver)
+				util.SafeGoWithName("tunnel-server", func() {
+					if srvErr := tunnelSrv.Serve(ctx); srvErr != nil && ctx.Err() == nil {
+						logging.Error("tunnel server error",
+							logging.Err(srvErr),
+							logging.Component("tunnel"))
+					}
+				})
+				logging.Info("tunnel server started",
+					"port", tunnelPort,
+					logging.Component("tunnel"))
+			}
+		}
+	}
+
+	// Ingress nodes: start HTTP reverse proxy for subdomain routing
+	var ingressProxy *ingress.Proxy
+	var ingressHealthChecker *ingress.HealthChecker
+	if cfg.Node.Provider.IngressEnabled {
+		cm := apiServer.GetContainerManager()
+		if cm != nil && cm.GossipProtocol() != nil {
+			ingressPort := cfg.Node.Provider.IngressPort
+			if ingressPort == 0 {
+				ingressPort = 9090
+			}
+			ingressDomain := cfg.Node.Provider.IngressDomain
+			if ingressDomain == "" {
+				ingressDomain = "moltbunker.dev"
+			}
+
+			// Set gossip state validator to prevent expose: key poisoning
+			cm.GossipProtocol().SetStateValidator(daemon.NewGossipStateValidator(node.NodeInfo().ID))
+			gossipAdapter := daemon.NewGossipServiceAdapter(cm.GossipProtocol())
+			gossipAdapter.SetPaymentService(paymentSvc) // Enable on-chain subdomain resolution fallback
+			tunnelDialer := daemon.NewTLSTunnelDialer(node.TLSClientConfig())
+			tunnelClient := tunnel.NewClient(tunnelDialer)
+			resolver := ingress.NewResolver(gossipAdapter, gossipAdapter) // implements both GossipReader and SubdomainResolver
+			ingressProxy = ingress.NewProxy(resolver, tunnelClient, ingressDomain)
+
+			// Wire Cloudflare DNS sync if configured
+			if cfg.Node.Provider.CloudflareAPIToken != "" && cfg.Node.Provider.CloudflareZoneID != "" && cfg.Node.Provider.IngressIP != "" {
+				dnsSync := ingress.NewDNSSync(
+					cfg.Node.Provider.CloudflareAPIToken,
+					cfg.Node.Provider.CloudflareZoneID,
+					cfg.Node.Provider.IngressIP,
+					ingressDomain,
+				)
+				apiServer.SetDNSSync(dnsSync)
+				logging.Info("cloudflare DNS sync enabled",
+					"domain", ingressDomain,
+					logging.Component("ingress"))
+			}
+
+			// TLS configuration: use Let's Encrypt autocert if enabled, else node self-signed cert
+			var ingressTLSCfg *tls.Config
+			if cfg.Node.Provider.IngressAutoTLS {
+				certDir := cfg.Node.Provider.IngressCertDir
+				if certDir == "" {
+					certDir = filepath.Join(cfg.Daemon.DataDir, "ingress-certs")
+				}
+				email := cfg.Node.Provider.IngressACMEEmail
+				autoTLS := ingress.NewAutoTLSConfig(certDir, ingressDomain, email, resolver)
+				ingressTLSCfg = autoTLS.TLSConfig()
+				logging.Info("ingress auto-TLS enabled (Let's Encrypt)",
+					"cert_dir", certDir,
+					"domain", ingressDomain,
+					logging.Component("ingress"))
+			} else {
+				// Existing: node self-signed cert
+				ingressTLSCfg = node.TLSServerConfig()
+				ingressTLSCfg.ClientAuth = tls.NoClientCert // Public clients don't present certs
+			}
+
+			ingressListener, listenErr := tls.Listen("tcp", fmt.Sprintf(":%d", ingressPort), ingressTLSCfg)
+			if listenErr != nil {
+				logging.Warn("failed to start ingress proxy",
+					"port", ingressPort,
+					logging.Err(listenErr),
+					logging.Component("ingress"))
+			} else {
+				util.SafeGoWithName("ingress-proxy", func() {
+					if srvErr := ingressProxy.Serve(ingressListener); srvErr != nil && ctx.Err() == nil {
+						logging.Error("ingress proxy error",
+							logging.Err(srvErr),
+							logging.Component("ingress"))
+					}
+				})
+
+				// Start health checker for exposed services
+				ingressHealthChecker = ingress.NewHealthChecker(resolver, tunnelClient)
+				ingressHealthChecker.Start(ctx)
+
+				logging.Info("ingress proxy started",
+					"port", ingressPort,
+					"domain", ingressDomain,
+					logging.Component("ingress"))
+
+				// Reverse tunnel server (ingress-side): accept connections from NAT'd providers
+				if cfg.Node.Provider.ReverseTunnelPort > 0 {
+					revTLSCfg := node.TLSServerConfig()
+					revTLSCfg.ClientAuth = tls.RequireAnyClientCert // Providers must present a cert
+					revPort := cfg.Node.Provider.ReverseTunnelPort
+					revListener, revErr := tls.Listen("tcp", fmt.Sprintf(":%d", revPort), revTLSCfg)
+					if revErr != nil {
+						logging.Warn("failed to start reverse tunnel server",
+							"port", revPort,
+							logging.Err(revErr),
+							logging.Component("reverse-tunnel"))
+					} else {
+						revOpts := []tunnel.ReverseServerOption{
+							tunnel.WithDomain(ingressDomain),
+						}
+						if cfg.Node.Provider.ReverseTunnelMaxConns > 0 {
+							revOpts = append(revOpts, tunnel.WithMaxConns(cfg.Node.Provider.ReverseTunnelMaxConns))
+						}
+						reverseServer := tunnel.NewReverseServer(revListener, revOpts...)
+						ingressProxy.SetReverseStreamOpener(reverseServer)
+						util.SafeGoWithName("reverse-tunnel-server", func() {
+							if srvErr := reverseServer.Serve(ctx); srvErr != nil && ctx.Err() == nil {
+								logging.Error("reverse tunnel server error",
+									logging.Err(srvErr),
+									logging.Component("reverse-tunnel"))
+							}
+						})
+						logging.Info("reverse tunnel server started",
+							"port", revPort,
+							"domain", ingressDomain,
+							logging.Component("reverse-tunnel"))
+					}
+				}
+			}
+		}
+	}
+
+	// Provider-side reverse tunnel: wire into ContainerManager so deployments
+	// with exposed ports automatically get a reverse tunnel to the ingress.
+	if cfg.Node.Provider.ReverseTunnelEnabled && cfg.Node.Provider.ReverseTunnelIngress != "" {
+		cm := apiServer.GetContainerManager()
+		if cm != nil && cm.NetworkManager() != nil {
+			portResolver := daemon.NewDeploymentPortResolver(cm.NetworkManager())
+			revTLSCfg := node.TLSClientConfig()
+			ingressAddr := cfg.Node.Provider.ReverseTunnelIngress
+
+			// Factory creates a new ReverseClient per deployment+port
+			clientFactory := func() *tunnel.ReverseClient {
+				return tunnel.NewReverseClient(ingressAddr, portResolver, revTLSCfg)
+			}
+
+			rtm := daemon.NewReverseTunnelManager(ctx, clientFactory)
+			cm.SetReverseTunnelManager(rtm)
+
+			logging.Info("reverse tunnel manager enabled",
+				"ingress", ingressAddr,
+				logging.Component("reverse-tunnel"))
+		}
 	}
 
 	// P1-5: Start certificate rotator for automatic TLS cert renewal
@@ -394,6 +610,64 @@ func main() {
 		httpAPIServer.SetPolicyStore(api.NewPolicyStore(filepath.Join(cfg.Daemon.DataDir, "admin_policies.json")))
 		httpAPIServer.SetCatalogStore(api.NewCatalogStore(filepath.Join(cfg.Daemon.DataDir, "catalog.json")))
 
+		// ── P0 Services ──
+
+		// Object Storage
+		if cfg.Storage.Enabled {
+			storageDataDir := cfg.Storage.DataDir
+			if storageDataDir == "" {
+				storageDataDir = filepath.Join(cfg.Daemon.DataDir, "storage")
+			}
+			storageEngine, storageErr := storage.NewStorageEngine(storageDataDir, stateStore, storage.EngineConfig{
+				MaxBuckets:    cfg.Storage.MaxBuckets,
+				MaxObjectSize: cfg.Storage.MaxObjectSize,
+			})
+			if storageErr != nil {
+				log.Fatalf("Failed to create storage engine: %v", storageErr)
+			}
+			httpAPIServer.SetStorageHandler(storage.NewRESTHandler(storageEngine))
+			logging.Info("object storage service enabled", logging.Component("daemon"))
+		}
+
+		// Decentralized Proxy
+		if cfg.Proxy.Enabled {
+			proxyServer := proxy.NewServer(proxy.Config{
+				SOCKS5Addr:  cfg.Proxy.SOCKS5Addr,
+				HTTPAddr:    cfg.Proxy.HTTPAddr,
+				UseTor:      cfg.Proxy.UseTor,
+				MaxSessions: cfg.Proxy.MaxSessions,
+			}, &proxy.DirectDialer{}, &proxy.AllowAllAuth{DefaultWallet: "system"})
+			if proxyErr := proxyServer.Start(ctx); proxyErr != nil {
+				log.Fatalf("Failed to start proxy service: %v", proxyErr)
+			}
+			httpAPIServer.SetProxyHandler(proxy.NewRESTHandler(proxyServer))
+			// Store reference for shutdown (captured in shutdown goroutine closure)
+			defer proxyServer.Stop()
+			logging.Info("proxy service enabled",
+				"socks5", cfg.Proxy.SOCKS5Addr,
+				"http", cfg.Proxy.HTTPAddr,
+				logging.Component("daemon"))
+		}
+
+		// Web Crawling
+		if cfg.Crawl.Enabled {
+			scheduler := crawl.NewScheduler(crawl.SchedulerConfig{
+				MaxConcurrentJobs: cfg.Crawl.MaxConcurrent,
+				MaxPagesPerJob:    cfg.Crawl.MaxPages,
+			})
+			httpAPIServer.SetCrawlHandler(crawl.NewRESTHandler(scheduler, crawl.NewRobotsChecker()))
+			logging.Info("web crawling service enabled", logging.Component("daemon"))
+		}
+
+		// AI Agent Runtime
+		if cfg.Agent.Enabled {
+			agentRuntime := agent.NewAgentRuntime(agent.RuntimeConfig{
+				MaxAgentsPerWallet: cfg.Agent.MaxAgentsPerWallet,
+			})
+			httpAPIServer.SetAgentHandler(agent.NewRESTHandler(agentRuntime, agent.NewMemoryStore()))
+			logging.Info("agent runtime service enabled", logging.Component("daemon"))
+		}
+
 		if err := httpAPIServer.Start(ctx); err != nil {
 			log.Fatalf("Failed to start HTTP API server: %v", err)
 		}
@@ -433,6 +707,26 @@ func main() {
 	shutdownDone := make(chan struct{})
 	go func() {
 		defer close(shutdownDone)
+
+		// Stop ingress proxy and health checker first (edge traffic)
+		if ingressHealthChecker != nil {
+			logging.Info("stopping ingress health checker...", logging.Component("daemon"))
+			ingressHealthChecker.Stop()
+		}
+		if ingressProxy != nil {
+			logging.Info("stopping ingress proxy...", logging.Component("daemon"))
+			if err := ingressProxy.Shutdown(shutdownCtx); err != nil {
+				logging.Error("error stopping ingress proxy", logging.Err(err), logging.Component("daemon"))
+			}
+		}
+
+		// Stop tunnel server (provider-side)
+		if tunnelSrv != nil {
+			logging.Info("stopping tunnel server...", logging.Component("daemon"))
+			if err := tunnelSrv.Close(); err != nil {
+				logging.Error("error stopping tunnel server", logging.Err(err), logging.Component("daemon"))
+			}
+		}
 
 		// Stop HTTP API server first (stop accepting web requests)
 		if httpAPIServer != nil {

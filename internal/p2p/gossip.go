@@ -20,10 +20,18 @@ const (
 	maxStateValueSize = 64 * 1024
 )
 
+// StateValidator is an optional callback that validates gossip state entries
+// before they are accepted. It receives the sender's NodeID, the state key,
+// and the value. Returns true if the entry should be accepted, false to reject.
+// This is used to prevent unauthorized state mutations (e.g., only the
+// provider hosting a deployment can publish its expose: entries).
+type StateValidator func(senderID types.NodeID, key string, value interface{}) bool
+
 // GossipProtocol implements gossip protocol for state synchronization
 type GossipProtocol struct {
 	router         *Router
 	stakeVerifier  *StakeVerifier
+	stateValidator StateValidator
 	state          map[string]*stateEntry
 	stateMu        sync.RWMutex
 	peers          map[types.NodeID]*GossipPeer
@@ -62,6 +70,14 @@ func NewGossipProtocol(router *Router) *GossipProtocol {
 		peers:          make(map[types.NodeID]*GossipPeer),
 		gossipInterval: 10 * time.Second,
 	}
+}
+
+// SetStateValidator sets an optional callback to validate incoming gossip state
+// entries before they are accepted. Call before Start().
+func (gp *GossipProtocol) SetStateValidator(v StateValidator) {
+	gp.peersMu.Lock()
+	defer gp.peersMu.Unlock()
+	gp.stateValidator = v
 }
 
 // Start starts the gossip protocol
@@ -211,6 +227,20 @@ func (gp *GossipProtocol) GetState(key string) (interface{}, bool) {
 	return entry.Value, true
 }
 
+// GetStateByPrefix returns all state entries whose keys start with the given prefix.
+func (gp *GossipProtocol) GetStateByPrefix(prefix string) map[string]interface{} {
+	gp.stateMu.RLock()
+	defer gp.stateMu.RUnlock()
+
+	result := make(map[string]interface{})
+	for k, entry := range gp.state {
+		if len(k) >= len(prefix) && k[:len(prefix)] == prefix {
+			result[k] = entry.Value
+		}
+	}
+	return result
+}
+
 // HandleGossipMessage handles incoming gossip message
 func (gp *GossipProtocol) HandleGossipMessage(ctx context.Context, msg *types.Message, from *types.Node) error {
 	// Reject gossip from unstaked senders
@@ -229,6 +259,16 @@ func (gp *GossipProtocol) HandleGossipMessage(ctx context.Context, msg *types.Me
 	// Merge state
 	if gossipMsg.Type == "state_update" {
 		if stateMap, ok := gossipMsg.Value.(map[string]interface{}); ok {
+			// Read validator outside state lock
+			gp.peersMu.RLock()
+			validator := gp.stateValidator
+			gp.peersMu.RUnlock()
+
+			senderID := types.NodeID{}
+			if from != nil {
+				senderID = from.ID
+			}
+
 			gp.stateMu.Lock()
 			now := time.Now()
 			for k, v := range stateMap {
@@ -236,6 +276,10 @@ func (gp *GossipProtocol) HandleGossipMessage(ctx context.Context, msg *types.Me
 				valBytes, err := json.Marshal(v)
 				if err != nil || len(valBytes) > maxStateValueSize {
 					continue // Skip oversized or non-serializable values
+				}
+				// If a state validator is set, check authorization
+				if validator != nil && !validator(senderID, k, v) {
+					continue // Rejected by validator
 				}
 				if _, exists := gp.state[k]; exists {
 					// Update existing entry

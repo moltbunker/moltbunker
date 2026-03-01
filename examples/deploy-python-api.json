@@ -1,0 +1,12 @@
+{
+  "image": "python:3.12-slim",
+  "resources": {
+    "cpu_quota": 100000,
+    "memory_limit": 1073741824,
+    "disk_limit": 10737418240
+  },
+  "expose_ports": [
+    { "container_port": 8000, "protocol": "tcp" }
+  ],
+  "min_provider_tier": "standard"
+}

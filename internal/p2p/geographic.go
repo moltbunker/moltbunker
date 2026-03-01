@@ -78,6 +78,22 @@ func (gr *GeographicRouter) SelectNodesForReplication(nodes []*types.Node, minTi
 	return selected, nil
 }
 
+// SelectMoltNodes selects up to 3 nodes that have Molt (WASM) runtime available.
+// It filters candidates to only MoltAvailable nodes, then delegates to
+// SelectNodesForReplication for geographic distribution.
+func (gr *GeographicRouter) SelectMoltNodes(nodes []*types.Node) ([]*types.Node, error) {
+	moltNodes := make([]*types.Node, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Capabilities.MoltAvailable {
+			moltNodes = append(moltNodes, node)
+		}
+	}
+	if len(moltNodes) == 0 {
+		return nil, fmt.Errorf("no nodes with Molt runtime available")
+	}
+	return gr.SelectNodesForReplication(moltNodes)
+}
+
 // EnsureGeographicDistribution ensures replicas are in different regions
 func (gr *GeographicRouter) EnsureGeographicDistribution(replicaSet *types.ReplicaSet, nodes []*types.Node) error {
 	// Check if replicas are in different regions

@@ -20,6 +20,8 @@ var (
 	deployMemory       int64
 	deployDisk         int64
 	deployMinTier      string
+	deployExposePorts  []int
+	deploySpot         bool
 )
 
 // Resource tier presets
@@ -57,7 +59,9 @@ Examples:
   moltbunker deploy nginx:latest              # Direct deploy with defaults
   moltbunker deploy myimage:tag --tor-only    # Deploy with Tor-only networking
   moltbunker deploy myimage:tag --onion-service --port 8080
-  moltbunker deploy myimage:tag --min-tier confidential`,
+  moltbunker deploy myimage:tag --min-tier confidential
+  moltbunker deploy myimage:tag --expose 8080         # Expose port 8080 at <id>.moltbunker.dev
+  moltbunker deploy myimage:tag --expose 8080 --expose 3000`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: runDeploy,
 	}
@@ -69,6 +73,8 @@ Examples:
 	cmd.Flags().Int64Var(&deployMemory, "memory", 536870912, "Memory limit in bytes")
 	cmd.Flags().Int64Var(&deployDisk, "disk", 10737418240, "Disk limit in bytes")
 	cmd.Flags().StringVar(&deployMinTier, "min-tier", "", "Minimum provider tier (confidential, standard, dev)")
+	cmd.Flags().IntSliceVar(&deployExposePorts, "expose", nil, "Container ports to expose via ingress (repeatable)")
+	cmd.Flags().BoolVar(&deploySpot, "spot", false, "Use spot pricing (lower cost, preemptible)")
 
 	return cmd
 }
@@ -375,6 +381,8 @@ func runDeployDirect(image string) error {
 		OnionService:    deployOnionService,
 		OnionPort:       deployOnionPort,
 		MinProviderTier: deployMinTier,
+		ExposePorts:     toExposedPorts(deployExposePorts),
+		Spot:            deploySpot,
 	}
 
 	// Generate E2E exec key if wallet is available
@@ -403,6 +411,9 @@ func runDeployDirect(image string) error {
 	}
 	if resp.ReplicaCount > 0 {
 		fields = append(fields, [2]string{"Replicas", fmt.Sprintf("%d", resp.ReplicaCount)})
+	}
+	for _, url := range resp.PublicURLs {
+		fields = append(fields, [2]string{"URL", url})
 	}
 
 	fmt.Println(StatusBox("Deployed", fields))
@@ -441,4 +452,16 @@ func generateExecKey() ([]byte, string, error) {
 	}
 
 	return execKey, hex.EncodeToString(deployNonce), nil
+}
+
+// toExposedPorts converts a slice of port ints to ExposedPort structs.
+func toExposedPorts(ports []int) []client.ExposedPort {
+	if len(ports) == 0 {
+		return nil
+	}
+	result := make([]client.ExposedPort, len(ports))
+	for i, p := range ports {
+		result[i] = client.ExposedPort{ContainerPort: p}
+	}
+	return result
 }

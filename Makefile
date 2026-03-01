@@ -9,7 +9,8 @@
 VERSION    ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
-LDFLAGS    := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)"
+LDFLAGS_DAEMON := -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)"
+LDFLAGS_CLI    := -ldflags "-X github.com/moltbunker/moltbunker/cmd/cli/commands.Version=$(VERSION) -X github.com/moltbunker/moltbunker/cmd/cli/commands.Commit=$(COMMIT) -X github.com/moltbunker/moltbunker/cmd/cli/commands.BuildDate=$(BUILD_DATE)"
 FOUNDRY_BIN := $(HOME)/.foundry/bin
 
 # ─── Build ────────────────────────────────────────────────────────────────────
@@ -21,15 +22,15 @@ build-all: build exec-agent
 
 daemon:
 	@echo "Building daemon..."
-	@go build $(LDFLAGS) -o bin/moltbunkerd ./cmd/daemon
+	@go build $(LDFLAGS_DAEMON) -o bin/moltbunkerd ./cmd/daemon
 
 api:
 	@echo "Building API server..."
-	@go build $(LDFLAGS) -o bin/moltbunker-api ./cmd/api
+	@go build $(LDFLAGS_DAEMON) -o bin/moltbunker-api ./cmd/api
 
 cli:
 	@echo "Building CLI..."
-	@go build $(LDFLAGS) -o bin/moltbunker ./cmd/cli
+	@go build $(LDFLAGS_CLI) -o bin/moltbunker ./cmd/cli
 
 exec-agent:
 	@echo "Building exec-agent (linux/amd64)..."

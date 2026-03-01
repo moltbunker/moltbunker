@@ -1889,3 +1889,263 @@ type ResourceRequestData struct {
 	DurationHours uint32
 	GPUCount      uint8
 }
+
+// BunkerRegistryABI is the ABI for the BunkerRegistry v2.0.0 subdomain name contract.
+const BunkerRegistryABI = `[
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "deploymentID", "type": "bytes32"}
+		],
+		"name": "register",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "deploymentID", "type": "bytes32"},
+			{"name": "referrer", "type": "address"}
+		],
+		"name": "registerWithReferral",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "names", "type": "string[]"},
+			{"name": "deploymentIDs", "type": "bytes32[]"}
+		],
+		"name": "bulkRegister",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "release",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "newOwner", "type": "address"}
+		],
+		"name": "transfer",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "newDeploymentID", "type": "bytes32"}
+		],
+		"name": "updateDeployment",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "renew",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "names", "type": "string[]"}],
+		"name": "bulkRenew",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "reserve",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "deploymentID", "type": "bytes32"}
+		],
+		"name": "claimReservation",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "cancelReservation",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "description", "type": "string"},
+			{"name": "avatarURL", "type": "string"}
+		],
+		"name": "setMetadata",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "reclaimSquatted",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "setPrimaryName",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "resolve",
+		"outputs": [
+			{"name": "owner", "type": "address"},
+			{"name": "deploymentID", "type": "bytes32"},
+			{"name": "registeredAt", "type": "uint256"}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "isAvailable",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "isExpired",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "name", "type": "string"}],
+		"name": "isInGracePeriod",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "deploymentID", "type": "bytes32"}],
+		"name": "reverseResolve",
+		"outputs": [{"name": "name", "type": "string"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "user", "type": "address"}
+		],
+		"name": "calculatePrice",
+		"outputs": [{"name": "price", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "registrationFee",
+		"outputs": [{"name": "", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"name": "changeFee",
+		"outputs": [{"name": "", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "owner", "type": "address"}],
+		"name": "nameCount",
+		"outputs": [{"name": "", "type": "uint256"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "owner", "type": "address"},
+			{"name": "index", "type": "uint256"}
+		],
+		"name": "ownedNameAt",
+		"outputs": [{"name": "", "type": "bytes32"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "", "type": "bytes32"}],
+		"name": "nameOf",
+		"outputs": [{"name": "", "type": "string"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "", "type": "bytes32"}],
+		"name": "metadata",
+		"outputs": [
+			{"name": "description", "type": "string"},
+			{"name": "avatarURL", "type": "string"}
+		],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "", "type": "bytes32"}],
+		"name": "reservedNames",
+		"outputs": [{"name": "", "type": "bool"}],
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"inputs": [
+			{"name": "name", "type": "string"},
+			{"name": "reserved", "type": "bool"}
+		],
+		"name": "setReservedName",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [{"name": "names", "type": "string[]"}],
+		"name": "batchReserveNames",
+		"outputs": [],
+		"stateMutability": "nonpayable",
+		"type": "function"
+	}
+]`
+
+// SubdomainRegistration represents a resolved subdomain from the registry.
+type SubdomainRegistration struct {
+	Name         string
+	Owner        common.Address
+	DeploymentID [32]byte
+	RegisteredAt time.Time
+}
+
+// SubdomainMetadata represents metadata for a subdomain.
+type SubdomainMetadata struct {
+	Description string
+	AvatarURL   string
+}

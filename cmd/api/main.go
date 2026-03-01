@@ -19,6 +19,13 @@ import (
 	"github.com/moltbunker/moltbunker/internal/threat"
 )
 
+// Build-time version information (set via -ldflags)
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
 func main() {
 	// Parse flags
 	httpAddr := flag.String("http", ":8080", "HTTP listen address")
@@ -29,6 +36,8 @@ func main() {
 	configPath := flag.String("config", "", "Path to config file")
 	enableAuth := flag.Bool("auth", true, "Enable API authentication")
 	flag.Parse()
+
+	fmt.Fprintf(os.Stderr, "moltbunker-api version=%s commit=%s built=%s\n", version, commit, buildDate)
 
 	// Load configuration
 	var cfg *config.Config
