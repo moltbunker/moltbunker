@@ -99,7 +99,7 @@ func (h *RESTHandler) handleJobByID(w http.ResponseWriter, r *http.Request) {
 		writeCrawlError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	h.getJob(w, jobID)
+	h.getJob(w, r, jobID)
 }
 
 func (h *RESTHandler) createJob(w http.ResponseWriter, r *http.Request) {
@@ -149,7 +149,11 @@ func (h *RESTHandler) createJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RESTHandler) listJobs(w http.ResponseWriter, r *http.Request) {
-	wallet := r.URL.Query().Get("wallet")
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
+	if wallet == "" {
+		writeCrawlError(w, http.StatusForbidden, "no verified identity")
+		return
+	}
 	jobs := h.scheduler.ListJobs(wallet)
 	if jobs == nil {
 		jobs = []CrawlJob{}
@@ -157,9 +161,14 @@ func (h *RESTHandler) listJobs(w http.ResponseWriter, r *http.Request) {
 	writeCrawlJSON(w, http.StatusOK, jobs)
 }
 
-func (h *RESTHandler) getJob(w http.ResponseWriter, jobID string) {
+func (h *RESTHandler) getJob(w http.ResponseWriter, r *http.Request, jobID string) {
 	job, ok := h.scheduler.GetJob(jobID)
 	if !ok {
+		writeCrawlError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
+	if wallet != "" && job.Owner != wallet {
 		writeCrawlError(w, http.StatusNotFound, "job not found")
 		return
 	}
@@ -170,6 +179,18 @@ func (h *RESTHandler) getResults(w http.ResponseWriter, r *http.Request, jobID s
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		writeCrawlError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Verify ownership
+	job, ok := h.scheduler.GetJob(jobID)
+	if !ok {
+		writeCrawlError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
+	if wallet != "" && job.Owner != wallet {
+		writeCrawlError(w, http.StatusNotFound, "job not found")
 		return
 	}
 
@@ -185,6 +206,18 @@ func (h *RESTHandler) cancelJob(w http.ResponseWriter, r *http.Request, jobID st
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", "POST")
 		writeCrawlError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Verify ownership
+	job, ok := h.scheduler.GetJob(jobID)
+	if !ok {
+		writeCrawlError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
+	if wallet != "" && job.Owner != wallet {
+		writeCrawlError(w, http.StatusNotFound, "job not found")
 		return
 	}
 

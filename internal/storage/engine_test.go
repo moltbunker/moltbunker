@@ -89,7 +89,7 @@ func TestDeleteBucket(t *testing.T) {
 	}
 
 	// Should not exist anymore
-	b, err := e.HeadBucket(ctx, "del-bucket")
+	b, err := e.HeadBucket(ctx, "del-bucket", testOwner)
 	if err != nil {
 		t.Fatalf("head: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestPutGetObject(t *testing.T) {
 	}
 
 	// Get
-	out, err := e.GetObject(ctx, "data", "greeting.txt")
+	out, err := e.GetObject(ctx, "data", "greeting.txt", testOwner)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestHeadObject(t *testing.T) {
 		t.Fatalf("put: %v", err)
 	}
 
-	obj, err := e.HeadObject(ctx, "meta", "info.json")
+	obj, err := e.HeadObject(ctx, "meta", "info.json", testOwner)
 	if err != nil {
 		t.Fatalf("head: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestDeleteObject(t *testing.T) {
 		t.Fatalf("delete: %v", err)
 	}
 
-	_, err := e.HeadObject(ctx, "trash", "junk.txt")
+	_, err := e.HeadObject(ctx, "trash", "junk.txt", testOwner)
 	if err == nil {
 		t.Fatal("object should not exist after delete")
 	}
@@ -338,7 +338,7 @@ func TestListObjects(t *testing.T) {
 	}
 
 	// List all
-	out, err := e.ListObjects(ctx, &ListObjectsInput{Bucket: "files"})
+	out, err := e.ListObjects(ctx, &ListObjectsInput{Bucket: "files", Owner: testOwner})
 	if err != nil {
 		t.Fatalf("list all: %v", err)
 	}
@@ -350,6 +350,7 @@ func TestListObjects(t *testing.T) {
 	out, err = e.ListObjects(ctx, &ListObjectsInput{
 		Bucket: "files",
 		Prefix: "dir/",
+		Owner:  testOwner,
 	})
 	if err != nil {
 		t.Fatalf("list prefix: %v", err)
@@ -363,6 +364,7 @@ func TestListObjects(t *testing.T) {
 		Bucket:    "files",
 		Prefix:    "dir/",
 		Delimiter: "/",
+		Owner:     testOwner,
 	})
 	if err != nil {
 		t.Fatalf("list delimited: %v", err)
@@ -399,6 +401,7 @@ func TestListObjects_Pagination(t *testing.T) {
 	out, err := e.ListObjects(ctx, &ListObjectsInput{
 		Bucket:  "paged",
 		MaxKeys: 2,
+		Owner:   testOwner,
 	})
 	if err != nil {
 		t.Fatalf("page 1: %v", err)
@@ -415,6 +418,7 @@ func TestListObjects_Pagination(t *testing.T) {
 		Bucket:            "paged",
 		MaxKeys:           2,
 		ContinuationToken: out.NextContinuationToken,
+		Owner:             testOwner,
 	})
 	if err != nil {
 		t.Fatalf("page 2: %v", err)
@@ -457,7 +461,7 @@ func TestPutObject_Overwrite(t *testing.T) {
 	}
 
 	// Read back
-	out, err := e.GetObject(ctx, "overwrite", "file.txt")
+	out, err := e.GetObject(ctx, "overwrite", "file.txt", testOwner)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -476,7 +480,7 @@ func TestGetObject_NotFound(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	_, err := e.GetObject(ctx, "empty", "nope.txt")
+	_, err := e.GetObject(ctx, "empty", "nope.txt", testOwner)
 	if err == nil {
 		t.Fatal("should fail for non-existent object")
 	}

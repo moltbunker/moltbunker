@@ -37,6 +37,7 @@ type ListObjectsInput struct {
 	Delimiter         string
 	ContinuationToken string
 	MaxKeys           int
+	Owner             string // Wallet address — must match bucket owner
 }
 
 // ListObjectsOutput is the result of listing objects.

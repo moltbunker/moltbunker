@@ -59,7 +59,7 @@ func TestStoragePutGetRoundtrip(t *testing.T) {
 	}
 
 	// Get it back
-	output, err := svc.Storage.GetObject(ctx, "test-bucket", "hello.txt")
+	output, err := svc.Storage.GetObject(ctx, "test-bucket", "hello.txt", svc.Owner)
 	if err != nil {
 		t.Fatalf("GetObject: %v", err)
 	}
@@ -136,6 +136,7 @@ func TestStorageListObjects(t *testing.T) {
 	output, err := svc.Storage.ListObjects(ctx, &storage.ListObjectsInput{
 		Bucket:  "test-bucket",
 		MaxKeys: 100,
+		Owner:   svc.Owner,
 	})
 	if err != nil {
 		t.Fatalf("ListObjects: %v", err)
@@ -169,7 +170,7 @@ func TestStorageDeleteObject(t *testing.T) {
 	}
 
 	// Get should fail
-	_, err = svc.Storage.GetObject(ctx, "test-bucket", "delete-me.txt")
+	_, err = svc.Storage.GetObject(ctx, "test-bucket", "delete-me.txt", svc.Owner)
 	if err == nil {
 		t.Fatal("expected error getting deleted object")
 	}

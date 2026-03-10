@@ -77,9 +77,10 @@ func TestHandler_CreateJob_InvalidBody(t *testing.T) {
 
 func TestHandler_ListJobs(t *testing.T) {
 	h, mux := newTestServer()
-	h.scheduler.CreateJob(nil, "w1", CrawlConfig{URLs: []string{"https://a.com"}})
+	h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}})
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xwallet1")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -94,27 +95,53 @@ func TestHandler_ListJobs(t *testing.T) {
 	}
 }
 
-func TestHandler_ListJobs_FilterByWallet(t *testing.T) {
-	h, mux := newTestServer()
-	h.scheduler.CreateJob(nil, "w1", CrawlConfig{URLs: []string{"https://a.com"}})
-	h.scheduler.CreateJob(nil, "w2", CrawlConfig{URLs: []string{"https://b.com"}})
+func TestHandler_ListJobs_NoWallet(t *testing.T) {
+	_, mux := newTestServer()
 
-	req := httptest.NewRequest("GET", "/v1/crawl/jobs?wallet=w1", nil)
+	req := httptest.NewRequest("GET", "/v1/crawl/jobs", nil)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", w.Code)
+	}
+}
+
+func TestHandler_ListJobs_CrossTenantIsolation(t *testing.T) {
+	h, mux := newTestServer()
+	h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}})
+	h.scheduler.CreateJob(nil, "0xwallet2", CrawlConfig{URLs: []string{"https://b.com"}})
+
+	// wallet1 should only see their own job
+	req := httptest.NewRequest("GET", "/v1/crawl/jobs", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xwallet1")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	var jobs []CrawlJob
 	json.NewDecoder(w.Body).Decode(&jobs)
 	if len(jobs) != 1 {
-		t.Errorf("jobs = %d, want 1 for w1", len(jobs))
+		t.Errorf("wallet1 jobs = %d, want 1", len(jobs))
+	}
+
+	// wallet2 should only see their own job
+	req = httptest.NewRequest("GET", "/v1/crawl/jobs", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xwallet2")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	json.NewDecoder(w.Body).Decode(&jobs)
+	if len(jobs) != 1 {
+		t.Errorf("wallet2 jobs = %d, want 1", len(jobs))
 	}
 }
 
 func TestHandler_GetJob(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "w1", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs/"+job.ID, nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xowner")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -126,6 +153,20 @@ func TestHandler_GetJob(t *testing.T) {
 	json.NewDecoder(w.Body).Decode(&got)
 	if got.ID != job.ID {
 		t.Errorf("id = %q, want %q", got.ID, job.ID)
+	}
+}
+
+func TestHandler_GetJob_WrongOwner(t *testing.T) {
+	h, mux := newTestServer()
+	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
+
+	req := httptest.NewRequest("GET", "/v1/crawl/jobs/"+job.ID, nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xattacker")
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404 for wrong owner", w.Code)
 	}
 }
 
@@ -143,10 +184,11 @@ func TestHandler_GetJob_NotFound(t *testing.T) {
 
 func TestHandler_GetResults(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "w1", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
 	h.scheduler.AddResult(job.ID, CrawlResult{URL: "https://a.com", StatusCode: 200})
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs/"+job.ID+"/results", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xowner")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -163,9 +205,10 @@ func TestHandler_GetResults(t *testing.T) {
 
 func TestHandler_CancelJob(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "w1", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
 
 	req := httptest.NewRequest("POST", "/v1/crawl/jobs/"+job.ID+"/cancel", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xowner")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 

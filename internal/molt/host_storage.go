@@ -123,7 +123,7 @@ func hostStorageGet(ctx context.Context, mod api.Module, stack []uint64) {
 		return
 	}
 
-	output, err := svc.Storage.GetObject(ctx, req.Bucket, req.Key)
+	output, err := svc.Storage.GetObject(ctx, req.Bucket, req.Key, svc.Owner)
 	if err != nil {
 		stack[0] = api.EncodeI32(svc.results.StoreError(fmt.Sprintf("storage_get: %v", err)))
 		return
@@ -215,6 +215,7 @@ func hostStorageList(ctx context.Context, mod api.Module, stack []uint64) {
 		Bucket:  req.Bucket,
 		Prefix:  req.Prefix,
 		MaxKeys: maxKeys,
+		Owner:   svc.Owner,
 	})
 	if err != nil {
 		stack[0] = api.EncodeI32(svc.results.StoreError(fmt.Sprintf("storage_list: %v", err)))
