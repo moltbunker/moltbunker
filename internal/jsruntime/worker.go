@@ -260,7 +260,7 @@ func (w *DenoWorker) dispatchStorageCall(ctx context.Context, fn string, args js
 		})
 
 	case "storage_get":
-		output, err := services.Storage.GetObject(ctx, req.Bucket, req.Key)
+		output, err := services.Storage.GetObject(ctx, req.Bucket, req.Key, services.Owner)
 		if err != nil {
 			return nil, err
 		}
@@ -284,6 +284,7 @@ func (w *DenoWorker) dispatchStorageCall(ctx context.Context, fn string, args js
 			Bucket:  req.Bucket,
 			Prefix:  req.Prefix,
 			MaxKeys: maxKeys,
+			Owner:   services.Owner,
 		})
 
 	default:

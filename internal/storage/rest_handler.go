@@ -100,7 +100,7 @@ func (h *RESTHandler) handleBucketByName(w http.ResponseWriter, r *http.Request)
 
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
-		bucket, err := h.engine.HeadBucket(ctx, name)
+		bucket, err := h.engine.HeadBucket(ctx, name, wallet)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -195,10 +195,14 @@ func (h *RESTHandler) handleObject(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, obj)
 
 	case http.MethodGet:
-		out, err := h.engine.GetObject(ctx, bucket, key)
+		out, err := h.engine.GetObject(ctx, bucket, key, wallet)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			if strings.Contains(err.Error(), "permission denied") {
+				writeError(w, http.StatusForbidden, err.Error())
 				return
 			}
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -218,10 +222,14 @@ func (h *RESTHandler) handleObject(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case http.MethodHead:
-		obj, err := h.engine.HeadObject(ctx, bucket, key)
+		obj, err := h.engine.HeadObject(ctx, bucket, key, wallet)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				writeError(w, http.StatusNotFound, err.Error())
+				return
+			}
+			if strings.Contains(err.Error(), "permission denied") {
+				writeError(w, http.StatusForbidden, err.Error())
 				return
 			}
 			writeError(w, http.StatusInternalServerError, err.Error())
@@ -255,6 +263,7 @@ func (h *RESTHandler) handleObject(w http.ResponseWriter, r *http.Request) {
 
 func (h *RESTHandler) handleListObjects(w http.ResponseWriter, r *http.Request, bucket string) {
 	ctx := r.Context()
+	wallet := extractWallet(r)
 	q := r.URL.Query()
 
 	maxKeys := 1000
@@ -268,10 +277,15 @@ func (h *RESTHandler) handleListObjects(w http.ResponseWriter, r *http.Request, 
 		Delimiter:         q.Get("delimiter"),
 		ContinuationToken: q.Get("continuation-token"),
 		MaxKeys:           maxKeys,
+		Owner:             wallet,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "permission denied") {
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		writeError(w, http.StatusInternalServerError, err.Error())

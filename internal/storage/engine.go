@@ -143,9 +143,19 @@ func (e *StorageEngine) ListBuckets(ctx context.Context, owner string) ([]Bucket
 	return e.metadata.ListBuckets(ctx, owner)
 }
 
-// HeadBucket checks if a bucket exists and returns its info.
-func (e *StorageEngine) HeadBucket(ctx context.Context, name string) (*BucketInfo, error) {
-	return e.metadata.GetBucket(ctx, name)
+// HeadBucket checks if a bucket exists and the caller owns it.
+func (e *StorageEngine) HeadBucket(ctx context.Context, name, owner string) (*BucketInfo, error) {
+	bucket, err := e.metadata.GetBucket(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if bucket == nil {
+		return nil, nil
+	}
+	if bucket.Owner != owner {
+		return nil, nil // hide existence from non-owners
+	}
+	return bucket, nil
 }
 
 // --- Object operations ---
@@ -247,8 +257,20 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 	return obj, nil
 }
 
-// GetObject retrieves an object from a bucket.
-func (e *StorageEngine) GetObject(ctx context.Context, bucket, key string) (*GetObjectOutput, error) {
+// GetObject retrieves an object from a bucket. The caller must own the bucket.
+func (e *StorageEngine) GetObject(ctx context.Context, bucket, key, owner string) (*GetObjectOutput, error) {
+	// Verify bucket ownership
+	bucketInfo, err := e.metadata.GetBucket(ctx, bucket)
+	if err != nil {
+		return nil, fmt.Errorf("get bucket: %w", err)
+	}
+	if bucketInfo == nil {
+		return nil, fmt.Errorf("bucket %q not found", bucket)
+	}
+	if bucketInfo.Owner != owner {
+		return nil, fmt.Errorf("permission denied: bucket %q is owned by another wallet", bucket)
+	}
+
 	obj, err := e.metadata.GetObject(ctx, bucket, key)
 	if err != nil {
 		return nil, fmt.Errorf("get metadata: %w", err)
@@ -273,8 +295,20 @@ func (e *StorageEngine) GetObject(ctx context.Context, bucket, key string) (*Get
 	}, nil
 }
 
-// HeadObject returns object metadata without the body.
-func (e *StorageEngine) HeadObject(ctx context.Context, bucket, key string) (*ObjectInfo, error) {
+// HeadObject returns object metadata without the body. The caller must own the bucket.
+func (e *StorageEngine) HeadObject(ctx context.Context, bucket, key, owner string) (*ObjectInfo, error) {
+	// Verify bucket ownership
+	bucketInfo, err := e.metadata.GetBucket(ctx, bucket)
+	if err != nil {
+		return nil, fmt.Errorf("get bucket: %w", err)
+	}
+	if bucketInfo == nil {
+		return nil, fmt.Errorf("bucket %q not found", bucket)
+	}
+	if bucketInfo.Owner != owner {
+		return nil, fmt.Errorf("permission denied: bucket %q is owned by another wallet", bucket)
+	}
+
 	obj, err := e.metadata.GetObject(ctx, bucket, key)
 	if err != nil {
 		return nil, fmt.Errorf("get metadata: %w", err)
@@ -333,15 +367,18 @@ func (e *StorageEngine) DeleteObject(ctx context.Context, bucket, key, owner str
 	return nil
 }
 
-// ListObjects lists objects in a bucket.
+// ListObjects lists objects in a bucket. The caller must own the bucket.
 func (e *StorageEngine) ListObjects(ctx context.Context, input *ListObjectsInput) (*ListObjectsOutput, error) {
-	// Verify bucket exists
+	// Verify bucket exists and caller owns it
 	bucket, err := e.metadata.GetBucket(ctx, input.Bucket)
 	if err != nil {
 		return nil, fmt.Errorf("get bucket: %w", err)
 	}
 	if bucket == nil {
 		return nil, fmt.Errorf("bucket %q not found", input.Bucket)
+	}
+	if input.Owner != "" && bucket.Owner != input.Owner {
+		return nil, fmt.Errorf("permission denied: bucket %q is owned by another wallet", input.Bucket)
 	}
 
 	return e.metadata.ListObjects(ctx, input)
