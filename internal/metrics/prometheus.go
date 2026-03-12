@@ -27,6 +27,13 @@ type PrometheusCollector struct {
 	goroutineCount    prometheus.Gauge
 	uptimeSeconds     prometheus.Gauge
 
+	// Payment lifecycle counters (exported for direct increment from daemon)
+	EscrowCreated         prometheus.Counter
+	EscrowFinalized       prometheus.Counter
+	EscrowRefunded        prometheus.Counter
+	ViolationsReported    prometheus.Counter
+	AttestationsSubmitted prometheus.Counter
+
 	startTime time.Time
 
 	// Track per-method counters so we can compute deltas from the
@@ -84,6 +91,38 @@ func NewPrometheusCollector(c *Collector) *PrometheusCollector {
 		Help:      "Time since the daemon started in seconds.",
 	})
 
+	// Payment lifecycle counters
+	escrowCreated := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "moltbunker",
+		Subsystem: "payment",
+		Name:      "escrow_created_total",
+		Help:      "Total escrows created for deployments.",
+	})
+	escrowFinalized := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "moltbunker",
+		Subsystem: "payment",
+		Name:      "escrow_finalized_total",
+		Help:      "Total escrows finalized (payment settled).",
+	})
+	escrowRefunded := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "moltbunker",
+		Subsystem: "payment",
+		Name:      "escrow_refunded_total",
+		Help:      "Total escrows refunded due to failure.",
+	})
+	violationsReported := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "moltbunker",
+		Subsystem: "payment",
+		Name:      "violations_reported_total",
+		Help:      "Total health violations reported on-chain.",
+	})
+	attestationsSubmitted := prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "moltbunker",
+		Subsystem: "payment",
+		Name:      "attestations_submitted_total",
+		Help:      "Total attestations submitted on-chain.",
+	})
+
 	reg.MustRegister(requestCount)
 	reg.MustRegister(requestDuration)
 	reg.MustRegister(activeConns)
@@ -91,19 +130,29 @@ func NewPrometheusCollector(c *Collector) *PrometheusCollector {
 	reg.MustRegister(peerCnt)
 	reg.MustRegister(goroutineCnt)
 	reg.MustRegister(uptimeSec)
+	reg.MustRegister(escrowCreated)
+	reg.MustRegister(escrowFinalized)
+	reg.MustRegister(escrowRefunded)
+	reg.MustRegister(violationsReported)
+	reg.MustRegister(attestationsSubmitted)
 
 	return &PrometheusCollector{
-		collector:         c,
-		registry:          reg,
-		requestCount:      requestCount,
-		requestDuration:   requestDuration,
-		activeConnections: activeConns,
-		containerCount:    containerCnt,
-		peerCount:         peerCnt,
-		goroutineCount:    goroutineCnt,
-		uptimeSeconds:     uptimeSec,
-		startTime:         time.Now(),
-		lastCounts:        make(map[string]uint64),
+		collector:             c,
+		registry:              reg,
+		requestCount:          requestCount,
+		requestDuration:       requestDuration,
+		activeConnections:     activeConns,
+		containerCount:        containerCnt,
+		peerCount:             peerCnt,
+		goroutineCount:        goroutineCnt,
+		uptimeSeconds:         uptimeSec,
+		EscrowCreated:         escrowCreated,
+		EscrowFinalized:       escrowFinalized,
+		EscrowRefunded:        escrowRefunded,
+		ViolationsReported:    violationsReported,
+		AttestationsSubmitted: attestationsSubmitted,
+		startTime:             time.Now(),
+		lastCounts:            make(map[string]uint64),
 	}
 }
 

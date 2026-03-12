@@ -252,6 +252,9 @@ func (s *APIServer) Start(ctx context.Context) error {
 		MoltEnabled:      moltEnabled,
 		MoltConfig:       moltCfg,
 		StateStore:       s.stateStore,
+		AcceptServices:   s.config == nil || s.config.Node.Provider.AcceptServices,
+		AcceptJobs:       s.config == nil || s.config.Node.Provider.AcceptJobs,
+		AcceptFunctions:  s.config == nil || s.config.Node.Provider.AcceptFunctions,
 	}
 	containerManager, err := NewContainerManager(ctx, cmConfig, s.node)
 	if err != nil {

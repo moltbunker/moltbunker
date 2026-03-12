@@ -162,13 +162,13 @@ func (h *RESTHandler) listJobs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RESTHandler) getJob(w http.ResponseWriter, r *http.Request, jobID string) {
-	job, ok := h.scheduler.GetJob(jobID)
-	if !ok {
-		writeCrawlError(w, http.StatusNotFound, "job not found")
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
+	if wallet == "" {
+		writeCrawlError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
-	if wallet != "" && job.Owner != wallet {
+	job, ok := h.scheduler.GetJob(jobID)
+	if !ok || job.Owner != wallet {
 		writeCrawlError(w, http.StatusNotFound, "job not found")
 		return
 	}
@@ -183,13 +183,13 @@ func (h *RESTHandler) getResults(w http.ResponseWriter, r *http.Request, jobID s
 	}
 
 	// Verify ownership
-	job, ok := h.scheduler.GetJob(jobID)
-	if !ok {
-		writeCrawlError(w, http.StatusNotFound, "job not found")
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
+	if wallet == "" {
+		writeCrawlError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
-	if wallet != "" && job.Owner != wallet {
+	job, ok := h.scheduler.GetJob(jobID)
+	if !ok || job.Owner != wallet {
 		writeCrawlError(w, http.StatusNotFound, "job not found")
 		return
 	}
@@ -210,13 +210,13 @@ func (h *RESTHandler) cancelJob(w http.ResponseWriter, r *http.Request, jobID st
 	}
 
 	// Verify ownership
-	job, ok := h.scheduler.GetJob(jobID)
-	if !ok {
-		writeCrawlError(w, http.StatusNotFound, "job not found")
+	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
+	if wallet == "" {
+		writeCrawlError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := r.Header.Get("X-Moltbunker-Verified-Wallet")
-	if wallet != "" && job.Owner != wallet {
+	job, ok := h.scheduler.GetJob(jobID)
+	if !ok || job.Owner != wallet {
 		writeCrawlError(w, http.StatusNotFound, "job not found")
 		return
 	}

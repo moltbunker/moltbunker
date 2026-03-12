@@ -46,7 +46,7 @@ func CreateAnnouncePayload(nodeID types.NodeID, wallet common.Address, privKey *
 	message := fmt.Sprintf("%s:%s:%s:%d:%s", announceMessagePrefix, nodeIDHex, walletAddr, now, nonceHex)
 
 	// EIP-191 personal sign: prefix with "\x19Ethereum Signed Message:\n{len}{message}"
-	hash := ethPersonalHash(message)
+	hash := EthPersonalHash(message)
 
 	// Sign the hash
 	sig, err := crypto.Sign(hash, privKey)
@@ -111,7 +111,7 @@ func VerifyAnnouncePayload(payload *types.AnnouncePayload) (common.Address, erro
 	message := fmt.Sprintf("%s:%s:%s:%d:%s", announceMessagePrefix, payload.NodeID, payload.WalletAddress, payload.Timestamp, payload.Nonce)
 
 	// Hash with EIP-191 prefix
-	hash := ethPersonalHash(message)
+	hash := EthPersonalHash(message)
 
 	// Adjust V value for recovery
 	sigForRecovery := make([]byte, 65)
@@ -138,8 +138,8 @@ func VerifyAnnouncePayload(payload *types.AnnouncePayload) (common.Address, erro
 	return recoveredAddr, nil
 }
 
-// ethPersonalHash computes the EIP-191 personal_sign hash of a message.
-func ethPersonalHash(message string) []byte {
+// EthPersonalHash computes the EIP-191 personal_sign hash of a message.
+func EthPersonalHash(message string) []byte {
 	prefixed := fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(message), message)
 	return crypto.Keccak256([]byte(prefixed))
 }

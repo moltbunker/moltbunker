@@ -43,6 +43,41 @@ func (cm *ContainerManager) broadcastDeployment(ctx context.Context, deployment 
 		}
 	}
 
+	// Filter out providers ineligible for jobs (slashed, low reputation, unstaked)
+	if cm.payment != nil {
+		eligible := make([]*types.Node, 0, len(selectedNodes))
+		for _, n := range selectedNodes {
+			// Look up provider wallet from NodeID via stake verifier
+			sv := cm.router.StakeVerifier()
+			if sv == nil {
+				eligible = append(eligible, n) // No stake verifier — accept all
+				continue
+			}
+			providerAddr, known := sv.GetWallet(n.ID)
+			if !known {
+				eligible = append(eligible, n) // No wallet mapping yet — accept
+				continue
+			}
+			ok, err := cm.payment.IsEligibleForJobs(ctx, providerAddr)
+			if err != nil {
+				logging.Debug("eligibility check failed, including peer",
+					logging.NodeID(n.ID.String()[:16]), logging.Err(err))
+				eligible = append(eligible, n) // On error, include (fail-open for availability)
+				continue
+			}
+			if ok {
+				eligible = append(eligible, n)
+			} else {
+				logging.Debug("peer ineligible for jobs, skipping",
+					logging.NodeID(n.ID.String()[:16]))
+			}
+		}
+		if len(eligible) > 0 {
+			selectedNodes = eligible
+		}
+		// If all were ineligible, keep original selection to avoid zero-replica deploys
+	}
+
 	// Build region list from actual selected nodes for the broadcast payload.
 	// Do NOT mutate deployment.Regions — it's shared with cm.deployments and
 	// concurrent access would be a data race. Instead, create a copy for marshaling.
@@ -156,6 +191,20 @@ func (cm *ContainerManager) handleDeployRequest(ctx context.Context, msg *types.
 			cm.sendDeployAck(ctx, msg.From, deployment.ID, false, "provider tier insufficient")
 			return nil
 		}
+	}
+
+	// Check job acceptance flags
+	if deployment.RuntimeType == types.RuntimeTypeMolt && !cm.acceptFunctions {
+		logging.Info("rejecting deployment: serverless functions not accepted",
+			logging.ContainerID(deployment.ID))
+		cm.sendDeployAck(ctx, msg.From, deployment.ID, false, "serverless functions not accepted")
+		return nil
+	}
+	if deployment.RuntimeType != types.RuntimeTypeMolt && !cm.acceptServices {
+		logging.Info("rejecting deployment: container services not accepted",
+			logging.ContainerID(deployment.ID))
+		cm.sendDeployAck(ctx, msg.From, deployment.ID, false, "container services not accepted")
+		return nil
 	}
 
 	// Check if this node has minimum stake to act as provider

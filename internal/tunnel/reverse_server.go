@@ -68,6 +68,15 @@ func WithDomain(domain string) ReverseServerOption {
 	return func(s *ReverseServer) { s.domain = domain }
 }
 
+// WalletVerifyFunc verifies wallet proof and returns the staking tier.
+// Returns the tier string ("free", "starter", "bronze", etc.) or error.
+type WalletVerifyFunc func(proof *WalletProof, nodeID string) (tier string, err error)
+
+// WithWalletVerifier sets the wallet verification function for staked tiers.
+func WithWalletVerifier(fn WalletVerifyFunc) ReverseServerOption {
+	return func(s *ReverseServer) { s.verifyWallet = fn }
+}
+
 // ReverseServer accepts outbound connections from providers,
 // establishes yamux sessions, and registers subdomains.
 type ReverseServer struct {
@@ -78,6 +87,7 @@ type ReverseServer struct {
 	domain       string // e.g., "moltbunker.dev"
 	maxConns     int
 	maxPerIP     int
+	verifyWallet WalletVerifyFunc
 
 	// Connection tracking
 	connSemaphore chan struct{}
@@ -333,9 +343,24 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	// Determine tier (free unless wallet proof provided)
+	// Determine tier: verify wallet proof if provided, otherwise free tier
 	tier := "free"
-	// TODO: if req.WalletProof != nil, verify EIP-191 sig + check on-chain stake
+	if req.WalletProof != nil && s.verifyWallet != nil {
+		verified, verifyErr := s.verifyWallet(req.WalletProof, nodeID.String())
+		if verifyErr != nil {
+			logging.Warn("reverse tunnel: wallet proof verification failed",
+				"node_id", nodeID.String()[:16],
+				logging.Err(verifyErr),
+				logging.Component("reverse-tunnel"))
+			// Fall through to free tier — don't reject, just don't upgrade
+		} else {
+			tier = verified
+			logging.Debug("reverse tunnel: wallet verified",
+				"node_id", nodeID.String()[:16],
+				"tier", tier,
+				logging.Component("reverse-tunnel"))
+		}
+	}
 
 	// Validate registration (nonce, timestamp, TLS binding)
 	// Skip validation for reconnection tokens

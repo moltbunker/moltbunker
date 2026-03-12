@@ -28,9 +28,29 @@ func runOutputs(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// TODO: implement output retrieval from daemon
-	fmt.Printf("Retrieving outputs for job: %s\n", args[0])
-	Warning("Output retrieval not yet implemented")
+	dc := c.DaemonClient()
+	containerID := args[0]
+
+	// Get container detail which includes exposed ports and endpoints
+	detail, err := dc.GetContainerDetail(containerID)
+	if err != nil {
+		return fmt.Errorf("failed to get container detail: %w", err)
+	}
+
+	fields := [][2]string{
+		{"Container ID", containerID},
+		{"Status", detail.Status},
+		{"Image", detail.Image},
+		{"Provider Node", FormatNodeID(detail.ProviderNodeID)},
+	}
+	if detail.ProviderAddress != "" {
+		fields = append(fields, [2]string{"Provider Wallet", detail.ProviderAddress})
+	}
+	if detail.Owner != "" {
+		fields = append(fields, [2]string{"Owner", detail.Owner})
+	}
+
+	fmt.Println(StatusBox("Container Outputs", fields))
 
 	return nil
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -434,9 +435,17 @@ func generateExecKey() ([]byte, string, error) {
 		return nil, "", fmt.Errorf("no wallet")
 	}
 
-	// TODO: prompt for wallet password when keystore is encrypted.
-	// For now, use empty password (works for unencrypted testnet wallets).
+	// Try empty password first (unencrypted testnet wallets), then prompt.
 	masterKEK, err := deriveMasterKEK(wm, "")
+	if err != nil {
+		fmt.Fprint(os.Stderr, "Wallet password: ")
+		password, pwErr := readPasswordNoEcho()
+		fmt.Fprintln(os.Stderr) // newline after hidden input
+		if pwErr != nil {
+			return nil, "", fmt.Errorf("failed to read password: %w", pwErr)
+		}
+		masterKEK, err = deriveMasterKEK(wm, password)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("derive master KEK: %w", err)
 	}

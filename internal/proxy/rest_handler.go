@@ -24,6 +24,11 @@ func (h *RESTHandler) RegisterRoutes(mux *http.ServeMux, wrapRead, wrapWrite fun
 	mux.HandleFunc("/v1/proxy/status", wrapRead(h.handleStatus))
 }
 
+// extractProxyWallet returns the verified wallet from the auth middleware header.
+func extractProxyWallet(r *http.Request) string {
+	return r.Header.Get("X-Moltbunker-Verified-Wallet")
+}
+
 func (h *RESTHandler) handleSessions(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -31,10 +36,28 @@ func (h *RESTHandler) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sessions := h.server.Tracker().List()
+	wallet := extractProxyWallet(r)
+	if wallet == "" {
+		writeProxyError(w, http.StatusForbidden, "no verified identity")
+		return
+	}
+	wallet = strings.ToLower(wallet)
+
+	// Filter sessions to only those owned by the caller
+	all := h.server.Tracker().List()
+	var owned []*Session
+	for _, s := range all {
+		if s.Wallet == wallet {
+			owned = append(owned, s)
+		}
+	}
+	if owned == nil {
+		owned = []*Session{}
+	}
+
 	writeProxyJSON(w, http.StatusOK, map[string]any{
-		"sessions": sessions,
-		"count":    len(sessions),
+		"sessions": owned,
+		"count":    len(owned),
 	})
 }
 
@@ -45,16 +68,28 @@ func (h *RESTHandler) handleSessionByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	wallet := extractProxyWallet(r)
+	if wallet == "" {
+		writeProxyError(w, http.StatusForbidden, "no verified identity")
+		return
+	}
+	wallet = strings.ToLower(wallet)
+
 	switch r.Method {
 	case http.MethodGet:
 		session, ok := h.server.Tracker().Get(id)
-		if !ok {
+		if !ok || session.Wallet != wallet {
 			writeProxyError(w, http.StatusNotFound, "session not found")
 			return
 		}
 		writeProxyJSON(w, http.StatusOK, session)
 
 	case http.MethodDelete:
+		session, ok := h.server.Tracker().Get(id)
+		if !ok || session.Wallet != wallet {
+			writeProxyError(w, http.StatusNotFound, "session not found")
+			return
+		}
 		h.server.Tracker().Remove(id)
 		w.WriteHeader(http.StatusNoContent)
 
