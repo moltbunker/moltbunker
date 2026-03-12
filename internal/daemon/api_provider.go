@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -134,22 +138,53 @@ func (s *APIServer) handleProviderRegister(ctx context.Context, req *APIRequest)
 		}
 	}
 
-	// In a real implementation, this would:
-	// 1. Sign a registration message with the node's key
-	// 2. Submit to the provider registry contract
-	// 3. Wait for confirmation
+	// Bind on-chain identity (NodeID + region) via StakeWithIdentity if payment available.
+	// This ensures the provider's on-chain identity is set from the start, rather than
+	// waiting for cert rotation to call UpdateIdentity.
+	var stakedAmount string
+	var currentTier types.StakingTier
+	if s.containerManager != nil && s.containerManager.payment != nil {
+		nodeIDBytes := sha256Sum([]byte(s.node.nodeInfo.ID.String()))
+		regionBytes := sha256Sum([]byte(regReq.Region))
 
-	// For now, return a success response with mock data
+		// StakeWithIdentity with amount=0 just binds identity without staking.
+		// If auto-stake is requested, the user should stake separately via `provider stake add`.
+		err := s.containerManager.payment.StakeWithIdentity(ctx, big.NewInt(0), nodeIDBytes, regionBytes, 0)
+		if err != nil {
+			logging.Warn("failed to bind on-chain identity during registration",
+				logging.Err(err))
+			// Non-fatal — identity will be bound on next cert rotation
+		}
+
+		// Query current tier from chain
+		walletAddr := s.node.WalletAddress()
+		if walletAddr != (common.Address{}) {
+			if tier, err := s.containerManager.payment.GetTier(ctx, walletAddr); err == nil {
+				currentTier = tier
+			}
+			if info, err := s.containerManager.payment.GetStakeInfo(ctx, walletAddr); err == nil {
+				stakedAmount = info.StakedAmount.String()
+			}
+		}
+	}
+
+	if currentTier == "" {
+		currentTier = types.StakingTierStarter
+	}
+	if stakedAmount == "" {
+		stakedAmount = "0"
+	}
+
 	response := ProviderStatusResponse{
 		Registered:    true,
 		WalletAddress: regReq.WalletAddress,
 		NodeID:        s.node.nodeInfo.ID.String(),
 		Status:        "active",
-		Tier:          types.StakingTierStarter,
-		StakedAmount:  "0",
+		Tier:          currentTier,
+		StakedAmount:  stakedAmount,
 		ActiveJobs:    0,
 		TotalJobsRun:  0,
-		Reputation:    500, // Starting reputation
+		Reputation:    500,
 		Uptime:        100.0,
 		Region:        regReq.Region,
 		Resources:     regReq.Resources,

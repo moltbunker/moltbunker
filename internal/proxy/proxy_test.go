@@ -606,20 +606,27 @@ func TestRESTHandler_Sessions(t *testing.T) {
 	srv := NewServer(cfg, &DirectDialer{}, &AllowAllAuth{DefaultWallet: "w1"})
 	handler := NewRESTHandler(srv)
 
-	// Add a session
+	// Add sessions for two wallets
 	srv.Tracker().Add(&Session{
 		ID:       "test-session",
 		Wallet:   "w1",
 		Protocol: "socks5",
 		Target:   "example.com:443",
 	})
+	srv.Tracker().Add(&Session{
+		ID:       "other-session",
+		Wallet:   "w2",
+		Protocol: "http_connect",
+		Target:   "other.com:443",
+	})
 
 	mux := http.NewServeMux()
 	pass := func(h http.HandlerFunc) http.HandlerFunc { return h }
 	handler.RegisterRoutes(mux, pass, pass)
 
-	// List sessions
+	// List sessions — should only see own wallet's sessions
 	req := httptest.NewRequest("GET", "/v1/proxy/sessions", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "w1")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -633,20 +640,32 @@ func TestRESTHandler_Sessions(t *testing.T) {
 	}
 	json.NewDecoder(w.Body).Decode(&listResp)
 	if listResp.Count != 1 {
-		t.Errorf("count = %d, want 1", listResp.Count)
+		t.Errorf("count = %d, want 1 (only own sessions)", listResp.Count)
 	}
 
-	// Get session by ID
+	// Get session by ID (own)
 	req = httptest.NewRequest("GET", "/v1/proxy/sessions/test-session", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "w1")
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
-		t.Fatalf("get session: status %d", w.Code)
+		t.Fatalf("get own session: status %d", w.Code)
 	}
 
-	// Delete session
+	// Get session by ID (other wallet's) — should return 404
+	req = httptest.NewRequest("GET", "/v1/proxy/sessions/other-session", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "w1")
+	w = httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("get other session: status %d, want 404", w.Code)
+	}
+
+	// Delete session (own)
 	req = httptest.NewRequest("DELETE", "/v1/proxy/sessions/test-session", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "w1")
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -654,8 +673,9 @@ func TestRESTHandler_Sessions(t *testing.T) {
 		t.Fatalf("delete session: status %d", w.Code)
 	}
 
-	if srv.Tracker().Count() != 0 {
-		t.Error("session should be removed")
+	// other-session should still exist
+	if srv.Tracker().Count() != 1 {
+		t.Errorf("tracker count = %d, want 1 (other session remains)", srv.Tracker().Count())
 	}
 }
 

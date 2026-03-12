@@ -64,6 +64,9 @@ type ContainerManager struct {
 	containerdSocket string
 	runtimeName      string          // resolved OCI runtime name for reconnection
 	kataConfig       *runtime.KataConfig // saved for reconnection path
+	acceptServices   bool                // accept long-running services
+	acceptJobs       bool                // accept batch jobs
+	acceptFunctions  bool                // accept serverless functions (Molt)
 	imageGC          *runtime.ImageGC    // image garbage collector (nil if no containerd)
 	cleanupMgr       *runtime.CleanupManager // P1-1: orphan container cleanup
 	healthChecker    *runtime.HealthChecker  // P1-2: container-level health probes
@@ -157,6 +160,9 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		containerdSocket:   config.ContainerdSocket,
 		runtimeName:        rtCaps.RuntimeName,
 		kataConfig:         config.KataConfig,
+		acceptServices:     config.AcceptServices,
+		acceptJobs:         config.AcceptJobs,
+		acceptFunctions:    config.AcceptFunctions,
 	}
 
 	// Initialize Molt (WASM serverless) runtime if enabled
@@ -854,6 +860,14 @@ func (cm *ContainerManager) Stop(ctx context.Context, containerID string) error 
 					logging.Err(err))
 			}
 		}
+
+		// Finalize escrow on stop so it doesn't leak if Delete is never called.
+		jobID := payment.JobIDFromString(containerID)
+		if err := cm.payment.FinalizeJob(ctx, jobID); err != nil {
+			logging.Warn("failed to finalize escrow on stop",
+				logging.ContainerID(containerID),
+				logging.Err(err))
+		}
 	}
 
 	// Release image from GC tracking
@@ -1341,6 +1355,24 @@ func (cm *ContainerManager) reconcileContainerStatus(ctx context.Context) {
 						"actual", string(actual))
 					dep.Status = actual
 					cm.saveStateAsync()
+
+					// Reconcile payment for crashed containers: record failure and refund.
+					// Only the originator owns the escrow.
+					isOriginator := dep.OriginatorID == cm.node.nodeInfo.ID
+					if cm.payment != nil && isOriginator {
+						providerAddr := cm.node.WalletAddress()
+						if providerAddr != (common.Address{}) {
+							jobID := payment.JobIDFromString(id)
+							if err := cm.payment.RecordJobFailed(ctx, providerAddr); err != nil {
+								logging.Warn("failed to record job failure for crashed container",
+									logging.ContainerID(id), logging.Err(err))
+							}
+							if err := cm.payment.RefundJob(ctx, jobID); err != nil {
+								logging.Warn("failed to refund escrow for crashed container",
+									logging.ContainerID(id), logging.Err(err))
+							}
+						}
+					}
 				}
 				cm.mu.Unlock()
 			}
@@ -1363,6 +1395,52 @@ func (cm *ContainerManager) LifecycleMetrics() ContainerLifecycleMetrics {
 		Stops:    cm.stopsTotal.Load(),
 		Deletes:  cm.deletesTotal.Load(),
 		Failures: cm.failuresTotal.Load(),
+	}
+}
+
+// FinalizeAllEscrows releases proportional payment and finalizes escrows
+// for all running containers. Called during graceful shutdown to prevent
+// escrows from being stranded if the daemon doesn't restart.
+func (cm *ContainerManager) FinalizeAllEscrows(ctx context.Context) {
+	if cm.payment == nil {
+		return
+	}
+
+	cm.mu.RLock()
+	var running []struct {
+		id           string
+		startedAt    time.Time
+		originatorID types.NodeID
+	}
+	for id, dep := range cm.deployments {
+		if dep.Status == types.ContainerStatusRunning && !dep.StartedAt.IsZero() {
+			running = append(running, struct {
+				id           string
+				startedAt    time.Time
+				originatorID types.NodeID
+			}{id, dep.StartedAt, dep.OriginatorID})
+		}
+	}
+	cm.mu.RUnlock()
+
+	for _, r := range running {
+		if r.originatorID != cm.node.nodeInfo.ID {
+			continue // Only the originator owns the escrow
+		}
+		jobID := payment.JobIDFromString(r.id)
+		uptime := time.Since(r.startedAt)
+
+		if err := cm.payment.ReleaseJobPayment(ctx, jobID, uptime); err != nil {
+			logging.Warn("shutdown: failed to release payment",
+				logging.ContainerID(r.id), logging.Err(err))
+		}
+		if err := cm.payment.FinalizeJob(ctx, jobID); err != nil {
+			logging.Warn("shutdown: failed to finalize escrow",
+				logging.ContainerID(r.id), logging.Err(err))
+		} else {
+			logging.Info("shutdown: escrow finalized",
+				logging.ContainerID(r.id))
+		}
 	}
 }
 
@@ -1449,17 +1527,36 @@ func (cm *ContainerManager) runAttestationLoop(ctx context.Context) {
 	}
 
 	cm.submitAttestation(ctx)
+	cm.checkMissedAttestations(ctx)
 
-	ticker := time.NewTicker(24 * time.Hour)
-	defer ticker.Stop()
+	attestTicker := time.NewTicker(24 * time.Hour)
+	checkTicker := time.NewTicker(6 * time.Hour)
+	defer attestTicker.Stop()
+	defer checkTicker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-attestTicker.C:
 			cm.submitAttestation(ctx)
+		case <-checkTicker.C:
+			cm.checkMissedAttestations(ctx)
 		}
+	}
+}
+
+// checkMissedAttestations checks if this provider has missed attestations
+// and logs a warning. This ensures operators are alerted before penalties.
+func (cm *ContainerManager) checkMissedAttestations(ctx context.Context) {
+	providerAddr := cm.node.WalletAddress()
+	if providerAddr == (common.Address{}) {
+		return
+	}
+	if err := cm.payment.CheckMissedAttestations(ctx, providerAddr); err != nil {
+		logging.Warn("missed attestation check failed or attestations missed",
+			logging.Err(err),
+			logging.Component("attestation"))
 	}
 }
 
@@ -1533,10 +1630,14 @@ func (cm *ContainerManager) monitorHealthFailures(ctx context.Context) {
 						continue
 					}
 
-					// Report the violation on-chain
+					// Report the violation on-chain.
+					// Each node monitors its own replicas and reports against itself.
+					// In multi-node, the originator receives health status via gossip
+					// and each provider self-reports their own violations.
 					jobID := payment.JobIDFromString(containerID)
+					providerAddr := cm.node.WalletAddress()
 					_, err := cm.payment.ReportViolation(ctx,
-						cm.node.WalletAddress(), // provider to report against
+						providerAddr,
 						jobID,
 						payment.ViolationDowntime,
 						[]byte(fmt.Sprintf("replica %d unhealthy", replicaIdx)),
@@ -1550,6 +1651,16 @@ func (cm *ContainerManager) monitorHealthFailures(ctx context.Context) {
 						logging.Info("reported health violation on-chain",
 							logging.ContainerID(containerID),
 							"replica_index", replicaIdx)
+
+						// Bridge slashing → reputation: record the slash event
+						providerAddr := cm.node.WalletAddress()
+						if providerAddr != (common.Address{}) {
+							if slashErr := cm.payment.RecordSlashEvent(ctx, providerAddr); slashErr != nil {
+								logging.Warn("failed to record slash event in reputation",
+									logging.ContainerID(containerID),
+									logging.Err(slashErr))
+							}
+						}
 					}
 					reported[reportKey] = time.Now()
 				}

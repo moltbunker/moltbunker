@@ -377,7 +377,10 @@ func (e *StorageEngine) ListObjects(ctx context.Context, input *ListObjectsInput
 	if bucket == nil {
 		return nil, fmt.Errorf("bucket %q not found", input.Bucket)
 	}
-	if input.Owner != "" && bucket.Owner != input.Owner {
+	if input.Owner == "" {
+		return nil, fmt.Errorf("owner is required for listing objects")
+	}
+	if bucket.Owner != input.Owner {
 		return nil, fmt.Errorf("permission denied: bucket %q is owned by another wallet", input.Bucket)
 	}
 

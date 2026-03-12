@@ -85,8 +85,49 @@ Runs health checks, configures containerd, and updates your node role.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			Info("Provider setup wizard")
 			Warning("This will update your node role to hybrid (provider + requester)")
-			// TODO: Phase 7 — huh wizard with doctor checks, containerd, staking tier
-			fmt.Println(Hint("Provider enable wizard not yet implemented"))
+
+			// Step 1: Run doctor checks
+			fmt.Println(Hint("Step 1/4: Checking prerequisites..."))
+			c, err := GetClient()
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			if err := c.RequireDaemon(); err != nil {
+				return fmt.Errorf("daemon must be running: %w", err)
+			}
+
+			dc := c.DaemonClient()
+
+			// Step 2: Update config to provider mode
+			fmt.Println(Hint("Step 2/3: Enabling provider mode..."))
+			if err := dc.ConfigSet("node.role", "hybrid"); err != nil {
+				return fmt.Errorf("failed to set node role: %w", err)
+			}
+			if err := dc.ConfigSet("node.provider.enabled", "true"); err != nil {
+				return fmt.Errorf("failed to enable provider: %w", err)
+			}
+
+			// Step 3: Register provider
+			fmt.Println(Hint("Step 3/3: Registering provider..."))
+			regResp, err := dc.ProviderRegister(&client.ProviderRegisterRequest{
+				TargetTier: "starter",
+			})
+			if err != nil {
+				Warning(fmt.Sprintf("Registration API call failed: %v", err))
+				Warning("You may need to restart the daemon for config changes to take effect")
+			} else {
+				fmt.Println(StatusBox("Provider Registered", [][2]string{
+					{"Node ID", FormatNodeID(regResp.NodeID)},
+					{"Tier", regResp.CurrentTier},
+				}))
+			}
+
+			Success("Provider mode enabled!")
+			fmt.Println(Hint("Restart daemon to apply: moltbunker stop && moltbunker start"))
+			fmt.Println(Hint("Stake tokens with: moltbunker provider stake add --amount <BUNKER>"))
+
 			return nil
 		},
 	}
@@ -97,9 +138,32 @@ func newProviderDisableCmd() *cobra.Command {
 		Use:   "disable",
 		Short: "Revert to requester mode",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			Info("Reverting to requester mode...")
-			// TODO: Phase 7 — confirmation, config update, daemon stop
-			fmt.Println(Hint("Provider disable not yet implemented"))
+			Warning("This will revert your node to requester-only mode")
+			Warning("Running containers will NOT be stopped, but no new jobs will be accepted")
+
+			c, err := GetClient()
+			if err != nil {
+				return err
+			}
+			defer c.Close()
+
+			if err := c.RequireDaemon(); err != nil {
+				return fmt.Errorf("daemon must be running: %w", err)
+			}
+
+			dc := c.DaemonClient()
+
+			// Update config to requester-only mode
+			if err := dc.ConfigSet("node.role", "requester"); err != nil {
+				return fmt.Errorf("failed to set node role: %w", err)
+			}
+			if err := dc.ConfigSet("node.provider.enabled", "false"); err != nil {
+				return fmt.Errorf("failed to disable provider: %w", err)
+			}
+
+			Success("Provider mode disabled. Restart daemon to apply.")
+			fmt.Println(Hint("moltbunker stop && moltbunker start"))
+
 			return nil
 		},
 	}

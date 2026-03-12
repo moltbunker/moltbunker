@@ -106,4 +106,9 @@ type ContainerManagerConfig struct {
 	MoltEnabled      bool             // Enable Molt WASM runtime
 	MoltConfig       *molt.MoltConfig // Molt runtime settings (nil = use defaults)
 	StateStore       state.StateStore // Persistent state store (nil = legacy JSON fallback)
+
+	// Job acceptance flags (from provider config)
+	AcceptServices  bool // Accept long-running service deployments
+	AcceptJobs      bool // Accept batch job deployments
+	AcceptFunctions bool // Accept serverless function (Molt) deployments
 }

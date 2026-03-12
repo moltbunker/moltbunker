@@ -108,13 +108,13 @@ func (h *RESTHandler) deployAgent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *RESTHandler) getAgent(w http.ResponseWriter, r *http.Request, agentID string) {
-	agent, ok := h.runtime.Get(agentID)
-	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
+	wallet := extractAgentWallet(r)
+	if wallet == "" {
+		writeError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := extractAgentWallet(r)
-	if wallet != "" && agent.Spec.Owner != wallet {
+	agent, ok := h.runtime.Get(agentID)
+	if !ok || agent.Spec.Owner != wallet {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
 		return
 	}
@@ -122,13 +122,13 @@ func (h *RESTHandler) getAgent(w http.ResponseWriter, r *http.Request, agentID s
 }
 
 func (h *RESTHandler) stopAgent(w http.ResponseWriter, r *http.Request, agentID string) {
-	agent, ok := h.runtime.Get(agentID)
-	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
+	wallet := extractAgentWallet(r)
+	if wallet == "" {
+		writeError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := extractAgentWallet(r)
-	if wallet != "" && agent.Spec.Owner != wallet {
+	agent, ok := h.runtime.Get(agentID)
+	if !ok || agent.Spec.Owner != wallet {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
 		return
 	}
@@ -140,13 +140,13 @@ func (h *RESTHandler) stopAgent(w http.ResponseWriter, r *http.Request, agentID 
 }
 
 func (h *RESTHandler) deleteAgent(w http.ResponseWriter, r *http.Request, agentID string) {
-	agent, ok := h.runtime.Get(agentID)
-	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
+	wallet := extractAgentWallet(r)
+	if wallet == "" {
+		writeError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := extractAgentWallet(r)
-	if wallet != "" && agent.Spec.Owner != wallet {
+	agent, ok := h.runtime.Get(agentID)
+	if !ok || agent.Spec.Owner != wallet {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
 		return
 	}
@@ -158,13 +158,13 @@ func (h *RESTHandler) deleteAgent(w http.ResponseWriter, r *http.Request, agentI
 }
 
 func (h *RESTHandler) invokeAgent(w http.ResponseWriter, r *http.Request, agentID string) {
-	agent, ok := h.runtime.Get(agentID)
-	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
+	wallet := extractAgentWallet(r)
+	if wallet == "" {
+		writeError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := extractAgentWallet(r)
-	if wallet != "" && agent.Spec.Owner != wallet {
+	agent, ok := h.runtime.Get(agentID)
+	if !ok || agent.Spec.Owner != wallet {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
 		return
 	}
@@ -193,13 +193,13 @@ func (h *RESTHandler) invokeAgent(w http.ResponseWriter, r *http.Request, agentI
 
 func (h *RESTHandler) handleMemory(w http.ResponseWriter, r *http.Request, agentID string) {
 	// Verify ownership
-	agent, ok := h.runtime.Get(agentID)
-	if !ok {
-		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
+	wallet := extractAgentWallet(r)
+	if wallet == "" {
+		writeError(w, http.StatusForbidden, "no verified identity")
 		return
 	}
-	wallet := extractAgentWallet(r)
-	if wallet != "" && agent.Spec.Owner != wallet {
+	agent, ok := h.runtime.Get(agentID)
+	if !ok || agent.Spec.Owner != wallet {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("agent %q not found", agentID))
 		return
 	}

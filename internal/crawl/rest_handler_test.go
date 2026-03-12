@@ -174,6 +174,7 @@ func TestHandler_GetJob_NotFound(t *testing.T) {
 	_, mux := newTestServer()
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs/nonexistent", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xsomeone")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
@@ -226,6 +227,7 @@ func TestHandler_CancelJob_NotFound(t *testing.T) {
 	_, mux := newTestServer()
 
 	req := httptest.NewRequest("POST", "/v1/crawl/jobs/nonexistent/cancel", nil)
+	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xsomeone")
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 

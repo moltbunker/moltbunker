@@ -216,6 +216,19 @@ func (gp *GossipProtocol) CleanStaleState(maxAge time.Duration) {
 	}
 }
 
+// RemoveLocalState clears all local gossip state and broadcasts the
+// empty state to peers. Used during graceful shutdown so peers immediately
+// stop routing traffic to this node.
+func (gp *GossipProtocol) RemoveLocalState() {
+	gp.stateMu.Lock()
+	gp.state = make(map[string]*stateEntry)
+	gp.stateMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	gp.gossip(ctx)
+}
+
 // GetState returns current state
 func (gp *GossipProtocol) GetState(key string) (interface{}, bool) {
 	gp.stateMu.RLock()

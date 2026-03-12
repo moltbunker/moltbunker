@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"flag"
 	"fmt"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/moltbunker/moltbunker/internal/agent"
 	"github.com/moltbunker/moltbunker/internal/api"
 	"github.com/moltbunker/moltbunker/internal/cloning"
@@ -276,6 +278,31 @@ func main() {
 		})
 	}
 
+	// Register provider in reputation system if not yet registered.
+	// Must happen before event watcher so reputation calls succeed.
+	if !paymentCfg.MockMode {
+		util.SafeGoWithName("reputation-register", func() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(15 * time.Second): // wait for staking info to be available
+			}
+			walletAddr := node.WalletAddress()
+			if walletAddr == (common.Address{}) {
+				return
+			}
+			regCtx, regCancel := context.WithTimeout(ctx, 15*time.Second)
+			defer regCancel()
+			if err := paymentSvc.RegisterProviderReputation(regCtx, walletAddr); err != nil {
+				logging.Debug("provider reputation registration skipped or failed",
+					logging.Err(err), logging.Component("daemon"))
+			} else {
+				logging.Info("provider registered in reputation system",
+					logging.Component("daemon"))
+			}
+		})
+	}
+
 	// Start event watcher for on-chain event-driven cache invalidation
 	var eventWatcher *payment.EventWatcher
 	if !paymentCfg.MockMode {
@@ -445,6 +472,39 @@ func main() {
 					} else {
 						revOpts := []tunnel.ReverseServerOption{
 							tunnel.WithDomain(ingressDomain),
+							tunnel.WithWalletVerifier(func(proof *tunnel.WalletProof, nodeID string) (string, error) {
+								if proof == nil || proof.Address == "" || proof.Signature == "" {
+									return "", fmt.Errorf("incomplete wallet proof")
+								}
+								// Verify EIP-191 signature: message must bind nodeID to wallet
+								walletAddr := common.HexToAddress(proof.Address)
+								msgHash := p2p.EthPersonalHash(proof.Message)
+								sigBytes, err := hex.DecodeString(strings.TrimPrefix(proof.Signature, "0x"))
+								if err != nil || len(sigBytes) != 65 {
+									return "", fmt.Errorf("invalid signature format")
+								}
+								sigForRecovery := make([]byte, 65)
+								copy(sigForRecovery, sigBytes)
+								if sigForRecovery[64] >= 27 {
+									sigForRecovery[64] -= 27
+								}
+								pubKey, err := crypto.SigToPub(msgHash, sigForRecovery)
+								if err != nil {
+									return "", fmt.Errorf("signature recovery failed: %w", err)
+								}
+								recovered := crypto.PubkeyToAddress(*pubKey)
+								if recovered != walletAddr {
+									return "", fmt.Errorf("wallet address mismatch")
+								}
+								// Check on-chain stake tier
+								checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+								defer checkCancel()
+								tierVal, err := paymentSvc.GetTier(checkCtx, walletAddr)
+								if err != nil {
+									return "", fmt.Errorf("stake check failed: %w", err)
+								}
+								return string(tierVal), nil
+							}),
 						}
 						if cfg.Node.Provider.ReverseTunnelMaxConns > 0 {
 							revOpts = append(revOpts, tunnel.WithMaxConns(cfg.Node.Provider.ReverseTunnelMaxConns))
@@ -752,6 +812,13 @@ func main() {
 		logging.Info("stopping certificate rotator...", logging.Component("daemon"))
 		certRotator.Stop()
 
+		// Finalize escrows for running containers before payment service shuts down.
+		// This prevents escrows from being stranded if the daemon never restarts.
+		logging.Info("finalizing escrows for running containers...", logging.Component("daemon"))
+		if cm := apiServer.GetContainerManager(); cm != nil {
+			cm.FinalizeAllEscrows(shutdownCtx)
+		}
+
 		// Stop payment service
 		logging.Info("stopping payment service...", logging.Component("daemon"))
 		paymentSvc.Stop()
@@ -782,6 +849,14 @@ func main() {
 		if certPinStore := node.CertPinStore(); certPinStore != nil {
 			if err := certPinStore.Save(certPinsPath); err != nil {
 				logging.Error("failed to save cert pin store", logging.Err(err), logging.Component("daemon"))
+			}
+		}
+
+		// Broadcast gossip leave so peers stop routing traffic to us
+		if cm := apiServer.GetContainerManager(); cm != nil {
+			if gp := cm.GossipProtocol(); gp != nil {
+				gp.RemoveLocalState()
+				logging.Info("gossip leave broadcast sent", logging.Component("daemon"))
 			}
 		}
 
