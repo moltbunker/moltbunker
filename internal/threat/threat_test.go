@@ -140,9 +140,9 @@ func TestSignalConfigIsEnabled(t *testing.T) {
 
 func TestNewThreatLevel(t *testing.T) {
 	tests := []struct {
-		score          float64
-		expectedLevel  string
-		expectedRec    string
+		score         float64
+		expectedLevel string
+		expectedRec   string
 	}{
 		{0.0, "low", "continue_normal"},
 		{0.20, "low", "continue_normal"},

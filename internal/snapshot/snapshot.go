@@ -21,20 +21,20 @@ import (
 
 // Snapshot represents a point-in-time capture of container state
 type Snapshot struct {
-	ID           string            `json:"id"`
-	ContainerID  string            `json:"container_id"`
-	CreatedAt    time.Time         `json:"created_at"`
-	Size         int64             `json:"size"`         // Original data size
-	StoredSize   int64             `json:"stored_size"`  // Size on disk (after compression/encryption)
-	Checksum     string            `json:"checksum"`     // Checksum of original data
-	Type         SnapshotType      `json:"type"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	ParentID     string            `json:"parent_id,omitempty"` // For incremental snapshots
-	DataPath     string            `json:"data_path"`
-	Compressed   bool              `json:"compressed"`
-	Encrypted    bool              `json:"encrypted"`
-	KeyID        string            `json:"key_id,omitempty"`      // Reference to encryption key
-	DeltaBlocks  []DeltaBlock      `json:"delta_blocks,omitempty"` // For incremental snapshots
+	ID          string            `json:"id"`
+	ContainerID string            `json:"container_id"`
+	CreatedAt   time.Time         `json:"created_at"`
+	Size        int64             `json:"size"`        // Original data size
+	StoredSize  int64             `json:"stored_size"` // Size on disk (after compression/encryption)
+	Checksum    string            `json:"checksum"`    // Checksum of original data
+	Type        SnapshotType      `json:"type"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	ParentID    string            `json:"parent_id,omitempty"` // For incremental snapshots
+	DataPath    string            `json:"data_path"`
+	Compressed  bool              `json:"compressed"`
+	Encrypted   bool              `json:"encrypted"`
+	KeyID       string            `json:"key_id,omitempty"`       // Reference to encryption key
+	DeltaBlocks []DeltaBlock      `json:"delta_blocks,omitempty"` // For incremental snapshots
 }
 
 // SnapshotType defines the type of snapshot
@@ -60,12 +60,12 @@ const blockSize = 4096
 type SnapshotConfig struct {
 	// Storage settings
 	StoragePath      string `yaml:"storage_path"`
-	MaxSnapshots     int    `yaml:"max_snapshots"`      // Per container
-	MaxTotalSize     int64  `yaml:"max_total_size"`     // Total size in bytes
-	CompressionLevel int    `yaml:"compression_level"`  // 0-9, 0 = none
+	MaxSnapshots     int    `yaml:"max_snapshots"`     // Per container
+	MaxTotalSize     int64  `yaml:"max_total_size"`    // Total size in bytes
+	CompressionLevel int    `yaml:"compression_level"` // 0-9, 0 = none
 
 	// Encryption settings
-	EncryptionEnabled bool   `yaml:"encryption_enabled"` // Enable encryption at rest
+	EncryptionEnabled bool   `yaml:"encryption_enabled"`  // Enable encryption at rest
 	EncryptionKeyPath string `yaml:"encryption_key_path"` // Path to master encryption key
 
 	// Retention
@@ -75,7 +75,7 @@ type SnapshotConfig struct {
 // DefaultSnapshotConfig returns the default snapshot configuration
 func DefaultSnapshotConfig() *SnapshotConfig {
 	return &SnapshotConfig{
-		StoragePath:       "",  // Will be set to datadir/snapshots
+		StoragePath:       "", // Will be set to datadir/snapshots
 		MaxSnapshots:      10,
 		MaxTotalSize:      10 * 1024 * 1024 * 1024, // 10GB
 		CompressionLevel:  6,
@@ -90,8 +90,8 @@ type Manager struct {
 	mu            sync.RWMutex
 	snapshots     map[string][]*Snapshot // containerID -> snapshots
 	totalSize     int64
-	encryptionKey []byte                          // Master encryption key (32 bytes for AES-256)
-	blockHashes   map[string]map[int64]string     // containerID -> offset -> hash (for incremental)
+	encryptionKey []byte                      // Master encryption key (32 bytes for AES-256)
+	blockHashes   map[string]map[int64]string // containerID -> offset -> hash (for incremental)
 }
 
 // NewManager creates a new snapshot manager
@@ -877,14 +877,14 @@ func (m *Manager) GetStats() SnapshotStats {
 
 // SnapshotStats contains snapshot statistics
 type SnapshotStats struct {
-	TotalCount       int     `json:"total_count"`
-	TotalSize        int64   `json:"total_size"`         // Total stored size
-	TotalOriginalSize int64  `json:"total_original_size"` // Total original size before compression
-	ContainerCount   int     `json:"container_count"`
-	MaxSize          int64   `json:"max_size"`
-	MaxPerContainer  int     `json:"max_per_container"`
-	CompressionRatio float64 `json:"compression_ratio"`   // Average compression ratio
-	EncryptedCount   int     `json:"encrypted_count"`
+	TotalCount        int     `json:"total_count"`
+	TotalSize         int64   `json:"total_size"`          // Total stored size
+	TotalOriginalSize int64   `json:"total_original_size"` // Total original size before compression
+	ContainerCount    int     `json:"container_count"`
+	MaxSize           int64   `json:"max_size"`
+	MaxPerContainer   int     `json:"max_per_container"`
+	CompressionRatio  float64 `json:"compression_ratio"` // Average compression ratio
+	EncryptedCount    int     `json:"encrypted_count"`
 }
 
 // GetDetailedStats returns detailed snapshot statistics including compression ratios

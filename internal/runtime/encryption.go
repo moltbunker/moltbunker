@@ -14,12 +14,12 @@ import (
 
 // EncryptionManager manages encrypted volumes for containers
 type EncryptionManager struct {
-	dataDir     string
-	volumesDir  string
-	mountsDir   string
-	keysDir     string
-	volumes     map[string]*EncryptedVolume
-	mu          sync.RWMutex
+	dataDir    string
+	volumesDir string
+	mountsDir  string
+	keysDir    string
+	volumes    map[string]*EncryptedVolume
+	mu         sync.RWMutex
 }
 
 // EncryptedVolume represents an encrypted container volume

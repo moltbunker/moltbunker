@@ -347,4 +347,3 @@ type storageCallArgs struct {
 	ContentType string `json:"content_type,omitempty"` // put only
 	Prefix      string `json:"prefix,omitempty"`       // list only
 }
-

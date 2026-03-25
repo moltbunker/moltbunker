@@ -52,12 +52,12 @@ const (
 // AdminNodeMetadata contains admin-assigned metadata for a node
 type AdminNodeMetadata struct {
 	NodeID      string    `json:"node_id"`
-	Badges      []string  `json:"badges,omitempty"`       // e.g. ["trusted"]
+	Badges      []string  `json:"badges,omitempty"` // e.g. ["trusted"]
 	Blocked     bool      `json:"blocked"`
 	BlockReason string    `json:"block_reason,omitempty"`
 	Notes       string    `json:"notes,omitempty"`
 	UpdatedAt   time.Time `json:"updated_at"`
-	UpdatedBy   string    `json:"updated_by"`             // admin wallet address
+	UpdatedBy   string    `json:"updated_by"` // admin wallet address
 }
 
 // AdminMetadataStore persists per-node admin metadata to a JSON file

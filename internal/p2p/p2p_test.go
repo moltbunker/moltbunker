@@ -603,10 +603,10 @@ func TestGetRegionFromCountry_MappingCoverage(t *testing.T) {
 		{"IL", "Middle-East"},
 		{"ZA", "Africa"},
 		{"NG", "Africa"},
-		{"TT", "Americas"},     // Trinidad and Tobago — mapped
-		{"XX", "Unknown"},      // Not a real country code
-		{"ZZ", "Unknown"},      // Not a real country code
-		{"AA", "Unknown"},      // Not a real country code
+		{"TT", "Americas"}, // Trinidad and Tobago — mapped
+		{"XX", "Unknown"},  // Not a real country code
+		{"ZZ", "Unknown"},  // Not a real country code
+		{"AA", "Unknown"},  // Not a real country code
 	}
 
 	for _, tt := range tests {

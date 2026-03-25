@@ -363,4 +363,3 @@ func (c *ReverseClient) Subdomain() string {
 	defer c.mu.Unlock()
 	return c.subdomain
 }
-

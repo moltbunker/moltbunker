@@ -26,14 +26,14 @@ type MoltDeployResponse struct {
 
 // MoltInfo describes a deployed Molt.
 type MoltInfo struct {
-	ID            string             `json:"id"`
-	ModuleCID     string             `json:"module_cid"`
-	Status        string             `json:"status"`
-	CreatedAt     time.Time          `json:"created_at"`
-	Owner         string             `json:"owner,omitempty"`
-	MemoryLimitMB uint32             `json:"memory_limit_mb,omitempty"`
-	TimeoutMs     int                `json:"timeout_ms,omitempty"`
-	Metrics       *MoltMetrics       `json:"metrics,omitempty"`
+	ID            string       `json:"id"`
+	ModuleCID     string       `json:"module_cid"`
+	Status        string       `json:"status"`
+	CreatedAt     time.Time    `json:"created_at"`
+	Owner         string       `json:"owner,omitempty"`
+	MemoryLimitMB uint32       `json:"memory_limit_mb,omitempty"`
+	TimeoutMs     int          `json:"timeout_ms,omitempty"`
+	Metrics       *MoltMetrics `json:"metrics,omitempty"`
 }
 
 // MoltMetrics contains invocation metrics for a Molt deployment.

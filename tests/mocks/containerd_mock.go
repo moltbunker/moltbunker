@@ -35,8 +35,8 @@ type MockContainerdClient struct {
 	namespace  string
 
 	// Track method calls for verification
-	calls     []MethodCall
-	callsMu   sync.Mutex
+	calls   []MethodCall
+	callsMu sync.Mutex
 
 	// Error injection
 	createErr error

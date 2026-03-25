@@ -28,9 +28,9 @@ type EscrowContract struct {
 	mockMode      bool
 
 	// Maps Go-side jobID → on-chain reservationId (real mode only)
-	reservationIDs    map[[32]byte]*big.Int
-	reservationTimes  map[[32]byte]time.Time // tracks when each reservation was stored
-	reservationMu     sync.RWMutex
+	reservationIDs   map[[32]byte]*big.Int
+	reservationTimes map[[32]byte]time.Time // tracks when each reservation was stored
+	reservationMu    sync.RWMutex
 
 	// Mock state
 	mockEscrows map[[32]byte]*EscrowData
@@ -72,9 +72,9 @@ type PaymentReleasedEvent struct {
 // NewEscrowContract creates a new escrow contract client
 func NewEscrowContract(baseClient *BaseClient, tokenContract *TokenContract, contractAddr common.Address) (*EscrowContract, error) {
 	ec := &EscrowContract{
-		baseClient:     baseClient,
-		tokenContract:  tokenContract,
-		contractAddr:   contractAddr,
+		baseClient:       baseClient,
+		tokenContract:    tokenContract,
+		contractAddr:     contractAddr,
 		reservationIDs:   make(map[[32]byte]*big.Int),
 		reservationTimes: make(map[[32]byte]time.Time),
 		mockEscrows:      make(map[[32]byte]*EscrowData),
@@ -103,7 +103,7 @@ func NewEscrowContract(baseClient *BaseClient, tokenContract *TokenContract, con
 // NewMockEscrowContract creates a mock escrow contract for testing
 func NewMockEscrowContract() *EscrowContract {
 	return &EscrowContract{
-		mockMode:       true,
+		mockMode:         true,
 		reservationIDs:   make(map[[32]byte]*big.Int),
 		reservationTimes: make(map[[32]byte]time.Time),
 		mockEscrows:      make(map[[32]byte]*EscrowData),

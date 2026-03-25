@@ -27,14 +27,14 @@ const (
 
 // CheckResult represents the result of a single check
 type CheckResult struct {
-	Name        string   `json:"name"`
-	Category    Category `json:"category"`
-	Status      Status   `json:"status"`
-	Message     string   `json:"message"`
-	Details     string   `json:"details,omitempty"`
-	Fixable     bool     `json:"fixable"`
-	FixCommand  string   `json:"fix_command,omitempty"`
-	FixPackage  string   `json:"fix_package,omitempty"`
+	Name       string   `json:"name"`
+	Category   Category `json:"category"`
+	Status     Status   `json:"status"`
+	Message    string   `json:"message"`
+	Details    string   `json:"details,omitempty"`
+	Fixable    bool     `json:"fixable"`
+	FixCommand string   `json:"fix_command,omitempty"`
+	FixPackage string   `json:"fix_package,omitempty"`
 }
 
 // Checker is the interface that all checkers must implement

@@ -31,15 +31,15 @@ type RegistryContract struct {
 }
 
 type mockSubdomain struct {
-	Owner        common.Address
-	DeploymentID [32]byte
-	RegisteredAt time.Time
-	ExpiresAt    time.Time
+	Owner         common.Address
+	DeploymentID  [32]byte
+	RegisteredAt  time.Time
+	ExpiresAt     time.Time
 	ReservedUntil time.Time
-	Referrer     common.Address
-	Description  string
-	AvatarURL    string
-	PrimaryName  bool // whether this is the primary name for its deployment
+	Referrer      common.Address
+	Description   string
+	AvatarURL     string
+	PrimaryName   bool // whether this is the primary name for its deployment
 }
 
 // NewRegistryContract creates a new registry contract client.

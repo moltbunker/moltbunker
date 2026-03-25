@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	snapshotType       string
+	snapshotType         string
 	snapshotTargetRegion string
 	snapshotNewContainer bool
 )

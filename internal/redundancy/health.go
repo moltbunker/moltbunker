@@ -18,22 +18,22 @@ type HealthProbeFunc func(ctx context.Context, containerID string) (bool, error)
 
 // HealthMonitor monitors health of container replicas
 type HealthMonitor struct {
-	replicas    map[string]map[int]*ReplicaHealth
-	mu          sync.RWMutex
-	interval    time.Duration
-	timeout     time.Duration
-	probeFunc   HealthProbeFunc // Optional probe function for local containers
-	running     bool
-	stopCh      chan struct{}
+	replicas  map[string]map[int]*ReplicaHealth
+	mu        sync.RWMutex
+	interval  time.Duration
+	timeout   time.Duration
+	probeFunc HealthProbeFunc // Optional probe function for local containers
+	running   bool
+	stopCh    chan struct{}
 }
 
 // ReplicaHealth tracks health of a single replica
 type ReplicaHealth struct {
-	ContainerID  string
-	ReplicaIndex int
+	ContainerID   string
+	ReplicaIndex  int
 	LastHeartbeat time.Time
-	Health       types.HealthStatus
-	Healthy      bool
+	Health        types.HealthStatus
+	Healthy       bool
 }
 
 // NewHealthMonitor creates a new health monitor

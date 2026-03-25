@@ -28,9 +28,9 @@ type ContainerSecurityProfile struct {
 	ReadOnlyPaths   []string `yaml:"readonly_paths" json:"readonly_paths"`
 
 	// Seccomp
-	SeccompProfile   string   `yaml:"seccomp_profile" json:"seccomp_profile"` // "strict", "default", "unconfined"
-	BlockedSyscalls  []string `yaml:"blocked_syscalls" json:"blocked_syscalls"`
-	AllowedSyscalls  []string `yaml:"allowed_syscalls" json:"allowed_syscalls"` // Whitelist mode
+	SeccompProfile  string   `yaml:"seccomp_profile" json:"seccomp_profile"` // "strict", "default", "unconfined"
+	BlockedSyscalls []string `yaml:"blocked_syscalls" json:"blocked_syscalls"`
+	AllowedSyscalls []string `yaml:"allowed_syscalls" json:"allowed_syscalls"` // Whitelist mode
 
 	// AppArmor/SELinux
 	AppArmorProfile string `yaml:"apparmor_profile" json:"apparmor_profile"`
@@ -40,9 +40,9 @@ type ContainerSecurityProfile struct {
 	Ulimits UlimitConfig `yaml:"ulimits" json:"ulimits"`
 
 	// Network restrictions
-	AllowedOutboundPorts []int  `yaml:"allowed_outbound_ports" json:"allowed_outbound_ports"` // Empty = all allowed
-	AllowedInboundPorts  []int  `yaml:"allowed_inbound_ports" json:"allowed_inbound_ports"`   // Empty = all allowed
-	DNSPolicy            string `yaml:"dns_policy" json:"dns_policy"`                         // "default", "none", "custom"
+	AllowedOutboundPorts []int    `yaml:"allowed_outbound_ports" json:"allowed_outbound_ports"` // Empty = all allowed
+	AllowedInboundPorts  []int    `yaml:"allowed_inbound_ports" json:"allowed_inbound_ports"`   // Empty = all allowed
+	DNSPolicy            string   `yaml:"dns_policy" json:"dns_policy"`                         // "default", "none", "custom"
 	CustomDNS            []string `yaml:"custom_dns" json:"custom_dns"`
 }
 
@@ -149,8 +149,8 @@ func DefaultContainerSecurityProfile() *ContainerSecurityProfile {
 		Ulimits: UlimitConfig{
 			NoFile:  1024,
 			NProc:   100,
-			MemLock: 0,     // No locked memory
-			Core:    0,     // No core dumps
+			MemLock: 0,       // No locked memory
+			Core:    0,       // No core dumps
 			Stack:   8388608, // 8MB stack
 		},
 
@@ -313,23 +313,23 @@ func DeploymentSecurityProfile() *ContainerSecurityProfile {
 // VerificationConfig defines multi-party verification settings
 type VerificationConfig struct {
 	// Heartbeat settings
-	HeartbeatIntervalSeconds int `yaml:"heartbeat_interval_seconds" json:"heartbeat_interval_seconds"`
-	HeartbeatTimeoutSeconds  int `yaml:"heartbeat_timeout_seconds" json:"heartbeat_timeout_seconds"`
+	HeartbeatIntervalSeconds    int `yaml:"heartbeat_interval_seconds" json:"heartbeat_interval_seconds"`
+	HeartbeatTimeoutSeconds     int `yaml:"heartbeat_timeout_seconds" json:"heartbeat_timeout_seconds"`
 	MissedHeartbeatsBeforeAlert int `yaml:"missed_heartbeats_before_alert" json:"missed_heartbeats_before_alert"`
 
 	// Cross-replica verification
-	ConsensusRequired        int  `yaml:"consensus_required" json:"consensus_required"`         // Out of 3 (e.g., 2)
-	OutputHashVerification   bool `yaml:"output_hash_verification" json:"output_hash_verification"`
-	DeterministicJobsOnly    bool `yaml:"deterministic_jobs_only" json:"deterministic_jobs_only"` // Only verify deterministic jobs
+	ConsensusRequired      int  `yaml:"consensus_required" json:"consensus_required"` // Out of 3 (e.g., 2)
+	OutputHashVerification bool `yaml:"output_hash_verification" json:"output_hash_verification"`
+	DeterministicJobsOnly  bool `yaml:"deterministic_jobs_only" json:"deterministic_jobs_only"` // Only verify deterministic jobs
 
 	// Canary probes
-	EnableCanaryProbes       bool `yaml:"enable_canary_probes" json:"enable_canary_probes"`
-	CanaryProbeIntervalMins  int  `yaml:"canary_probe_interval_mins" json:"canary_probe_interval_mins"`
-	CanaryFailureThreshold   int  `yaml:"canary_failure_threshold" json:"canary_failure_threshold"`
+	EnableCanaryProbes      bool `yaml:"enable_canary_probes" json:"enable_canary_probes"`
+	CanaryProbeIntervalMins int  `yaml:"canary_probe_interval_mins" json:"canary_probe_interval_mins"`
+	CanaryFailureThreshold  int  `yaml:"canary_failure_threshold" json:"canary_failure_threshold"`
 
 	// Resource attestation
-	ResourceAttestationEnabled   bool `yaml:"resource_attestation_enabled" json:"resource_attestation_enabled"`
-	ResourceMismatchThreshold    float64 `yaml:"resource_mismatch_threshold" json:"resource_mismatch_threshold"` // Percentage difference to flag
+	ResourceAttestationEnabled bool    `yaml:"resource_attestation_enabled" json:"resource_attestation_enabled"`
+	ResourceMismatchThreshold  float64 `yaml:"resource_mismatch_threshold" json:"resource_mismatch_threshold"` // Percentage difference to flag
 }
 
 // DefaultVerificationConfig returns the default verification configuration
@@ -341,7 +341,7 @@ func DefaultVerificationConfig() *VerificationConfig {
 		MissedHeartbeatsBeforeAlert: 3,
 
 		// Consensus
-		ConsensusRequired:      2,    // 2 out of 3
+		ConsensusRequired:      2, // 2 out of 3
 		OutputHashVerification: true,
 		DeterministicJobsOnly:  true,
 
@@ -358,13 +358,13 @@ func DefaultVerificationConfig() *VerificationConfig {
 
 // DeploymentEncryption represents encryption keys for a deployment
 type DeploymentEncryption struct {
-	DeploymentID     string    `json:"deployment_id"`
-	RequesterPubKey  []byte    `json:"requester_pub_key"`  // Ed25519 or X25519 public key
-	EncryptedDEK     []byte    `json:"encrypted_dek"`      // DEK encrypted with requester's public key
-	DEKAlgorithm     string    `json:"dek_algorithm"`      // "AES-256-GCM"
-	KeyDerivation    string    `json:"key_derivation"`     // "HKDF-SHA256"
-	Nonce            []byte    `json:"nonce"`              // For DEK encryption
-	CreatedAt        time.Time `json:"created_at"`
+	DeploymentID    string    `json:"deployment_id"`
+	RequesterPubKey []byte    `json:"requester_pub_key"` // Ed25519 or X25519 public key
+	EncryptedDEK    []byte    `json:"encrypted_dek"`     // DEK encrypted with requester's public key
+	DEKAlgorithm    string    `json:"dek_algorithm"`     // "AES-256-GCM"
+	KeyDerivation   string    `json:"key_derivation"`    // "HKDF-SHA256"
+	Nonce           []byte    `json:"nonce"`             // For DEK encryption
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 // EncryptionConfig defines encryption settings
@@ -419,30 +419,30 @@ const (
 
 // WorkloadSpec defines a workload specification
 type WorkloadSpec struct {
-	Type         WorkloadType   `yaml:"type" json:"type"`
-	Name         string         `yaml:"name" json:"name"`
-	Image        string         `yaml:"image" json:"image"`
-	Resources    ResourceLimits `yaml:"resources" json:"resources"`
-	Command      []string       `yaml:"command,omitempty" json:"command,omitempty"`
-	Args         []string       `yaml:"args,omitempty" json:"args,omitempty"`
-	Environment  map[string]string `yaml:"environment,omitempty" json:"environment,omitempty"`
-	Ports        []PortMapping  `yaml:"ports,omitempty" json:"ports,omitempty"`
-	HealthCheck  *HealthCheck   `yaml:"health_check,omitempty" json:"health_check,omitempty"`
-	Network      NetworkConfig  `yaml:"network" json:"network"`
-	Timeout      time.Duration  `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	Retries      int            `yaml:"retries,omitempty" json:"retries,omitempty"`
+	Type        WorkloadType      `yaml:"type" json:"type"`
+	Name        string            `yaml:"name" json:"name"`
+	Image       string            `yaml:"image" json:"image"`
+	Resources   ResourceLimits    `yaml:"resources" json:"resources"`
+	Command     []string          `yaml:"command,omitempty" json:"command,omitempty"`
+	Args        []string          `yaml:"args,omitempty" json:"args,omitempty"`
+	Environment map[string]string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Ports       []PortMapping     `yaml:"ports,omitempty" json:"ports,omitempty"`
+	HealthCheck *HealthCheck      `yaml:"health_check,omitempty" json:"health_check,omitempty"`
+	Network     NetworkConfig     `yaml:"network" json:"network"`
+	Timeout     time.Duration     `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	Retries     int               `yaml:"retries,omitempty" json:"retries,omitempty"`
 
 	// For scheduled jobs
-	Schedule     string `yaml:"schedule,omitempty" json:"schedule,omitempty"` // Cron expression
-	Timezone     string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
+	Schedule string `yaml:"schedule,omitempty" json:"schedule,omitempty"` // Cron expression
+	Timezone string `yaml:"timezone,omitempty" json:"timezone,omitempty"`
 
 	// For functions
-	Trigger      []TriggerConfig `yaml:"trigger,omitempty" json:"trigger,omitempty"`
-	ScaleToZero  bool            `yaml:"scale_to_zero,omitempty" json:"scale_to_zero,omitempty"`
+	Trigger     []TriggerConfig `yaml:"trigger,omitempty" json:"trigger,omitempty"`
+	ScaleToZero bool            `yaml:"scale_to_zero,omitempty" json:"scale_to_zero,omitempty"`
 
 	// Input/Output for jobs
-	Inputs       []DataSource `yaml:"inputs,omitempty" json:"inputs,omitempty"`
-	Outputs      []DataSource `yaml:"outputs,omitempty" json:"outputs,omitempty"`
+	Inputs  []DataSource `yaml:"inputs,omitempty" json:"inputs,omitempty"`
+	Outputs []DataSource `yaml:"outputs,omitempty" json:"outputs,omitempty"`
 }
 
 // PortMapping defines port exposure
@@ -455,14 +455,14 @@ type PortMapping struct {
 
 // HealthCheck defines health check configuration
 type HealthCheck struct {
-	Type             string `yaml:"type" json:"type"` // http, tcp, exec
-	Path             string `yaml:"path,omitempty" json:"path,omitempty"`
-	Port             int    `yaml:"port,omitempty" json:"port,omitempty"`
+	Type             string   `yaml:"type" json:"type"` // http, tcp, exec
+	Path             string   `yaml:"path,omitempty" json:"path,omitempty"`
+	Port             int      `yaml:"port,omitempty" json:"port,omitempty"`
 	Command          []string `yaml:"command,omitempty" json:"command,omitempty"`
-	IntervalSeconds  int    `yaml:"interval_seconds" json:"interval_seconds"`
-	TimeoutSeconds   int    `yaml:"timeout_seconds" json:"timeout_seconds"`
-	FailureThreshold int    `yaml:"failure_threshold" json:"failure_threshold"`
-	SuccessThreshold int    `yaml:"success_threshold" json:"success_threshold"`
+	IntervalSeconds  int      `yaml:"interval_seconds" json:"interval_seconds"`
+	TimeoutSeconds   int      `yaml:"timeout_seconds" json:"timeout_seconds"`
+	FailureThreshold int      `yaml:"failure_threshold" json:"failure_threshold"`
+	SuccessThreshold int      `yaml:"success_threshold" json:"success_threshold"`
 }
 
 // NetworkConfig defines network settings for a workload
@@ -474,7 +474,7 @@ type NetworkConfig struct {
 
 // TriggerConfig defines function triggers
 type TriggerConfig struct {
-	Type    string   `yaml:"type" json:"type"`       // http, event, schedule
+	Type    string   `yaml:"type" json:"type"` // http, event, schedule
 	Path    string   `yaml:"path,omitempty" json:"path,omitempty"`
 	Methods []string `yaml:"methods,omitempty" json:"methods,omitempty"`
 	Source  string   `yaml:"source,omitempty" json:"source,omitempty"`
@@ -500,9 +500,9 @@ const (
 
 // RegionConfig defines region-specific settings
 type RegionConfig struct {
-	PrimaryRegions   []GeographicRegion `yaml:"primary_regions" json:"primary_regions"`
-	SecondaryRegions []GeographicRegion `yaml:"secondary_regions" json:"secondary_regions"`
-	MinProvidersForSecondary int        `yaml:"min_providers_for_secondary" json:"min_providers_for_secondary"`
+	PrimaryRegions           []GeographicRegion `yaml:"primary_regions" json:"primary_regions"`
+	SecondaryRegions         []GeographicRegion `yaml:"secondary_regions" json:"secondary_regions"`
+	MinProvidersForSecondary int                `yaml:"min_providers_for_secondary" json:"min_providers_for_secondary"`
 }
 
 // DefaultRegionConfig returns the default region configuration

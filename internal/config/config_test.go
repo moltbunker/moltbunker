@@ -197,9 +197,9 @@ func TestValidate(t *testing.T) {
 
 func TestIsProviderIsRequester(t *testing.T) {
 	tests := []struct {
-		role         types.NodeRole
-		isProvider   bool
-		isRequester  bool
+		role        types.NodeRole
+		isProvider  bool
+		isRequester bool
 	}{
 		{types.NodeRoleProvider, true, false},
 		{types.NodeRoleRequester, false, true},

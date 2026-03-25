@@ -42,7 +42,7 @@ func (ic *ImageCache) CacheImage(cid string, imagePath string) error {
 
 	// Copy image to cache directory
 	cachePath := filepath.Join(ic.cacheDir, cid)
-	
+
 	// Read source file
 	data, err := os.ReadFile(imagePath)
 	if err != nil {

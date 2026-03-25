@@ -19,11 +19,11 @@ func SetThreatDetector(d *threat.Detector) {
 
 // ThreatLevelResponse contains threat level information
 type ThreatLevelResponse struct {
-	Score          float64               `json:"score"`
-	Level          string                `json:"level"`
-	ActiveSignals  []ThreatSignalInfo    `json:"active_signals"`
-	Recommendation string                `json:"recommendation"`
-	Timestamp      time.Time             `json:"timestamp"`
+	Score          float64            `json:"score"`
+	Level          string             `json:"level"`
+	ActiveSignals  []ThreatSignalInfo `json:"active_signals"`
+	Recommendation string             `json:"recommendation"`
+	Timestamp      time.Time          `json:"timestamp"`
 }
 
 // ThreatSignalInfo contains signal information for API response

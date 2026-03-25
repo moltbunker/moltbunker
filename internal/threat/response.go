@@ -32,8 +32,8 @@ type ResponseConfig struct {
 	EmergencyThreshold    float64 `yaml:"emergency_threshold"`     // Default: 0.90
 
 	// Cooldowns (prevent rapid re-triggering)
-	AlertCooldownSeconds   int `yaml:"alert_cooldown_seconds"`   // Default: 60
-	CloneCooldownSeconds   int `yaml:"clone_cooldown_seconds"`   // Default: 300
+	AlertCooldownSeconds   int `yaml:"alert_cooldown_seconds"`    // Default: 60
+	CloneCooldownSeconds   int `yaml:"clone_cooldown_seconds"`    // Default: 300
 	PrepareLeadTimeSeconds int `yaml:"prepare_lead_time_seconds"` // Default: 30
 }
 

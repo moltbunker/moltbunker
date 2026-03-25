@@ -403,13 +403,13 @@ func readDaemonFailureReason(logFile string, startOffset int64) string {
 
 	// Known error patterns → user-friendly messages
 	patterns := map[string]string{
-		"already running":        "another daemon is already running",
-		"address already in use": "port is already in use",
-		"permission denied":      "permission denied (try running with sudo or check file permissions)",
-		"no such file":           "required file not found",
-		"bind: address":          "port binding failed",
-		"no wallet found":        "no wallet found (create one with: moltbunker wallet create)",
-		"no wallet password":     "wallet password not available (store with: moltbunker wallet create, or set MOLTBUNKER_WALLET_PASSWORD)",
+		"already running":         "another daemon is already running",
+		"address already in use":  "port is already in use",
+		"permission denied":       "permission denied (try running with sudo or check file permissions)",
+		"no such file":            "required file not found",
+		"bind: address":           "port binding failed",
+		"no wallet found":         "no wallet found (create one with: moltbunker wallet create)",
+		"no wallet password":      "wallet password not available (store with: moltbunker wallet create, or set MOLTBUNKER_WALLET_PASSWORD)",
 		"failed to unlock wallet": "wrong wallet password (check keyring or MOLTBUNKER_WALLET_PASSWORD)",
 	}
 

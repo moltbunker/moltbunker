@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	goruntime "runtime"
 	"os"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/containerd/containerd/containers"

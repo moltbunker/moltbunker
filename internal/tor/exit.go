@@ -34,9 +34,9 @@ type ExitNodeSelector struct {
 
 // OnionooResponse represents the response from onionoo.torproject.org
 type OnionooResponse struct {
-	Version          string         `json:"version"`
-	RelaysPublished  string         `json:"relays_published"`
-	Relays           []OnionooRelay `json:"relays"`
+	Version         string         `json:"version"`
+	RelaysPublished string         `json:"relays_published"`
+	Relays          []OnionooRelay `json:"relays"`
 }
 
 // OnionooRelay represents a relay from onionoo

@@ -260,17 +260,17 @@ func TestE2E_MultipleProviderStaking(t *testing.T) {
 	}{
 		{
 			address: common.HexToAddress("0x1111111111111111111111111111111111111111"),
-			stake:   "500000000000000000000",    // 500 BUNKER - Starter
+			stake:   "500000000000000000000", // 500 BUNKER - Starter
 			tier:    types.StakingTierStarter,
 		},
 		{
 			address: common.HexToAddress("0x2222222222222222222222222222222222222222"),
-			stake:   "2000000000000000000000",   // 2000 BUNKER - Bronze
+			stake:   "2000000000000000000000", // 2000 BUNKER - Bronze
 			tier:    types.StakingTierBronze,
 		},
 		{
 			address: common.HexToAddress("0x3333333333333333333333333333333333333333"),
-			stake:   "50000000000000000000000",  // 50000 BUNKER - Gold
+			stake:   "50000000000000000000000", // 50000 BUNKER - Gold
 			tier:    types.StakingTierGold,
 		},
 	}

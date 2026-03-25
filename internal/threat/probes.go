@@ -21,11 +21,11 @@ import (
 // ProbeConfig configures advanced threat detection probes
 type ProbeConfig struct {
 	// Network connectivity monitoring
-	EnableNetworkProbe    bool          `yaml:"enable_network_probe"`
-	NetworkCheckInterval  time.Duration `yaml:"network_check_interval"`
-	NetworkTargets        []string      `yaml:"network_targets"`
-	NetworkTimeout        time.Duration `yaml:"network_timeout"`
-	NetworkFailThreshold  int           `yaml:"network_fail_threshold"`
+	EnableNetworkProbe   bool          `yaml:"enable_network_probe"`
+	NetworkCheckInterval time.Duration `yaml:"network_check_interval"`
+	NetworkTargets       []string      `yaml:"network_targets"`
+	NetworkTimeout       time.Duration `yaml:"network_timeout"`
+	NetworkFailThreshold int           `yaml:"network_fail_threshold"`
 
 	// File system monitoring
 	EnableFileWatcher bool     `yaml:"enable_file_watcher"`

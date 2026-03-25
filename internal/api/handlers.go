@@ -21,10 +21,10 @@ import (
 
 // ReserveRequest matches POST /reserve
 type ReserveRequest struct {
-	Tier         string `json:"tier"`          // minimal, standard, performance, enterprise
-	DurationHours int   `json:"duration_hours"`
-	Region       string `json:"region,omitempty"`
-	TorOnly      bool   `json:"tor_only,omitempty"`
+	Tier          string `json:"tier"` // minimal, standard, performance, enterprise
+	DurationHours int    `json:"duration_hours"`
+	Region        string `json:"region,omitempty"`
+	TorOnly       bool   `json:"tor_only,omitempty"`
 }
 
 // ReserveResponse is the response for POST /reserve
@@ -139,11 +139,11 @@ type RestoreResponse struct {
 
 // ThreatResponse matches GET /threat
 type ThreatResponse struct {
-	Score          float64         `json:"score"`
-	Level          string          `json:"level"`
-	ActiveSignals  []SignalInfo    `json:"active_signals"`
-	Recommendation string          `json:"recommendation"`
-	Timestamp      time.Time       `json:"timestamp"`
+	Score          float64      `json:"score"`
+	Level          string       `json:"level"`
+	ActiveSignals  []SignalInfo `json:"active_signals"`
+	Recommendation string       `json:"recommendation"`
+	Timestamp      time.Time    `json:"timestamp"`
 }
 
 // SignalInfo is a simplified signal for API response
@@ -156,9 +156,9 @@ type SignalInfo struct {
 
 // AggregatedCapacity contains aggregated node resource capacity
 type AggregatedCapacity struct {
-	CPUTotal       int     `json:"cpu_total"`
-	MemoryTotalGB  int     `json:"memory_total_gb"`
-	StorageTotalGB int     `json:"storage_total_gb"`
+	CPUTotal       int `json:"cpu_total"`
+	MemoryTotalGB  int `json:"memory_total_gb"`
+	StorageTotalGB int `json:"storage_total_gb"`
 
 	CPUUsed       int     `json:"cpu_used"`
 	MemoryUsedGB  float64 `json:"memory_used_gb"`
@@ -186,21 +186,21 @@ type SecurityStatus struct {
 
 // NodeProfile represents a known node in the network
 type NodeProfile struct {
-	NodeID           string    `json:"node_id"`
-	Address          string    `json:"address,omitempty"`
-	WalletAddress    string    `json:"wallet_address,omitempty"`
-	Region           string    `json:"region"`
-	Country          string    `json:"country,omitempty"`
-	Online           bool      `json:"online"`
-	LastSeen         time.Time `json:"last_seen"`
+	NodeID           string          `json:"node_id"`
+	Address          string          `json:"address,omitempty"`
+	WalletAddress    string          `json:"wallet_address,omitempty"`
+	Region           string          `json:"region"`
+	Country          string          `json:"country,omitempty"`
+	Online           bool            `json:"online"`
+	LastSeen         time.Time       `json:"last_seen"`
 	Capacity         CapacityProfile `json:"capacity"`
-	Tier             string    `json:"tier"`
-	Role             string    `json:"role"`
-	ReputationScore  int       `json:"reputation_score"`
-	StakingAmount    uint64    `json:"staking_amount"`
-	ActiveContainers int       `json:"active_containers"`
-	EncryptedCount   int       `json:"encrypted_containers"`
-	Version          string    `json:"version,omitempty"`
+	Tier             string          `json:"tier"`
+	Role             string          `json:"role"`
+	ReputationScore  int             `json:"reputation_score"`
+	StakingAmount    uint64          `json:"staking_amount"`
+	ActiveContainers int             `json:"active_containers"`
+	EncryptedCount   int             `json:"encrypted_containers"`
+	Version          string          `json:"version,omitempty"`
 
 	// Admin-assigned metadata
 	Badges  []string `json:"badges,omitempty"`
@@ -430,12 +430,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			TotalNodes:     1,
 		}
 		response.Security = &SecurityStatus{
-			TLSVersion:          "1.3",
-			EncryptionAlgo:      "AES-256-GCM",
-			SeccompEnabled:      true,
-			TorEnabled:          cfg.Tor.Enabled,
-			SEVSNPSupported:     cfg.Node.Provider.Hardware.SEVSNPSupported,
-			SEVSNPActive:        cfg.Node.Provider.Hardware.SEVSNPLevel == "snp",
+			TLSVersion:      "1.3",
+			EncryptionAlgo:  "AES-256-GCM",
+			SeccompEnabled:  true,
+			TorEnabled:      cfg.Tor.Enabled,
+			SEVSNPSupported: cfg.Node.Provider.Hardware.SEVSNPSupported,
+			SEVSNPActive:    cfg.Node.Provider.Hardware.SEVSNPLevel == "snp",
 		}
 		// Map config hardware to API hardware profile
 		cfgHW := cfg.Node.Provider.Hardware
@@ -1160,9 +1160,9 @@ type BotRequest struct {
 
 // ResourceRequest is resource configuration in requests
 type ResourceRequest struct {
-	CPUShares  int `json:"cpu_shares,omitempty"`
-	MemoryMB   int `json:"memory_mb,omitempty"`
-	StorageMB  int `json:"storage_mb,omitempty"`
+	CPUShares   int `json:"cpu_shares,omitempty"`
+	MemoryMB    int `json:"memory_mb,omitempty"`
+	StorageMB   int `json:"storage_mb,omitempty"`
 	NetworkMbps int `json:"network_mbps,omitempty"`
 }
 
@@ -1449,8 +1449,8 @@ func (s *Server) handleRuntimeReserve(w http.ResponseWriter, r *http.Request) {
 		Region:    req.Region,
 		ExpiresAt: time.Now().Add(time.Duration(durationHours) * time.Hour),
 		Resources: &ResourceRequest{
-			CPUShares:  req.MinCPUShares,
-			MemoryMB:   req.MinMemoryMB,
+			CPUShares: req.MinCPUShares,
+			MemoryMB:  req.MinMemoryMB,
 		},
 	}
 
@@ -1533,15 +1533,15 @@ type DeploymentRequest struct {
 
 // DeploymentResponse is the response for deployment operations
 type DeploymentResponse struct {
-	ID           string    `json:"id"`
-	BotID        string    `json:"bot_id"`
-	RuntimeID    string    `json:"runtime_id"`
-	ContainerID  string    `json:"container_id"`
-	Status       string    `json:"status"`
-	Region       string    `json:"region"`
-	NodeID       string    `json:"node_id"`
-	OnionAddress string    `json:"onion_address,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string     `json:"id"`
+	BotID        string     `json:"bot_id"`
+	RuntimeID    string     `json:"runtime_id"`
+	ContainerID  string     `json:"container_id"`
+	Status       string     `json:"status"`
+	Region       string     `json:"region"`
+	NodeID       string     `json:"node_id"`
+	OnionAddress string     `json:"onion_address,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 }
 

@@ -350,7 +350,7 @@ func TestStakingManager_Unstake(t *testing.T) {
 	sm := createTestStakingManager()
 
 	provider := common.HexToAddress("0x1234567890123456789012345678901234567890")
-	stakeAmount := big.NewInt(5000000000000000000) // 5 BUNKER
+	stakeAmount := big.NewInt(5000000000000000000)   // 5 BUNKER
 	unstakeAmount := big.NewInt(2000000000000000000) // 2 BUNKER
 
 	// Should fail without a stake

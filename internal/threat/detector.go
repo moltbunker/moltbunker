@@ -13,11 +13,11 @@ import (
 
 // Detector monitors for threat signals and maintains threat level
 type Detector struct {
-	config    *DetectorConfig
-	signals   *SignalConfig
-	mu        sync.RWMutex
-	running   bool
-	stopCh    chan struct{}
+	config  *DetectorConfig
+	signals *SignalConfig
+	mu      sync.RWMutex
+	running bool
+	stopCh  chan struct{}
 
 	// Current state
 	activeSignals map[string]*Signal // keyed by signal ID

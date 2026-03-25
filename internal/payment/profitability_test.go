@@ -172,13 +172,13 @@ func TestProfitabilityCalculator_TierResolution(t *testing.T) {
 		wantTier string
 		wantMult float64
 	}{
-		{100_000, "", 1.0},                 // Below minimum
-		{1_000_000, "starter", 1.0},        // Starter minimum
-		{5_000_000, "bronze", 1.0},         // Bronze minimum
-		{10_000_000, "silver", 1.05},       // Silver minimum
-		{100_000_000, "gold", 1.1},         // Gold minimum
-		{1_000_000_000, "platinum", 1.2},   // Platinum minimum
-		{10_000_000_000, "platinum", 1.2},  // Well above platinum
+		{100_000, "", 1.0},                // Below minimum
+		{1_000_000, "starter", 1.0},       // Starter minimum
+		{5_000_000, "bronze", 1.0},        // Bronze minimum
+		{10_000_000, "silver", 1.05},      // Silver minimum
+		{100_000_000, "gold", 1.1},        // Gold minimum
+		{1_000_000_000, "platinum", 1.2},  // Platinum minimum
+		{10_000_000_000, "platinum", 1.2}, // Well above platinum
 	}
 
 	for _, tt := range tests {
@@ -304,7 +304,7 @@ func TestProfitabilityCalculator_HigherTierBetterProfitAtScale(t *testing.T) {
 	// At high volume, higher tiers should show more gross revenue per job
 	// (due to reward multiplier), which translates to higher total profit
 	// when costs are the same.
-	reportStarter := pc.Calculate(resources, costs, 1_000_000, 1000)       // Starter (1.0x)
+	reportStarter := pc.Calculate(resources, costs, 1_000_000, 1000)      // Starter (1.0x)
 	reportPlatinum := pc.Calculate(resources, costs, 1_000_000_000, 1000) // Platinum (1.2x)
 
 	// Platinum should have higher gross revenue (1.2x multiplier vs 1.0x)

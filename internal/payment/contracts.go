@@ -1822,11 +1822,11 @@ type DelegationData struct {
 
 // ProviderDelegationConfigData represents a provider's delegation configuration.
 type ProviderDelegationConfigData struct {
-	RewardCutBps           uint16
-	FeeShareBps            uint16
-	AcceptDelegations      bool
-	PendingRewardCutBps    uint16
-	RewardCutEffectiveAt   time.Time
+	RewardCutBps         uint16
+	FeeShareBps          uint16
+	AcceptDelegations    bool
+	PendingRewardCutBps  uint16
+	RewardCutEffectiveAt time.Time
 }
 
 // UnbondingRequestData represents a pending undelegation request.
@@ -1857,11 +1857,11 @@ type AttestationData struct {
 
 // ResourcePricesData represents on-chain resource pricing.
 type ResourcePricesData struct {
-	CPUPerCoreHour       *big.Int
-	MemoryPerGBHour      *big.Int
-	StoragePerGBHour     *big.Int
-	BandwidthPerGBHour   *big.Int
-	GPUPerHour           *big.Int
+	CPUPerCoreHour     *big.Int
+	MemoryPerGBHour    *big.Int
+	StoragePerGBHour   *big.Int
+	BandwidthPerGBHour *big.Int
+	GPUPerHour         *big.Int
 }
 
 // MultipliersData represents on-chain pricing multipliers.

@@ -221,7 +221,7 @@ func TestCertificateMismatch_DifferentKeysSameCertFields(t *testing.T) {
 			CommonName:   "same-node",
 		},
 		NotBefore:             now.Add(-time.Hour),
-		NotAfter:              now.Add(365*24*time.Hour),
+		NotAfter:              now.Add(365 * 24 * time.Hour),
 		KeyUsage:              x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 	}

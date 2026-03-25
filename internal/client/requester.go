@@ -97,7 +97,7 @@ func (c *DaemonClient) RequesterBalance() (*RequesterBalanceResponse, error) {
 // RequesterSubmitJob submits a new job with encryption
 func (c *DaemonClient) RequesterSubmitJob(req *DeployRequest, requesterPubKey []byte) (*DeployResponse, error) {
 	params := map[string]interface{}{
-		"image":              req.Image,
+		"image":             req.Image,
 		"resources":         req.Resources,
 		"tor_only":          req.TorOnly,
 		"onion_service":     req.OnionService,

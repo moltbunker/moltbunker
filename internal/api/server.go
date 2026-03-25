@@ -16,28 +16,28 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/moltbunker/moltbunker/internal/agent"
 	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/moltbunker/moltbunker/internal/cloning"
 	"github.com/moltbunker/moltbunker/internal/config"
+	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/daemon"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
-	"github.com/moltbunker/moltbunker/internal/snapshot"
-	"github.com/moltbunker/moltbunker/internal/agent"
-	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/proxy"
+	"github.com/moltbunker/moltbunker/internal/snapshot"
 	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
 )
 
 // Server is the external HTTP API server
 type Server struct {
-	config          *ServerConfig
-	fullConfig      *config.Config // Full app config for fallback values
-	httpServer      *http.Server
-	tlsServer       *http.Server
-	mu              sync.RWMutex
-	running         bool
+	config     *ServerConfig
+	fullConfig *config.Config // Full app config for fallback values
+	httpServer *http.Server
+	tlsServer  *http.Server
+	mu         sync.RWMutex
+	running    bool
 
 	// Core components
 	daemonAPI       *daemon.APIServer
@@ -46,19 +46,19 @@ type Server struct {
 	cloningManager  *cloning.Manager
 
 	// Daemon bridge for forwarding requests
-	daemonBridge    *DaemonBridge
+	daemonBridge *DaemonBridge
 
 	// API key manager
-	apiKeyManager   *APIKeyManager
+	apiKeyManager *APIKeyManager
 
 	// Wallet authentication manager (permissionless)
-	walletAuth      *WalletAuthManager
+	walletAuth *WalletAuthManager
 
 	// WebSocket hub
-	wsHub           *WebSocketHub
+	wsHub *WebSocketHub
 
 	// Exec session manager
-	execSessions    *ExecSessionManager
+	execSessions *ExecSessionManager
 
 	// Metrics collector
 	metricsCollector *metrics.Collector
@@ -75,7 +75,7 @@ type Server struct {
 	agentHandler   *agent.RESTHandler
 
 	// Per-IP rate limiters
-	rateLimiters    sync.Map
+	rateLimiters sync.Map
 
 	// Rate limiter cleanup control
 	rateLimitCtx    context.Context
@@ -91,31 +91,31 @@ type rateLimiterEntry struct {
 // ServerConfig configures the HTTP API server
 type ServerConfig struct {
 	// HTTP settings
-	HTTPAddr        string `yaml:"http_addr"`        // e.g., ":8080"
-	HTTPSAddr       string `yaml:"https_addr"`       // e.g., ":8443"
-	EnableHTTPS     bool   `yaml:"enable_https"`
-	TLSCertFile     string `yaml:"tls_cert_file"`
-	TLSKeyFile      string `yaml:"tls_key_file"`
+	HTTPAddr    string `yaml:"http_addr"`  // e.g., ":8080"
+	HTTPSAddr   string `yaml:"https_addr"` // e.g., ":8443"
+	EnableHTTPS bool   `yaml:"enable_https"`
+	TLSCertFile string `yaml:"tls_cert_file"`
+	TLSKeyFile  string `yaml:"tls_key_file"`
 
 	// Daemon connection
 	DaemonSocketPath string `yaml:"daemon_socket_path"`
 	DaemonPoolSize   int    `yaml:"daemon_pool_size"`
 
 	// Rate limiting
-	RateLimit       int    `yaml:"rate_limit"`        // Requests per minute
-	RateLimitBurst  int    `yaml:"rate_limit_burst"`
+	RateLimit      int `yaml:"rate_limit"` // Requests per minute
+	RateLimitBurst int `yaml:"rate_limit_burst"`
 
 	// Authentication
 	EnableAuth      bool   `yaml:"enable_auth"`
-	APIKeyHeader    string `yaml:"api_key_header"`    // Default: X-API-Key
+	APIKeyHeader    string `yaml:"api_key_header"` // Default: X-API-Key
 	APIKeyStorePath string `yaml:"api_key_store_path"`
 
 	// Proxy trust (only enable behind a trusted reverse proxy like Cloudflare)
 	TrustProxy bool `yaml:"trust_proxy"`
 
 	// CORS
-	EnableCORS      bool     `yaml:"enable_cors"`
-	AllowedOrigins  []string `yaml:"allowed_origins"`
+	EnableCORS     bool     `yaml:"enable_cors"`
+	AllowedOrigins []string `yaml:"allowed_origins"`
 
 	// Timeouts
 	ReadTimeout       time.Duration `yaml:"read_timeout"`

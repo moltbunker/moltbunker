@@ -33,57 +33,57 @@ type Arg struct {
 // sandboxed containers. These are explicitly denied with SCMP_ACT_KILL
 // to ensure they cannot be whitelisted by accident.
 var dangerousSyscalls = []string{
-	"acct",             // process accounting
-	"add_key",          // kernel keyring manipulation
-	"bpf",              // eBPF programs (kernel attack surface)
-	"clock_adjtime",    // adjust system clock
-	"clock_settime",    // set system clock
-	"create_module",    // load kernel modules
-	"delete_module",    // unload kernel modules
-	"finit_module",     // load kernel module from fd
-	"get_kernel_syms",  // retrieve kernel symbols
-	"init_module",      // load kernel module
-	"ioperm",           // set port I/O permissions
-	"iopl",             // change I/O privilege level
-	"kcmp",             // compare two processes
-	"kexec_file_load",  // load new kernel for later execution
-	"kexec_load",       // load new kernel for later execution
-	"keyctl",           // kernel keyring manipulation
-	"lookup_dcookie",   // return directory entry cookie
-	"mount",            // mount filesystems
-	"move_pages",       // move pages across NUMA nodes
-	"nfsservctl",       // NFS server control
+	"acct",              // process accounting
+	"add_key",           // kernel keyring manipulation
+	"bpf",               // eBPF programs (kernel attack surface)
+	"clock_adjtime",     // adjust system clock
+	"clock_settime",     // set system clock
+	"create_module",     // load kernel modules
+	"delete_module",     // unload kernel modules
+	"finit_module",      // load kernel module from fd
+	"get_kernel_syms",   // retrieve kernel symbols
+	"init_module",       // load kernel module
+	"ioperm",            // set port I/O permissions
+	"iopl",              // change I/O privilege level
+	"kcmp",              // compare two processes
+	"kexec_file_load",   // load new kernel for later execution
+	"kexec_load",        // load new kernel for later execution
+	"keyctl",            // kernel keyring manipulation
+	"lookup_dcookie",    // return directory entry cookie
+	"mount",             // mount filesystems
+	"move_pages",        // move pages across NUMA nodes
+	"nfsservctl",        // NFS server control
 	"open_by_handle_at", // open file by handle (bypass DAC)
-	"perf_event_open",  // performance monitoring (attack surface)
-	"pivot_root",       // change root filesystem
-	"process_vm_readv", // read another process's memory
+	"perf_event_open",   // performance monitoring (attack surface)
+	"pivot_root",        // change root filesystem
+	"process_vm_readv",  // read another process's memory
 	"process_vm_writev", // write another process's memory
-	"ptrace",           // process tracing (debugger, injection)
-	"query_module",     // query kernel module info
-	"quotactl",         // disk quota manipulation
-	"reboot",           // reboot the system
-	"request_key",      // request key from kernel keyring
-	"setdomainname",    // set NIS domain name
-	"sethostname",      // set hostname
-	"settimeofday",     // set system time
-	"swapon",           // enable swap area
-	"swapoff",          // disable swap area
-	"syslog",           // read/clear kernel message buffer
-	"umount2",          // unmount filesystems
-	"unshare",          // create new namespaces (escape risk)
-	"userfaultfd",      // userfaultfd (attack surface)
-	"vhangup",          // simulate hangup on terminal
-	"setns",            // enter another namespace (escape risk)
-	"chroot",           // change root directory (escape risk)
-	"adjtimex",         // adjust kernel clock
-	"modify_ldt",       // modify local descriptor table (kernel attack surface)
-	"clone3",           // new clone with extensible args (escape risk)
-	"move_mount",       // move mount point (escape risk)
-	"open_tree",        // open mount tree (escape risk)
-	"fsopen",           // open filesystem context (escape risk)
-	"fspick",           // pick filesystem (escape risk)
-	"fsconfig",         // configure filesystem (escape risk)
-	"fsmount",          // mount filesystem (escape risk)
+	"ptrace",            // process tracing (debugger, injection)
+	"query_module",      // query kernel module info
+	"quotactl",          // disk quota manipulation
+	"reboot",            // reboot the system
+	"request_key",       // request key from kernel keyring
+	"setdomainname",     // set NIS domain name
+	"sethostname",       // set hostname
+	"settimeofday",      // set system time
+	"swapon",            // enable swap area
+	"swapoff",           // disable swap area
+	"syslog",            // read/clear kernel message buffer
+	"umount2",           // unmount filesystems
+	"unshare",           // create new namespaces (escape risk)
+	"userfaultfd",       // userfaultfd (attack surface)
+	"vhangup",           // simulate hangup on terminal
+	"setns",             // enter another namespace (escape risk)
+	"chroot",            // change root directory (escape risk)
+	"adjtimex",          // adjust kernel clock
+	"modify_ldt",        // modify local descriptor table (kernel attack surface)
+	"clone3",            // new clone with extensible args (escape risk)
+	"move_mount",        // move mount point (escape risk)
+	"open_tree",         // open mount tree (escape risk)
+	"fsopen",            // open filesystem context (escape risk)
+	"fspick",            // pick filesystem (escape risk)
+	"fsconfig",          // configure filesystem (escape risk)
+	"fsmount",           // mount filesystem (escape risk)
 }
 
 // essentialSyscalls lists syscalls required for basic container operation:

@@ -239,7 +239,7 @@ func TestSlashingContract_CalculateSlashAmount(t *testing.T) {
 	stake := parseWei("10000") // 10000 BUNKER
 
 	tests := []struct {
-		reason         ViolationReason
+		reason          ViolationReason
 		expectedPercent int64
 	}{
 		{ViolationDowntime, 5},
@@ -269,8 +269,8 @@ func TestTokenAmount_FormatAndParse(t *testing.T) {
 		amount   string
 		expected string
 	}{
-		{"1000000000000000000", "1"},      // 1 token
-		{"1500000000000000000", "1.5"},    // 1.5 tokens
+		{"1000000000000000000", "1"},          // 1 token
+		{"1500000000000000000", "1.5"},        // 1.5 tokens
 		{"123456789000000000000", "123.4567"}, // Truncated to 4 decimals
 		{"0", "0"},
 	}
@@ -312,10 +312,10 @@ func TestPricingCalculator_CalculatePriceWithResources(t *testing.T) {
 	pc := NewPricingCalculator(basePricePerHour)
 
 	resources := types.ResourceLimits{
-		CPUQuota:    100000,           // 1 CPU
-		MemoryLimit: 2 * 1024 * 1024 * 1024, // 2GB
+		CPUQuota:    100000,                  // 1 CPU
+		MemoryLimit: 2 * 1024 * 1024 * 1024,  // 2GB
 		DiskLimit:   10 * 1024 * 1024 * 1024, // 10GB
-		NetworkBW:   100 * 1024 * 1024, // 100 MB/s
+		NetworkBW:   100 * 1024 * 1024,       // 100 MB/s
 	}
 
 	duration := 1 * time.Hour

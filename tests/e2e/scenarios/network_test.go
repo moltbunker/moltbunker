@@ -260,9 +260,9 @@ func TestE2E_NetworkModes(t *testing.T) {
 
 	// Test cases for different network modes
 	testCases := []struct {
-		name    string
-		useTor  bool
-		mode    string
+		name   string
+		useTor bool
+		mode   string
 	}{
 		{"clearnet", false, "clearnet"},
 		{"tor-only", true, "tor_only"},

@@ -227,4 +227,3 @@ func setNestedValue(config map[string]interface{}, key string, value interface{}
 		current = next
 	}
 }
-

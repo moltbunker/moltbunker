@@ -57,16 +57,16 @@ type HealthProbeConfig struct {
 
 // ProbeStatus represents the current status of a health probe for a container
 type ProbeStatus struct {
-	ContainerID       string
-	State             ProbeState
-	ConsecutivePass   int
-	ConsecutiveFail   int
-	LastCheckTime     time.Time
+	ContainerID        string
+	State              ProbeState
+	ConsecutivePass    int
+	ConsecutiveFail    int
+	LastCheckTime      time.Time
 	LastTransitionTime time.Time
-	LastError         string
-	TotalChecks       int
-	TotalSuccesses    int
-	TotalFailures     int
+	LastError          string
+	TotalChecks        int
+	TotalSuccesses     int
+	TotalFailures      int
 }
 
 // ExecFunc is a function that executes a command inside a container.
@@ -88,15 +88,15 @@ type probeEntry struct {
 
 // HealthChecker manages health probes for containers
 type HealthChecker struct {
-	probes       map[string]*probeEntry
-	mu           sync.RWMutex
-	execFunc     ExecFunc
-	addressFunc  ContainerAddressFunc
-	httpClient   *http.Client
-	running      bool
-	stopCh       chan struct{}
-	doneCh       chan struct{}
-	nowFunc      func() time.Time // injectable clock for testing
+	probes      map[string]*probeEntry
+	mu          sync.RWMutex
+	execFunc    ExecFunc
+	addressFunc ContainerAddressFunc
+	httpClient  *http.Client
+	running     bool
+	stopCh      chan struct{}
+	doneCh      chan struct{}
+	nowFunc     func() time.Time // injectable clock for testing
 }
 
 // NewHealthChecker creates a new HealthChecker

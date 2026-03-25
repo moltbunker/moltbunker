@@ -112,79 +112,79 @@ func TestSecurityEnforcerCanShell(t *testing.T) {
 
 func TestValidateExecCommand(t *testing.T) {
 	tests := []struct {
-		name         string
-		execDisabled bool
+		name          string
+		execDisabled  bool
 		shellDisabled bool
-		cmd          []string
-		expectError  bool
-		errorType    error
+		cmd           []string
+		expectError   bool
+		errorType     error
 	}{
 		{
-			name:        "exec disabled blocks all commands",
+			name:         "exec disabled blocks all commands",
 			execDisabled: true,
-			cmd:         []string{"ls", "-la"},
-			expectError: true,
-			errorType:   ErrExecDisabled,
-		},
-		{
-			name:         "exec enabled allows non-shell commands",
-			execDisabled: false,
-			shellDisabled: true,
 			cmd:          []string{"ls", "-la"},
-			expectError:  false,
-		},
-		{
-			name:         "shell disabled blocks /bin/sh",
-			execDisabled: false,
-			shellDisabled: true,
-			cmd:          []string{"/bin/sh"},
 			expectError:  true,
-			errorType:    ErrShellDisabled,
+			errorType:    ErrExecDisabled,
 		},
 		{
-			name:         "shell disabled blocks /bin/bash",
-			execDisabled: false,
+			name:          "exec enabled allows non-shell commands",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"/bin/bash"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"ls", "-la"},
+			expectError:   false,
 		},
 		{
-			name:         "shell disabled blocks sh",
-			execDisabled: false,
+			name:          "shell disabled blocks /bin/sh",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"sh"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"/bin/sh"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
 		},
 		{
-			name:         "shell disabled blocks bash",
-			execDisabled: false,
+			name:          "shell disabled blocks /bin/bash",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"bash"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"/bin/bash"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
 		},
 		{
-			name:         "shell disabled blocks zsh",
-			execDisabled: false,
+			name:          "shell disabled blocks sh",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"zsh"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"sh"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
 		},
 		{
-			name:         "shell enabled allows shells",
-			execDisabled: false,
+			name:          "shell disabled blocks bash",
+			execDisabled:  false,
+			shellDisabled: true,
+			cmd:           []string{"bash"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
+		},
+		{
+			name:          "shell disabled blocks zsh",
+			execDisabled:  false,
+			shellDisabled: true,
+			cmd:           []string{"zsh"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
+		},
+		{
+			name:          "shell enabled allows shells",
+			execDisabled:  false,
 			shellDisabled: false,
-			cmd:          []string{"/bin/bash"},
-			expectError:  false,
+			cmd:           []string{"/bin/bash"},
+			expectError:   false,
 		},
 		{
-			name:        "empty command returns error",
+			name:         "empty command returns error",
 			execDisabled: false,
-			cmd:         []string{},
-			expectError: true,
+			cmd:          []string{},
+			expectError:  true,
 		},
 	}
 

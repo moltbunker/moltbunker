@@ -25,7 +25,7 @@ func TestE2E_DeploySimpleContainer(t *testing.T) {
 	resources := types.ResourceLimits{
 		CPUQuota:    100000,
 		CPUPeriod:   100000,
-		MemoryLimit: 256 * 1024 * 1024, // 256MB
+		MemoryLimit: 256 * 1024 * 1024,      // 256MB
 		DiskLimit:   1 * 1024 * 1024 * 1024, // 1GB
 		PIDLimit:    100,
 	}
@@ -215,11 +215,11 @@ func TestE2E_DeployWithResourceLimits(t *testing.T) {
 
 	containerID := "e2e-resource-limits"
 	resources := types.ResourceLimits{
-		CPUQuota:    50000,  // 50% CPU
+		CPUQuota:    50000, // 50% CPU
 		CPUPeriod:   100000,
-		MemoryLimit: 512 * 1024 * 1024, // 512MB
+		MemoryLimit: 512 * 1024 * 1024,      // 512MB
 		DiskLimit:   2 * 1024 * 1024 * 1024, // 2GB
-		NetworkBW:   10 * 1024 * 1024, // 10MB/s
+		NetworkBW:   10 * 1024 * 1024,       // 10MB/s
 		PIDLimit:    50,
 	}
 

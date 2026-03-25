@@ -66,8 +66,8 @@ func TestServiceMeter_RecordProxySession(t *testing.T) {
 func TestServiceMeter_RecordCrawlJob(t *testing.T) {
 	m := NewServiceMeter(DefaultServicePricing())
 
-	m.RecordCrawlJob("0xcrawl", 100, 2*1024*1024)  // 100 pages, 2MB result
-	m.RecordCrawlJob("0xcrawl", 50, 512*1024)       // 50 pages, 512KB
+	m.RecordCrawlJob("0xcrawl", 100, 2*1024*1024) // 100 pages, 2MB result
+	m.RecordCrawlJob("0xcrawl", 50, 512*1024)     // 50 pages, 512KB
 
 	usage := m.GetUsage("0xcrawl")
 	if usage.CrawlPages != 150 {

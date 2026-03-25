@@ -33,13 +33,13 @@ const (
 	addrIPv6   = 0x04
 
 	// Reply codes
-	repSuccess             = 0x00
-	repGeneralFailure      = 0x01
+	repSuccess              = 0x00
+	repGeneralFailure       = 0x01
 	repConnectionNotAllowed = 0x02
-	repNetworkUnreachable  = 0x03
-	repHostUnreachable     = 0x04
-	repConnectionRefused   = 0x05
-	repCommandNotSupported = 0x07
+	repNetworkUnreachable   = 0x03
+	repHostUnreachable      = 0x04
+	repConnectionRefused    = 0x05
+	repCommandNotSupported  = 0x07
 	repAddrTypeNotSupported = 0x08
 )
 

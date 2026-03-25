@@ -29,29 +29,29 @@ type ProviderRegisterResponse struct {
 
 // ProviderStatusResponse contains provider status information
 type ProviderStatusResponse struct {
-	NodeID              string  `json:"node_id"`
-	WalletAddress       string  `json:"wallet_address"`
-	Status              string  `json:"status"`
-	Tier                string  `json:"tier"`
-	StakedAmount        string  `json:"staked_amount"`
-	NextTier            string  `json:"next_tier"`
-	NextTierRequired    string  `json:"next_tier_required"`
-	ReputationScore     int     `json:"reputation_score"`
-	ReputationTier      string  `json:"reputation_tier"`
-	Uptime30Days        float64 `json:"uptime_30_days"`
-	ActiveJobs          int     `json:"active_jobs"`
-	MaxConcurrentJobs   int     `json:"max_concurrent_jobs"`
-	JobsCompleted7Days  int     `json:"jobs_completed_7_days"`
-	TotalJobsCompleted  int     `json:"total_jobs_completed"`
-	DeclaredCPU         int     `json:"declared_cpu"`
-	DeclaredMemory      int     `json:"declared_memory"`
-	DeclaredDisk        int     `json:"declared_disk"`
-	CPUUsagePercent     float64 `json:"cpu_usage_percent"`
-	MemoryUsagePercent  float64 `json:"memory_usage_percent"`
-	DiskUsagePercent    float64 `json:"disk_usage_percent"`
-	GPUEnabled          bool    `json:"gpu_enabled"`
-	GPUModel            string  `json:"gpu_model,omitempty"`
-	GPUCount            int     `json:"gpu_count,omitempty"`
+	NodeID             string  `json:"node_id"`
+	WalletAddress      string  `json:"wallet_address"`
+	Status             string  `json:"status"`
+	Tier               string  `json:"tier"`
+	StakedAmount       string  `json:"staked_amount"`
+	NextTier           string  `json:"next_tier"`
+	NextTierRequired   string  `json:"next_tier_required"`
+	ReputationScore    int     `json:"reputation_score"`
+	ReputationTier     string  `json:"reputation_tier"`
+	Uptime30Days       float64 `json:"uptime_30_days"`
+	ActiveJobs         int     `json:"active_jobs"`
+	MaxConcurrentJobs  int     `json:"max_concurrent_jobs"`
+	JobsCompleted7Days int     `json:"jobs_completed_7_days"`
+	TotalJobsCompleted int     `json:"total_jobs_completed"`
+	DeclaredCPU        int     `json:"declared_cpu"`
+	DeclaredMemory     int     `json:"declared_memory"`
+	DeclaredDisk       int     `json:"declared_disk"`
+	CPUUsagePercent    float64 `json:"cpu_usage_percent"`
+	MemoryUsagePercent float64 `json:"memory_usage_percent"`
+	DiskUsagePercent   float64 `json:"disk_usage_percent"`
+	GPUEnabled         bool    `json:"gpu_enabled"`
+	GPUModel           string  `json:"gpu_model,omitempty"`
+	GPUCount           int     `json:"gpu_count,omitempty"`
 }
 
 // ProviderStakeAddResponse contains stake add result
@@ -70,11 +70,11 @@ type ProviderStakeWithdrawResponse struct {
 
 // ProviderEarningsResponse contains earnings information
 type ProviderEarningsResponse struct {
-	TotalEarnings   string           `json:"total_earnings"`
-	Earnings30Days  string           `json:"earnings_30_days"`
-	Earnings7Days   string           `json:"earnings_7_days"`
-	PendingPayouts  string           `json:"pending_payouts"`
-	RecentPayments  []PaymentInfo    `json:"recent_payments"`
+	TotalEarnings  string        `json:"total_earnings"`
+	Earnings30Days string        `json:"earnings_30_days"`
+	Earnings7Days  string        `json:"earnings_7_days"`
+	PendingPayouts string        `json:"pending_payouts"`
+	RecentPayments []PaymentInfo `json:"recent_payments"`
 }
 
 // PaymentInfo contains payment details

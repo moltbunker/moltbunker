@@ -256,7 +256,7 @@ func defaultTestResources() mocks.MockResourceLimits {
 	return mocks.MockResourceLimits{
 		CPUQuota:    100000,
 		CPUPeriod:   100000,
-		MemoryLimit: 256 * 1024 * 1024, // 256MB
+		MemoryLimit: 256 * 1024 * 1024,  // 256MB
 		DiskLimit:   1024 * 1024 * 1024, // 1GB
 		PIDLimit:    100,
 	}

@@ -564,10 +564,10 @@ func (sc *StakingContract) determineTier(stake *big.Int) pkgtypes.StakingTier {
 		minWei *big.Int
 	}{
 		{pkgtypes.StakingTierPlatinum, parseWei("1000000000")}, // 1,000,000,000 BUNKER
-		{pkgtypes.StakingTierGold, parseWei("100000000")},     // 100,000,000 BUNKER
-		{pkgtypes.StakingTierSilver, parseWei("10000000")},    // 10,000,000 BUNKER
-		{pkgtypes.StakingTierBronze, parseWei("5000000")},     // 5,000,000 BUNKER
-		{pkgtypes.StakingTierStarter, parseWei("1000000")},    // 1,000,000 BUNKER
+		{pkgtypes.StakingTierGold, parseWei("100000000")},      // 100,000,000 BUNKER
+		{pkgtypes.StakingTierSilver, parseWei("10000000")},     // 10,000,000 BUNKER
+		{pkgtypes.StakingTierBronze, parseWei("5000000")},      // 5,000,000 BUNKER
+		{pkgtypes.StakingTierStarter, parseWei("1000000")},     // 1,000,000 BUNKER
 	}
 
 	for _, t := range tiers {

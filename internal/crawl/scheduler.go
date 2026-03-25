@@ -25,10 +25,10 @@ type Scheduler struct {
 
 // SchedulerConfig configures the crawl scheduler.
 type SchedulerConfig struct {
-	MaxConcurrentJobs   int           // Max jobs running at once (default: 10)
-	MaxJobsPerWallet    int           // Max jobs per wallet (default: 5)
-	DefaultPageTimeout  time.Duration // Default per-page timeout
-	MaxPagesPerJob      int           // Hard cap on pages per job
+	MaxConcurrentJobs  int           // Max jobs running at once (default: 10)
+	MaxJobsPerWallet   int           // Max jobs per wallet (default: 5)
+	DefaultPageTimeout time.Duration // Default per-page timeout
+	MaxPagesPerJob     int           // Hard cap on pages per job
 }
 
 // DefaultSchedulerConfig returns sensible defaults.

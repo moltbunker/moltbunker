@@ -51,9 +51,9 @@ func runMonitor(cmd *cobra.Command, args []string) error {
 type tab int
 
 const (
-	tabOverview    tab = 0
-	tabPeers       tab = 1
-	tabContainers  tab = 2
+	tabOverview   tab = 0
+	tabPeers      tab = 1
+	tabContainers tab = 2
 )
 
 var tabNames = []string{"Overview", "Peers", "Containers"}

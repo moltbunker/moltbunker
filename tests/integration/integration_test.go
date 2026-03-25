@@ -42,12 +42,12 @@ var (
 	pricingAddr string
 
 	// Anvil default accounts (deterministic)
-	deployerPK  = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-	deployerAddr = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
-	treasuryAddr = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
-	operatorAddr = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
-	operatorPK   = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
-	slasherAddr  = "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
+	deployerPK    = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+	deployerAddr  = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
+	treasuryAddr  = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
+	operatorAddr  = "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
+	operatorPK    = "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+	slasherAddr   = "0x90F79bf6EB2c4f870365E785982E1f101E93b906"
 	provider1Addr = "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
 	provider1PK   = "0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"
 	provider2Addr = "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"

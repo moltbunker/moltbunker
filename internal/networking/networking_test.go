@@ -178,7 +178,7 @@ func TestNetworkManager_PortAllocation(t *testing.T) {
 	nm := NewNetworkManager()
 
 	ports := []ExposedPort{
-		{ContainerPort: 8080}, // auto-assign
+		{ContainerPort: 8080},                  // auto-assign
 		{ContainerPort: 9090, HostPort: 30000}, // fixed
 	}
 

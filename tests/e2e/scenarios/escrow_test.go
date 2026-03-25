@@ -39,10 +39,10 @@ func TestE2E_EscrowFullLifecycle(t *testing.T) {
 	// Release in 4 equal stages: 25%, 50%, 75%, 100% of duration
 	totalReleased := big.NewInt(0)
 	stages := []time.Duration{
-		duration / 4,       // 15 min
-		duration / 2,       // 30 min
-		duration * 3 / 4,   // 45 min
-		duration,           // 60 min
+		duration / 4,     // 15 min
+		duration / 2,     // 30 min
+		duration * 3 / 4, // 45 min
+		duration,         // 60 min
 	}
 
 	for i, uptime := range stages {
@@ -332,9 +332,9 @@ func TestE2E_EscrowWithPricing(t *testing.T) {
 
 	// Define resource requirements
 	resources := types.ResourceLimits{
-		CPUQuota:    2,                 // 2 CPU units
-		CPUPeriod:   100000,            // standard period
-		MemoryLimit: 4 * 1024 * 1024 * 1024, // 4 GB
+		CPUQuota:    2,                       // 2 CPU units
+		CPUPeriod:   100000,                  // standard period
+		MemoryLimit: 4 * 1024 * 1024 * 1024,  // 4 GB
 		DiskLimit:   10 * 1024 * 1024 * 1024, // 10 GB
 		NetworkBW:   100 * 1024 * 1024,       // 100 MB/s
 		PIDLimit:    1024,

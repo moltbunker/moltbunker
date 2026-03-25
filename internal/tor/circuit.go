@@ -10,7 +10,7 @@ import (
 
 // CircuitManager manages Tor circuit rotation
 type CircuitManager struct {
-	tor           *tor.Tor
+	tor              *tor.Tor
 	rotationInterval time.Duration
 	lastRotation     time.Time
 }
@@ -18,7 +18,7 @@ type CircuitManager struct {
 // NewCircuitManager creates a new circuit manager
 func NewCircuitManager(torInstance *tor.Tor) *CircuitManager {
 	return &CircuitManager{
-		tor:               torInstance,
+		tor:              torInstance,
 		rotationInterval: 10 * time.Minute, // Rotate every 10 minutes
 		lastRotation:     time.Now(),
 	}

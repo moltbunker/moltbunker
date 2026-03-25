@@ -42,7 +42,7 @@ func TestDeploymentSecurityProfile_Capabilities(t *testing.T) {
 		"CAP_SETFCAP":          true,
 		"CAP_SETPCAP":          true,
 		"CAP_NET_BIND_SERVICE": true,
-		"CAP_SYS_CHROOT":      true,
+		"CAP_SYS_CHROOT":       true,
 		"CAP_KILL":             true,
 		"CAP_AUDIT_WRITE":      true,
 	}

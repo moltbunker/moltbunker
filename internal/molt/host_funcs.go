@@ -128,7 +128,6 @@ func registerHostFunctions(ctx context.Context, rt wazero.Runtime) error {
 		WithGoModuleFunction(api.GoModuleFunc(hostCrawlPage), []api.ValueType{api.ValueTypeI32, api.ValueTypeI32}, []api.ValueType{api.ValueTypeI32}).
 		WithParameterNames("req_ptr", "req_len").
 		Export("crawl_page").
-
 		Instantiate(ctx)
 
 	return err

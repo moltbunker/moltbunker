@@ -24,8 +24,8 @@ type Message struct {
 	Data json.RawMessage `json:"data,omitempty"`
 
 	// For host_call / host_result messages:
-	ID   int    `json:"id,omitempty"`
-	Fn   string `json:"fn,omitempty"`
+	ID   int             `json:"id,omitempty"`
+	Fn   string          `json:"fn,omitempty"`
 	Args json.RawMessage `json:"args,omitempty"`
 
 	// For response messages:
@@ -37,7 +37,7 @@ type Message struct {
 
 // InvokeData is the payload for "invoke" messages sent to the Deno worker.
 type InvokeData struct {
-	ScriptPath string `json:"script_path"`
+	ScriptPath string        `json:"script_path"`
 	Request    InvokeRequest `json:"request"`
 }
 

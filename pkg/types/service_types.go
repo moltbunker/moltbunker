@@ -26,7 +26,7 @@ type ServiceCapabilities struct {
 // StorageBucket represents a named storage bucket owned by a wallet.
 type StorageBucket struct {
 	Name      string    `json:"name"`
-	Owner     string    `json:"owner"`      // Wallet address
+	Owner     string    `json:"owner"` // Wallet address
 	CreatedAt time.Time `json:"created_at"`
 	Region    string    `json:"region,omitempty"`
 }
@@ -58,11 +58,11 @@ type StorageQuota struct {
 
 // MultipartUpload tracks an in-progress multipart upload.
 type MultipartUpload struct {
-	UploadID  string    `json:"upload_id"`
-	Bucket    string    `json:"bucket"`
-	Key       string    `json:"key"`
-	Owner     string    `json:"owner"`
-	CreatedAt time.Time `json:"created_at"`
+	UploadID  string          `json:"upload_id"`
+	Bucket    string          `json:"bucket"`
+	Key       string          `json:"key"`
+	Owner     string          `json:"owner"`
+	CreatedAt time.Time       `json:"created_at"`
 	Parts     []MultipartPart `json:"parts,omitempty"`
 }
 
@@ -113,10 +113,10 @@ const (
 // AgentSpec defines a deployment specification for an AI agent.
 type AgentSpec struct {
 	Framework    AgentFramework    `json:"framework"`
-	Image        string            `json:"image,omitempty"`        // Container image or CID
-	Config       map[string]any    `json:"config,omitempty"`       // Framework-specific config
-	EnvVars      map[string]string `json:"env_vars,omitempty"`     // Environment variables
-	MCPTools     []string          `json:"mcp_tools,omitempty"`    // Enabled MCP tools
+	Image        string            `json:"image,omitempty"`         // Container image or CID
+	Config       map[string]any    `json:"config,omitempty"`        // Framework-specific config
+	EnvVars      map[string]string `json:"env_vars,omitempty"`      // Environment variables
+	MCPTools     []string          `json:"mcp_tools,omitempty"`     // Enabled MCP tools
 	MemoryBucket string            `json:"memory_bucket,omitempty"` // Object Storage bucket for memory
 	SyncInterval time.Duration     `json:"sync_interval,omitempty"` // Memory checkpoint interval
 	MaxTokens    int64             `json:"max_tokens,omitempty"`    // Budget cap
@@ -124,14 +124,14 @@ type AgentSpec struct {
 
 // AgentDeployment represents a deployed AI agent.
 type AgentDeployment struct {
-	ID           string         `json:"id"`
-	Spec         AgentSpec      `json:"spec"`
-	ContainerID  string         `json:"container_id"`
-	Status       string         `json:"status"` // pending, running, suspended, stopped
-	WalletAddress string        `json:"wallet_address"`
-	TokensUsed   int64          `json:"tokens_used"`
-	CreatedAt    time.Time      `json:"created_at"`
-	LastActivity time.Time      `json:"last_activity"`
+	ID            string    `json:"id"`
+	Spec          AgentSpec `json:"spec"`
+	ContainerID   string    `json:"container_id"`
+	Status        string    `json:"status"` // pending, running, suspended, stopped
+	WalletAddress string    `json:"wallet_address"`
+	TokensUsed    int64     `json:"tokens_used"`
+	CreatedAt     time.Time `json:"created_at"`
+	LastActivity  time.Time `json:"last_activity"`
 }
 
 // MCPToolDef defines an MCP tool available to agents.
@@ -145,16 +145,16 @@ type MCPToolDef struct {
 
 // CrawlJob represents a multi-page crawl job.
 type CrawlJob struct {
-	ID             string       `json:"id"`
-	WalletAddress  string       `json:"wallet_address"`
-	Status         string       `json:"status"` // pending, running, completed, failed, cancelled
-	Targets        []CrawlTarget `json:"targets"`
+	ID             string         `json:"id"`
+	WalletAddress  string         `json:"wallet_address"`
+	Status         string         `json:"status"` // pending, running, completed, failed, cancelled
+	Targets        []CrawlTarget  `json:"targets"`
 	Config         CrawlJobConfig `json:"config"`
-	CreatedAt      time.Time    `json:"created_at"`
-	CompletedAt    time.Time    `json:"completed_at,omitempty"`
-	PagesCompleted int          `json:"pages_completed"`
-	PagesFailed    int          `json:"pages_failed"`
-	TotalBytes     int64        `json:"total_bytes"`
+	CreatedAt      time.Time      `json:"created_at"`
+	CompletedAt    time.Time      `json:"completed_at,omitempty"`
+	PagesCompleted int            `json:"pages_completed"`
+	PagesFailed    int            `json:"pages_failed"`
+	TotalBytes     int64          `json:"total_bytes"`
 }
 
 // CrawlTarget is a single URL to crawl.

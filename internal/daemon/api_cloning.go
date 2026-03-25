@@ -166,8 +166,8 @@ func (s *APIServer) handleCloneList(ctx context.Context, req *APIRequest) *APIRe
 	}
 
 	var params struct {
-		Active  bool `json:"active"`
-		Limit   int  `json:"limit"`
+		Active bool `json:"active"`
+		Limit  int  `json:"limit"`
 	}
 	if req.Params != nil {
 		json.Unmarshal(req.Params, &params)

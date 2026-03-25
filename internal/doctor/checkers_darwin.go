@@ -30,9 +30,9 @@ func NewGoVersionChecker() *GoVersionChecker {
 	return &GoVersionChecker{}
 }
 
-func (c *GoVersionChecker) Name() string     { return "Go version" }
+func (c *GoVersionChecker) Name() string       { return "Go version" }
 func (c *GoVersionChecker) Category() Category { return CategoryRuntime }
-func (c *GoVersionChecker) CanFix() bool     { return true }
+func (c *GoVersionChecker) CanFix() bool       { return true }
 
 func (c *GoVersionChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{
@@ -166,9 +166,9 @@ func NewContainerdChecker() *ContainerdChecker {
 	return &ContainerdChecker{}
 }
 
-func (c *ContainerdChecker) Name() string     { return "containerd" }
+func (c *ContainerdChecker) Name() string       { return "containerd" }
 func (c *ContainerdChecker) Category() Category { return CategoryRuntime }
-func (c *ContainerdChecker) CanFix() bool     { return true }
+func (c *ContainerdChecker) CanFix() bool       { return true }
 
 func (c *ContainerdChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{
@@ -247,9 +247,9 @@ func NewTorChecker() *TorChecker {
 	return &TorChecker{}
 }
 
-func (c *TorChecker) Name() string     { return "Tor" }
+func (c *TorChecker) Name() string       { return "Tor" }
 func (c *TorChecker) Category() Category { return CategoryServices }
-func (c *TorChecker) CanFix() bool     { return true }
+func (c *TorChecker) CanFix() bool       { return true }
 
 func (c *TorChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{
@@ -284,9 +284,9 @@ func NewIPFSChecker() *IPFSChecker {
 	return &IPFSChecker{}
 }
 
-func (c *IPFSChecker) Name() string     { return "IPFS" }
+func (c *IPFSChecker) Name() string       { return "IPFS" }
 func (c *IPFSChecker) Category() Category { return CategoryServices }
-func (c *IPFSChecker) CanFix() bool     { return true }
+func (c *IPFSChecker) CanFix() bool       { return true }
 
 func (c *IPFSChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{
@@ -321,9 +321,9 @@ func NewDiskSpaceChecker() *DiskSpaceChecker {
 	return &DiskSpaceChecker{}
 }
 
-func (c *DiskSpaceChecker) Name() string     { return "Disk space" }
+func (c *DiskSpaceChecker) Name() string       { return "Disk space" }
 func (c *DiskSpaceChecker) Category() Category { return CategorySystem }
-func (c *DiskSpaceChecker) CanFix() bool     { return false }
+func (c *DiskSpaceChecker) CanFix() bool       { return false }
 
 func (c *DiskSpaceChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{
@@ -380,9 +380,9 @@ func NewMemoryChecker() *MemoryChecker {
 	return &MemoryChecker{}
 }
 
-func (c *MemoryChecker) Name() string     { return "Memory" }
+func (c *MemoryChecker) Name() string       { return "Memory" }
 func (c *MemoryChecker) Category() Category { return CategorySystem }
-func (c *MemoryChecker) CanFix() bool     { return false }
+func (c *MemoryChecker) CanFix() bool       { return false }
 
 func (c *MemoryChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{
@@ -432,9 +432,9 @@ func NewConfigFileChecker() *ConfigFileChecker {
 	return &ConfigFileChecker{}
 }
 
-func (c *ConfigFileChecker) Name() string     { return "Config file" }
+func (c *ConfigFileChecker) Name() string       { return "Config file" }
 func (c *ConfigFileChecker) Category() Category { return CategoryConfig }
-func (c *ConfigFileChecker) CanFix() bool     { return true }
+func (c *ConfigFileChecker) CanFix() bool       { return true }
 
 func (c *ConfigFileChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{
@@ -491,9 +491,9 @@ func NewSocketPermissionChecker() *SocketPermissionChecker {
 	return &SocketPermissionChecker{}
 }
 
-func (c *SocketPermissionChecker) Name() string     { return "Socket permissions" }
+func (c *SocketPermissionChecker) Name() string       { return "Socket permissions" }
 func (c *SocketPermissionChecker) Category() Category { return CategoryPermissions }
-func (c *SocketPermissionChecker) CanFix() bool     { return false }
+func (c *SocketPermissionChecker) CanFix() bool       { return false }
 
 func (c *SocketPermissionChecker) Check(ctx context.Context) CheckResult {
 	result := CheckResult{

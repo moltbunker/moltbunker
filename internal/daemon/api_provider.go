@@ -25,45 +25,45 @@ type ProviderRegisterRequest struct {
 
 // ProviderResources describes declared provider resources
 type ProviderResources struct {
-	CPUCores      int   `json:"cpu_cores"`
-	MemoryGB      int   `json:"memory_gb"`
-	StorageGB     int   `json:"storage_gb"`
-	BandwidthMbps int   `json:"bandwidth_mbps"`
-	GPUCount      int   `json:"gpu_count,omitempty"`
+	CPUCores      int    `json:"cpu_cores"`
+	MemoryGB      int    `json:"memory_gb"`
+	StorageGB     int    `json:"storage_gb"`
+	BandwidthMbps int    `json:"bandwidth_mbps"`
+	GPUCount      int    `json:"gpu_count,omitempty"`
 	GPUModel      string `json:"gpu_model,omitempty"`
 }
 
 // ProviderCapabilities describes what the provider can do
 type ProviderCapabilities struct {
-	TorSupport      bool `json:"tor_support"`
+	TorSupport       bool `json:"tor_support"`
 	EncryptedVolumes bool `json:"encrypted_volumes"`
-	GPUCompute      bool `json:"gpu_compute"`
+	GPUCompute       bool `json:"gpu_compute"`
 }
 
 // ProviderStatusResponse contains provider status information
 type ProviderStatusResponse struct {
-	Registered     bool                `json:"registered"`
-	WalletAddress  string              `json:"wallet_address,omitempty"`
-	NodeID         string              `json:"node_id"`
-	Status         string              `json:"status"` // active, maintenance, suspended
-	Tier           types.StakingTier   `json:"tier"`
-	StakedAmount   string              `json:"staked_amount"`
-	ActiveJobs     int                 `json:"active_jobs"`
-	TotalJobsRun   int                 `json:"total_jobs_run"`
-	Reputation     int                 `json:"reputation"`     // 0-1000
-	Uptime         float64             `json:"uptime_percent"` // 0-100
-	Region         string              `json:"region"`
-	Resources      ProviderResources   `json:"resources"`
-	Earnings       ProviderEarnings    `json:"earnings"`
-	RegisteredAt   time.Time           `json:"registered_at,omitempty"`
+	Registered    bool              `json:"registered"`
+	WalletAddress string            `json:"wallet_address,omitempty"`
+	NodeID        string            `json:"node_id"`
+	Status        string            `json:"status"` // active, maintenance, suspended
+	Tier          types.StakingTier `json:"tier"`
+	StakedAmount  string            `json:"staked_amount"`
+	ActiveJobs    int               `json:"active_jobs"`
+	TotalJobsRun  int               `json:"total_jobs_run"`
+	Reputation    int               `json:"reputation"`     // 0-1000
+	Uptime        float64           `json:"uptime_percent"` // 0-100
+	Region        string            `json:"region"`
+	Resources     ProviderResources `json:"resources"`
+	Earnings      ProviderEarnings  `json:"earnings"`
+	RegisteredAt  time.Time         `json:"registered_at,omitempty"`
 }
 
 // ProviderEarnings contains earnings information
 type ProviderEarnings struct {
-	TotalEarned    string `json:"total_earned"`
-	PendingPayout  string `json:"pending_payout"`
-	LastPayoutAt   time.Time `json:"last_payout_at,omitempty"`
-	ThisMonth      string `json:"this_month"`
+	TotalEarned   string    `json:"total_earned"`
+	PendingPayout string    `json:"pending_payout"`
+	LastPayoutAt  time.Time `json:"last_payout_at,omitempty"`
+	ThisMonth     string    `json:"this_month"`
 }
 
 // ProviderStakeRequest contains staking parameters
@@ -87,12 +87,12 @@ type ProviderWithdrawRequest struct {
 
 // ProviderWithdrawResponse contains withdrawal result
 type ProviderWithdrawResponse struct {
-	TransactionHash  string    `json:"transaction_hash"`
-	WithdrawnAmount  string    `json:"withdrawn_amount"`
-	RemainingStake   string    `json:"remaining_stake"`
-	NewTier          types.StakingTier `json:"new_tier"`
-	UnlockTime       time.Time `json:"unlock_time"` // When funds become available
-	Status           string    `json:"status"`
+	TransactionHash string            `json:"transaction_hash"`
+	WithdrawnAmount string            `json:"withdrawn_amount"`
+	RemainingStake  string            `json:"remaining_stake"`
+	NewTier         types.StakingTier `json:"new_tier"`
+	UnlockTime      time.Time         `json:"unlock_time"` // When funds become available
+	Status          string            `json:"status"`
 }
 
 // ProviderJob represents a job assigned to the provider
@@ -105,10 +105,10 @@ type ProviderJob struct {
 	Duration      string    `json:"duration"`
 	EarnedAmount  string    `json:"earned_amount"`
 	ResourceUsage struct {
-		CPUPercent    float64 `json:"cpu_percent"`
-		MemoryMB      int64   `json:"memory_mb"`
-		NetworkInMB   int64   `json:"network_in_mb"`
-		NetworkOutMB  int64   `json:"network_out_mb"`
+		CPUPercent   float64 `json:"cpu_percent"`
+		MemoryMB     int64   `json:"memory_mb"`
+		NetworkInMB  int64   `json:"network_in_mb"`
+		NetworkOutMB int64   `json:"network_out_mb"`
 	} `json:"resource_usage"`
 }
 
@@ -322,12 +322,12 @@ func (s *APIServer) handleProviderStakeWithdraw(ctx context.Context, req *APIReq
 	unlockTime := time.Now().Add(7 * 24 * time.Hour)
 
 	response := ProviderWithdrawResponse{
-		TransactionHash:  "0x" + generateMockTxHash(),
-		WithdrawnAmount:  withdrawReq.Amount,
-		RemainingStake:   "0",
-		NewTier:          types.StakingTierStarter,
-		UnlockTime:       unlockTime,
-		Status:           "pending_unlock",
+		TransactionHash: "0x" + generateMockTxHash(),
+		WithdrawnAmount: withdrawReq.Amount,
+		RemainingStake:  "0",
+		NewTier:         types.StakingTierStarter,
+		UnlockTime:      unlockTime,
+		Status:          "pending_unlock",
 	}
 
 	return &APIResponse{

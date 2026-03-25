@@ -13,7 +13,7 @@ const (
 // TunnelRegisterRequest is sent by the provider to the ingress to register a reverse tunnel.
 type TunnelRegisterRequest struct {
 	NodeID        string       `json:"node_id"`
-	Subdomain     string       `json:"subdomain,omitempty"`    // empty = auto-assign
+	Subdomain     string       `json:"subdomain,omitempty"` // empty = auto-assign
 	DeploymentID  string       `json:"deployment_id"`
 	ContainerPort int          `json:"container_port"`
 	Nonce         string       `json:"nonce"`                  // 32-byte hex

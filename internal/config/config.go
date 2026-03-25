@@ -14,16 +14,16 @@ import (
 
 // Config represents the complete daemon configuration
 type Config struct {
-	Daemon      DaemonConfig      `yaml:"daemon"`
-	API         APIConfig         `yaml:"api"`
-	Node        NodeConfig        `yaml:"node"`
-	P2P         P2PConfig         `yaml:"p2p"`
-	Tor         TorConfig         `yaml:"tor"`
-	Runtime     RuntimeConfig     `yaml:"runtime"`
-	Security    SecurityConfig    `yaml:"security"`
-	Redundancy  RedundancyConfig  `yaml:"redundancy"`
-	Economics   EconomicsConfig   `yaml:"economics"`
-	Encryption  EncryptionConfig  `yaml:"encryption"`
+	Daemon     DaemonConfig     `yaml:"daemon"`
+	API        APIConfig        `yaml:"api"`
+	Node       NodeConfig       `yaml:"node"`
+	P2P        P2PConfig        `yaml:"p2p"`
+	Tor        TorConfig        `yaml:"tor"`
+	Runtime    RuntimeConfig    `yaml:"runtime"`
+	Security   SecurityConfig   `yaml:"security"`
+	Redundancy RedundancyConfig `yaml:"redundancy"`
+	Economics  EconomicsConfig  `yaml:"economics"`
+	Encryption EncryptionConfig `yaml:"encryption"`
 
 	// P0 services
 	Storage StorageConfig `yaml:"storage"`
@@ -78,13 +78,13 @@ func DefaultAPIConfig() APIConfig {
 
 // NodeConfig contains node role and identity settings
 type NodeConfig struct {
-	Role               types.NodeRole `yaml:"role"`                // provider, requester, hybrid
-	Region             string         `yaml:"region"`              // Manual region override (Americas, Europe, Asia-Pacific, Middle-East, Africa)
-	WalletAddress      string         `yaml:"wallet_address"`      // Ethereum wallet address
-	WalletKeyFile      string         `yaml:"wallet_key_file"`     // Path to encrypted keystore file
+	Role               types.NodeRole `yaml:"role"`                 // provider, requester, hybrid
+	Region             string         `yaml:"region"`               // Manual region override (Americas, Europe, Asia-Pacific, Middle-East, Africa)
+	WalletAddress      string         `yaml:"wallet_address"`       // Ethereum wallet address
+	WalletKeyFile      string         `yaml:"wallet_key_file"`      // Path to encrypted keystore file
 	WalletPasswordFile string         `yaml:"wallet_password_file"` // Path to file containing wallet password
-	AutoRegister       bool           `yaml:"auto_register"`       // Auto-register on startup (provider)
-	APIEndpoint        string         `yaml:"api_endpoint"`        // HTTP API URL for daemonless requester mode
+	AutoRegister       bool           `yaml:"auto_register"`        // Auto-register on startup (provider)
+	APIEndpoint        string         `yaml:"api_endpoint"`         // HTTP API URL for daemonless requester mode
 
 	// Provider-specific settings
 	Provider ProviderNodeConfig `yaml:"provider,omitempty"`
@@ -114,7 +114,7 @@ type HardwareProfile struct {
 	StorageModel string `yaml:"storage_model" json:"storage_model"` // "Samsung PM9A3"
 
 	// Network
-	BandwidthMbps    int    `yaml:"bandwidth_mbps" json:"bandwidth_mbps"`                         // 1000
+	BandwidthMbps    int    `yaml:"bandwidth_mbps" json:"bandwidth_mbps"`                           // 1000
 	NetworkInterface string `yaml:"network_interface,omitempty" json:"network_interface,omitempty"` // "eth0"
 
 	// Security Hardware
@@ -132,38 +132,38 @@ type HardwareProfile struct {
 // ProviderNodeConfig contains provider-specific configuration
 type ProviderNodeConfig struct {
 	// Declared resources (populated from Hardware profile if not set)
-	DeclaredCPU       int    `yaml:"declared_cpu"`        // Number of CPU cores
-	DeclaredMemoryGB  int    `yaml:"declared_memory_gb"`  // Memory in GB
-	DeclaredStorageGB int    `yaml:"declared_storage_gb"` // Storage in GB
-	DeclaredBandwidth int    `yaml:"declared_bandwidth_mbps"` // Network bandwidth in Mbps
+	DeclaredCPU       int `yaml:"declared_cpu"`            // Number of CPU cores
+	DeclaredMemoryGB  int `yaml:"declared_memory_gb"`      // Memory in GB
+	DeclaredStorageGB int `yaml:"declared_storage_gb"`     // Storage in GB
+	DeclaredBandwidth int `yaml:"declared_bandwidth_mbps"` // Network bandwidth in Mbps
 
 	// Detailed hardware profile (auto-detected, admin-overridable)
 	Hardware HardwareProfile `yaml:"hardware" json:"hardware"`
 
 	// GPU (optional)
-	GPUEnabled    bool   `yaml:"gpu_enabled"`
-	GPUModel      string `yaml:"gpu_model,omitempty"`
-	GPUCount      int    `yaml:"gpu_count,omitempty"`
-	GPUMemoryGB   int    `yaml:"gpu_memory_gb,omitempty"`
+	GPUEnabled  bool   `yaml:"gpu_enabled"`
+	GPUModel    string `yaml:"gpu_model,omitempty"`
+	GPUCount    int    `yaml:"gpu_count,omitempty"`
+	GPUMemoryGB int    `yaml:"gpu_memory_gb,omitempty"`
 
 	// Staking
-	TargetTier    types.StakingTier `yaml:"target_tier"` // Desired staking tier
-	AutoStake     bool              `yaml:"auto_stake"`  // Auto-stake on startup
+	TargetTier types.StakingTier `yaml:"target_tier"` // Desired staking tier
+	AutoStake  bool              `yaml:"auto_stake"`  // Auto-stake on startup
 
 	// Job acceptance
-	AcceptServices  bool `yaml:"accept_services"`   // Accept long-running services
-	AcceptJobs      bool `yaml:"accept_jobs"`       // Accept batch jobs
-	AcceptScheduled bool `yaml:"accept_scheduled"`  // Accept scheduled jobs
-	AcceptFunctions bool `yaml:"accept_functions"`  // Accept serverless functions
+	AcceptServices  bool `yaml:"accept_services"`  // Accept long-running services
+	AcceptJobs      bool `yaml:"accept_jobs"`      // Accept batch jobs
+	AcceptScheduled bool `yaml:"accept_scheduled"` // Accept scheduled jobs
+	AcceptFunctions bool `yaml:"accept_functions"` // Accept serverless functions
 
 	// Availability
 	MaintenanceMode bool `yaml:"maintenance_mode"` // Don't accept new jobs
 
 	// Ingress (service exposure)
 	IngressEnabled bool   `yaml:"ingress_enabled"` // Act as ingress node for exposed services
-	IngressPort    int    `yaml:"ingress_port"`     // HTTP port for ingress proxy (default: 9090)
-	IngressDomain  string `yaml:"ingress_domain"`   // Domain for public URLs (e.g., "moltbunker.dev")
-	TunnelPort     int    `yaml:"tunnel_port"`      // TLS tunnel port for ingress→provider (default: base port + 2)
+	IngressPort    int    `yaml:"ingress_port"`    // HTTP port for ingress proxy (default: 9090)
+	IngressDomain  string `yaml:"ingress_domain"`  // Domain for public URLs (e.g., "moltbunker.dev")
+	TunnelPort     int    `yaml:"tunnel_port"`     // TLS tunnel port for ingress→provider (default: base port + 2)
 
 	// Cloudflare DNS sync for subdomain A records
 	CloudflareAPIToken string `yaml:"cloudflare_api_token,omitempty"` // Cloudflare API bearer token
@@ -176,23 +176,23 @@ type ProviderNodeConfig struct {
 	IngressACMEEmail string `yaml:"ingress_acme_email,omitempty"` // ACME account email for Let's Encrypt
 
 	// Reverse tunnel (expose local containers via *.moltbunker.dev — like ngrok)
-	ReverseTunnelEnabled  bool   `yaml:"reverse_tunnel_enabled,omitempty"`  // Enable reverse tunnel client (provider side)
-	ReverseTunnelIngress  string `yaml:"reverse_tunnel_ingress,omitempty"`  // Ingress address to dial (e.g., "tunnel.moltbunker.dev:9443")
+	ReverseTunnelEnabled bool   `yaml:"reverse_tunnel_enabled,omitempty"` // Enable reverse tunnel client (provider side)
+	ReverseTunnelIngress string `yaml:"reverse_tunnel_ingress,omitempty"` // Ingress address to dial (e.g., "tunnel.moltbunker.dev:9443")
 
 	// Reverse tunnel server (ingress-side — accepts incoming reverse tunnels from providers)
-	ReverseTunnelPort     int    `yaml:"reverse_tunnel_port,omitempty"`      // Listen port (default: 9443)
-	ReverseTunnelMaxConns int    `yaml:"reverse_tunnel_max_conns,omitempty"` // Global max connections (default: 10000)
+	ReverseTunnelPort     int `yaml:"reverse_tunnel_port,omitempty"`      // Listen port (default: 9443)
+	ReverseTunnelMaxConns int `yaml:"reverse_tunnel_max_conns,omitempty"` // Global max connections (default: 10000)
 }
 
 // RequesterNodeConfig contains requester-specific configuration
 type RequesterNodeConfig struct {
-	DefaultNetworkMode    types.NetworkMode `yaml:"default_network_mode"`    // Default network mode for deployments
-	DefaultOnionService   bool              `yaml:"default_onion_service"`   // Default to creating onion services
-	DefaultEncryption     bool              `yaml:"default_encryption"`      // Default to encrypted volumes
-	MaxConcurrentDeploys  int               `yaml:"max_concurrent_deploys"`  // Max concurrent deployments
-	MaxMonthlyBudget      string            `yaml:"max_monthly_budget"`      // Max BUNKER spend per month (0 = unlimited)
-	PreferredRegions      []string          `yaml:"preferred_regions"`       // Preferred regions for deployments
-	ExcludedRegions       []string          `yaml:"excluded_regions"`        // Excluded regions for compliance
+	DefaultNetworkMode   types.NetworkMode `yaml:"default_network_mode"`   // Default network mode for deployments
+	DefaultOnionService  bool              `yaml:"default_onion_service"`  // Default to creating onion services
+	DefaultEncryption    bool              `yaml:"default_encryption"`     // Default to encrypted volumes
+	MaxConcurrentDeploys int               `yaml:"max_concurrent_deploys"` // Max concurrent deployments
+	MaxMonthlyBudget     string            `yaml:"max_monthly_budget"`     // Max BUNKER spend per month (0 = unlimited)
+	PreferredRegions     []string          `yaml:"preferred_regions"`      // Preferred regions for deployments
+	ExcludedRegions      []string          `yaml:"excluded_regions"`       // Excluded regions for compliance
 }
 
 // P2PConfig contains P2P network settings
@@ -201,14 +201,14 @@ type P2PConfig struct {
 	BootstrapHTTPEndpoints []string `yaml:"bootstrap_http_endpoints"` // HTTP(S) URLs for bootstrap peer discovery
 	NetworkMode            string   `yaml:"network_mode"`             // clearnet, tor_only, hybrid
 	MaxPeers               int      `yaml:"max_peers"`
-	DialTimeoutSecs   int      `yaml:"dial_timeout_seconds"`
-	DialTimeout       int      `yaml:"dial_timeout"` // Alias for DialTimeoutSecs
-	EnableMDNS        bool     `yaml:"enable_mdns"`
-	EnableNAT         bool     `yaml:"enable_nat"` // Enable NAT traversal (default: true)
-	ExternalIP        string   `yaml:"external_ip"`
-	AnnounceAddrs     []string `yaml:"announce_addrs"`
-	ConnectionTimeout int      `yaml:"connection_timeout_seconds"`
-	IdleTimeout       int      `yaml:"idle_timeout_seconds"`
+	DialTimeoutSecs        int      `yaml:"dial_timeout_seconds"`
+	DialTimeout            int      `yaml:"dial_timeout"` // Alias for DialTimeoutSecs
+	EnableMDNS             bool     `yaml:"enable_mdns"`
+	EnableNAT              bool     `yaml:"enable_nat"` // Enable NAT traversal (default: true)
+	ExternalIP             string   `yaml:"external_ip"`
+	AnnounceAddrs          []string `yaml:"announce_addrs"`
+	ConnectionTimeout      int      `yaml:"connection_timeout_seconds"`
+	IdleTimeout            int      `yaml:"idle_timeout_seconds"`
 
 	// Circuit breaker settings
 	CircuitBreaker CircuitBreakerConfig `yaml:"circuit_breaker"`
@@ -229,10 +229,10 @@ type P2PConfig struct {
 
 // StakeVerificationConfig controls on-chain stake verification for P2P peers.
 type StakeVerificationConfig struct {
-	Enabled         bool `yaml:"enabled"`               // Enable stake verification (default: true)
-	CacheTTLSecs    int  `yaml:"cache_ttl_secs"`        // Positive stake cache TTL (default: 300)
-	NegativeTTLSecs int  `yaml:"negative_ttl_secs"`     // No-stake cache TTL (default: 120)
-	GracePeriodSecs int  `yaml:"grace_period_secs"`     // Grace after announce before stake check (default: 30)
+	Enabled         bool `yaml:"enabled"`           // Enable stake verification (default: true)
+	CacheTTLSecs    int  `yaml:"cache_ttl_secs"`    // Positive stake cache TTL (default: 300)
+	NegativeTTLSecs int  `yaml:"negative_ttl_secs"` // No-stake cache TTL (default: 120)
+	GracePeriodSecs int  `yaml:"grace_period_secs"` // Grace after announce before stake check (default: 30)
 }
 
 // DefaultStakeVerificationConfig returns the default stake verification settings.
@@ -247,11 +247,11 @@ func DefaultStakeVerificationConfig() StakeVerificationConfig {
 
 // PeerScoringConfig controls behavioral scoring thresholds.
 type PeerScoringConfig struct {
-	Enabled        bool    `yaml:"enabled"`         // Enable peer scoring (default: true)
-	WarnThreshold  float64 `yaml:"warn_threshold"`  // Score below this triggers warnings (default: 0.3)
-	ThrottleThreshold float64 `yaml:"throttle_threshold"` // Score below this reduces rate limits (default: 0.2)
-	BanThreshold   float64 `yaml:"ban_threshold"`   // Score below this triggers ban (default: 0.1)
-	DecayInterval  int     `yaml:"decay_interval_secs"` // Score decay interval (default: 3600)
+	Enabled           bool    `yaml:"enabled"`             // Enable peer scoring (default: true)
+	WarnThreshold     float64 `yaml:"warn_threshold"`      // Score below this triggers warnings (default: 0.3)
+	ThrottleThreshold float64 `yaml:"throttle_threshold"`  // Score below this reduces rate limits (default: 0.2)
+	BanThreshold      float64 `yaml:"ban_threshold"`       // Score below this triggers ban (default: 0.1)
+	DecayInterval     int     `yaml:"decay_interval_secs"` // Score decay interval (default: 3600)
 }
 
 // DefaultPeerScoringConfig returns the default peer scoring settings.
@@ -267,10 +267,10 @@ func DefaultPeerScoringConfig() PeerScoringConfig {
 
 // CircuitBreakerConfig contains circuit breaker settings for P2P connections
 type CircuitBreakerConfig struct {
-	Enabled             bool `yaml:"enabled"`               // Enable circuit breaker (default: true)
-	FailureThreshold    int  `yaml:"failure_threshold"`     // Failures before opening (default: 5)
-	SuccessThreshold    int  `yaml:"success_threshold"`     // Successes to close (default: 2)
-	TimeoutSecs         int  `yaml:"timeout_secs"`          // Open duration before half-open (default: 30)
+	Enabled             bool `yaml:"enabled"`                // Enable circuit breaker (default: true)
+	FailureThreshold    int  `yaml:"failure_threshold"`      // Failures before opening (default: 5)
+	SuccessThreshold    int  `yaml:"success_threshold"`      // Successes to close (default: 2)
+	TimeoutSecs         int  `yaml:"timeout_secs"`           // Open duration before half-open (default: 30)
 	HalfOpenMaxRequests int  `yaml:"half_open_max_requests"` // Max requests in half-open (default: 3)
 }
 
@@ -299,15 +299,15 @@ type TorConfig struct {
 
 // RuntimeConfig contains container runtime settings
 type RuntimeConfig struct {
-	ContainerdSocket string                `yaml:"containerd_socket"`
-	Namespace        string                `yaml:"namespace"`
-	RuntimeName      string                `yaml:"runtime_name"`    // "auto", "io.containerd.runc.v2", "io.containerd.kata.v2", etc.
-	Kata             KataConfig            `yaml:"kata"`
-	Molt             MoltRuntimeConfig     `yaml:"molt"`
-	DefaultResources types.ResourceLimits  `yaml:"default_resources"`
-	MaxResources     types.ResourceLimits  `yaml:"max_resources"`  // Maximum allocatable
-	LogsDir          string                `yaml:"logs_dir"`
-	VolumesDir       string                `yaml:"volumes_dir"`
+	ContainerdSocket string               `yaml:"containerd_socket"`
+	Namespace        string               `yaml:"namespace"`
+	RuntimeName      string               `yaml:"runtime_name"` // "auto", "io.containerd.runc.v2", "io.containerd.kata.v2", etc.
+	Kata             KataConfig           `yaml:"kata"`
+	Molt             MoltRuntimeConfig    `yaml:"molt"`
+	DefaultResources types.ResourceLimits `yaml:"default_resources"`
+	MaxResources     types.ResourceLimits `yaml:"max_resources"` // Maximum allocatable
+	LogsDir          string               `yaml:"logs_dir"`
+	VolumesDir       string               `yaml:"volumes_dir"`
 }
 
 // MoltRuntimeConfig contains Molt (WASM serverless) runtime settings.
@@ -333,11 +333,11 @@ type MoltRuntimeConfig struct {
 	MaxCacheEntries int `yaml:"max_cache_entries"`
 
 	// Host function capability flags (all default false — must be explicitly enabled per deployment)
-	HTTPEnabled      bool     `yaml:"http_enabled"`                        // Allow WASM host.http_request
-	StorageEnabled   bool     `yaml:"storage_enabled"`                     // Allow WASM host.storage_*
-	CrawlEnabled     bool     `yaml:"crawl_enabled"`                       // Allow WASM host.crawl_page
-	HTTPAllowedHosts []string `yaml:"http_allowed_hosts,omitempty"`        // Restrict HTTP to these hosts only
-	HTTPBlockedHosts []string `yaml:"http_blocked_hosts,omitempty"`        // Block HTTP to these hosts
+	HTTPEnabled      bool     `yaml:"http_enabled"`                 // Allow WASM host.http_request
+	StorageEnabled   bool     `yaml:"storage_enabled"`              // Allow WASM host.storage_*
+	CrawlEnabled     bool     `yaml:"crawl_enabled"`                // Allow WASM host.crawl_page
+	HTTPAllowedHosts []string `yaml:"http_allowed_hosts,omitempty"` // Restrict HTTP to these hosts only
+	HTTPBlockedHosts []string `yaml:"http_blocked_hosts,omitempty"` // Block HTTP to these hosts
 
 	// JS/TS runtime (Deno worker pool)
 	JSRuntime JSRuntimeConfig `yaml:"js_runtime"`
@@ -393,50 +393,50 @@ type SecurityConfig struct {
 	Verification types.VerificationConfig `yaml:"verification"`
 
 	// TLS settings
-	TLSMinVersion    string   `yaml:"tls_min_version"`    // "1.2" or "1.3"
-	TLSCipherSuites  []string `yaml:"tls_cipher_suites"`  // Allowed cipher suites
-	CertPinning      bool     `yaml:"cert_pinning"`       // Enable certificate pinning
-	MutualTLS        bool     `yaml:"mutual_tls"`         // Require client certificates
+	TLSMinVersion   string   `yaml:"tls_min_version"`   // "1.2" or "1.3"
+	TLSCipherSuites []string `yaml:"tls_cipher_suites"` // Allowed cipher suites
+	CertPinning     bool     `yaml:"cert_pinning"`      // Enable certificate pinning
+	MutualTLS       bool     `yaml:"mutual_tls"`        // Require client certificates
 }
 
 // RedundancyConfig contains redundancy settings
 type RedundancyConfig struct {
-	ReplicaCount         int                  `yaml:"replica_count"`           // Always 3 for production
-	HealthCheckInterval  int                  `yaml:"health_check_interval_seconds"`
-	HealthTimeout        int                  `yaml:"health_timeout_seconds"`
-	FailoverDelay        int                  `yaml:"failover_delay_seconds"`
-	RegionConfig         types.RegionConfig   `yaml:"region_config"`
+	ReplicaCount        int                `yaml:"replica_count"` // Always 3 for production
+	HealthCheckInterval int                `yaml:"health_check_interval_seconds"`
+	HealthTimeout       int                `yaml:"health_timeout_seconds"`
+	FailoverDelay       int                `yaml:"failover_delay_seconds"`
+	RegionConfig        types.RegionConfig `yaml:"region_config"`
 }
 
 // EconomicsConfig contains all economic parameters
 type EconomicsConfig struct {
 	// Token settings
-	TokenAddress     string `yaml:"token_address"`      // BUNKER token contract address
-	TokenDecimals    int    `yaml:"token_decimals"`     // Token decimals (18)
+	TokenAddress  string `yaml:"token_address"`  // BUNKER token contract address
+	TokenDecimals int    `yaml:"token_decimals"` // Token decimals (18)
 
 	// Contract addresses
-	RegistryAddress     string `yaml:"registry_address"`     // Provider registry contract
-	StakingAddress      string `yaml:"staking_address"`      // BunkerStaking contract
-	EscrowAddress       string `yaml:"escrow_address"`       // Payment escrow contract
-	SlashingAddress     string `yaml:"slashing_address"`     // Slashing contract
-	PricingAddress      string `yaml:"pricing_address"`      // Pricing oracle contract
-	GovernanceAddress   string `yaml:"governance_address"`   // Governance contract
-	DelegationAddress   string `yaml:"delegation_address"`   // BunkerDelegation contract
-	ReputationAddress   string `yaml:"reputation_address"`   // BunkerReputation contract
-	VerificationAddress string `yaml:"verification_address"` // BunkerVerification contract
+	RegistryAddress          string `yaml:"registry_address"`           // Provider registry contract
+	StakingAddress           string `yaml:"staking_address"`            // BunkerStaking contract
+	EscrowAddress            string `yaml:"escrow_address"`             // Payment escrow contract
+	SlashingAddress          string `yaml:"slashing_address"`           // Slashing contract
+	PricingAddress           string `yaml:"pricing_address"`            // Pricing oracle contract
+	GovernanceAddress        string `yaml:"governance_address"`         // Governance contract
+	DelegationAddress        string `yaml:"delegation_address"`         // BunkerDelegation contract
+	ReputationAddress        string `yaml:"reputation_address"`         // BunkerReputation contract
+	VerificationAddress      string `yaml:"verification_address"`       // BunkerVerification contract
 	SubdomainRegistryAddress string `yaml:"subdomain_registry_address"` // BunkerRegistry contract
 
 	// Payment mode
-	MockPayments     bool   `yaml:"mock_payments"`      // Use mock payment layer (default: true for dev)
+	MockPayments bool `yaml:"mock_payments"` // Use mock payment layer (default: true for dev)
 
 	// Configuration (loaded from contracts or overridden locally)
-	StakingTiers   map[types.StakingTier]*types.StakingTierConfig `yaml:"staking_tiers"`
-	Pricing        *types.PricingConfig                            `yaml:"pricing"`
-	Slashing       *types.SlashingConfig                           `yaml:"slashing"`
-	Reputation     *types.ReputationConfig                         `yaml:"reputation"`
-	Fairness       *types.FairnessConfig                           `yaml:"fairness"`
-	ProtocolFees   *types.ProtocolFees                             `yaml:"protocol_fees"`
-	Unstaking      *types.UnstakingConfig                          `yaml:"unstaking"`
+	StakingTiers map[types.StakingTier]*types.StakingTierConfig `yaml:"staking_tiers"`
+	Pricing      *types.PricingConfig                           `yaml:"pricing"`
+	Slashing     *types.SlashingConfig                          `yaml:"slashing"`
+	Reputation   *types.ReputationConfig                        `yaml:"reputation"`
+	Fairness     *types.FairnessConfig                          `yaml:"fairness"`
+	ProtocolFees *types.ProtocolFees                            `yaml:"protocol_fees"`
+	Unstaking    *types.UnstakingConfig                         `yaml:"unstaking"`
 
 	// Chain settings
 	ChainID            int64    `yaml:"chain_id"`            // Base chain ID
@@ -497,7 +497,7 @@ type EncryptionConfig struct {
 
 // StorageConfig contains object storage service settings.
 type StorageConfig struct {
-	Enabled       bool   `yaml:"enabled"`        // Enable object storage service
+	Enabled       bool   `yaml:"enabled"`         // Enable object storage service
 	DataDir       string `yaml:"data_dir"`        // Directory for object blobs (default: <data_dir>/storage)
 	MaxBuckets    int    `yaml:"max_buckets"`     // Max buckets per wallet (default: 100)
 	MaxObjectSize int64  `yaml:"max_object_size"` // Max single object size in bytes (default: 5GB)
@@ -539,11 +539,11 @@ func DefaultProxyConfig() ProxyConfig {
 
 // AgentConfig contains AI agent runtime settings.
 type AgentConfig struct {
-	Enabled          bool     `yaml:"enabled"`            // Enable agent runtime
-	Frameworks       []string `yaml:"frameworks"`         // Enabled frameworks: langgraph, crewai, autogen, custom
-	DefaultMemoryMB  int      `yaml:"default_memory_mb"`  // Default agent container memory (default: 2048)
-	MaxAgentsPerWallet int    `yaml:"max_agents_per_wallet"` // Max concurrent agents per wallet (default: 10)
-	SyncIntervalSecs int      `yaml:"sync_interval_secs"` // Memory sync interval (default: 60)
+	Enabled            bool     `yaml:"enabled"`               // Enable agent runtime
+	Frameworks         []string `yaml:"frameworks"`            // Enabled frameworks: langgraph, crewai, autogen, custom
+	DefaultMemoryMB    int      `yaml:"default_memory_mb"`     // Default agent container memory (default: 2048)
+	MaxAgentsPerWallet int      `yaml:"max_agents_per_wallet"` // Max concurrent agents per wallet (default: 10)
+	SyncIntervalSecs   int      `yaml:"sync_interval_secs"`    // Memory sync interval (default: 60)
 }
 
 // DefaultAgentConfig returns the default agent configuration.
@@ -559,13 +559,13 @@ func DefaultAgentConfig() AgentConfig {
 
 // CrawlConfig contains web crawling service settings.
 type CrawlConfig struct {
-	Enabled        bool   `yaml:"enabled"`          // Enable crawl service
-	MaxDepth       int    `yaml:"max_depth"`        // Default max crawl depth (default: 3)
-	MaxPages       int    `yaml:"max_pages"`         // Max pages per job (default: 1000)
-	MaxConcurrent  int    `yaml:"max_concurrent"`   // Max concurrent crawl workers (default: 10)
-	BrowserImage   string `yaml:"browser_image"`    // Chromium container image CID
-	RespectRobots  bool   `yaml:"respect_robots"`   // Respect robots.txt (default: true)
-	DefaultDelay   int    `yaml:"default_delay_ms"` // Default per-domain delay in ms (default: 1000)
+	Enabled       bool   `yaml:"enabled"`          // Enable crawl service
+	MaxDepth      int    `yaml:"max_depth"`        // Default max crawl depth (default: 3)
+	MaxPages      int    `yaml:"max_pages"`        // Max pages per job (default: 1000)
+	MaxConcurrent int    `yaml:"max_concurrent"`   // Max concurrent crawl workers (default: 10)
+	BrowserImage  string `yaml:"browser_image"`    // Chromium container image CID
+	RespectRobots bool   `yaml:"respect_robots"`   // Respect robots.txt (default: true)
+	DefaultDelay  int    `yaml:"default_delay_ms"` // Default per-domain delay in ms (default: 1000)
 }
 
 // DefaultCrawlConfig returns the default crawl configuration.
@@ -634,21 +634,21 @@ func DefaultConfig() *Config {
 			BootstrapNodes:         []string{},
 			BootstrapHTTPEndpoints: []string{"https://api.moltbunker.com/v1/bootstrap"},
 			NetworkMode:            "hybrid",
-			MaxPeers:          50,
-			DialTimeoutSecs:   30,
-			DialTimeout:       30,
-			EnableMDNS:        true,
-			EnableNAT:         true,
-			ExternalIP:        "",
-			AnnounceAddrs:     []string{},
-			ConnectionTimeout: 60,
-			IdleTimeout:       300,
-			CircuitBreaker:    DefaultCircuitBreakerConfig(),
-			StakeVerification: DefaultStakeVerificationConfig(),
-			MaxPeersPerSubnet: 3,
-			MaxMessageAgeSecs: 300,
-			NonceWindowSecs:   600,
-			PeerScoring:       DefaultPeerScoringConfig(),
+			MaxPeers:               50,
+			DialTimeoutSecs:        30,
+			DialTimeout:            30,
+			EnableMDNS:             true,
+			EnableNAT:              true,
+			ExternalIP:             "",
+			AnnounceAddrs:          []string{},
+			ConnectionTimeout:      60,
+			IdleTimeout:            300,
+			CircuitBreaker:         DefaultCircuitBreakerConfig(),
+			StakeVerification:      DefaultStakeVerificationConfig(),
+			MaxPeersPerSubnet:      3,
+			MaxMessageAgeSecs:      300,
+			NonceWindowSecs:        600,
+			PeerScoring:            DefaultPeerScoringConfig(),
 		},
 		Tor: TorConfig{
 			Enabled:         false,
@@ -686,11 +686,11 @@ func DefaultConfig() *Config {
 				PIDLimit:    100,
 			},
 			MaxResources: types.ResourceLimits{
-				CPUQuota:    1600000,                     // 16 cores max
+				CPUQuota:    1600000, // 16 cores max
 				CPUPeriod:   100000,
-				MemoryLimit: 64 * 1024 * 1024 * 1024,     // 64GB
-				DiskLimit:   1000 * 1024 * 1024 * 1024,   // 1TB
-				NetworkBW:   1000 * 1024 * 1024,          // 1GB/s
+				MemoryLimit: 64 * 1024 * 1024 * 1024,   // 64GB
+				DiskLimit:   1000 * 1024 * 1024 * 1024, // 1TB
+				NetworkBW:   1000 * 1024 * 1024,        // 1GB/s
 				PIDLimit:    10000,
 			},
 			LogsDir:    filepath.Join(dataDir, "logs"),

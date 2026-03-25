@@ -20,21 +20,21 @@ type RequesterKeyManager struct {
 
 // EncryptedKeyStore represents the encrypted key storage format
 type EncryptedKeyStore struct {
-	Version        int    `json:"version"`
-	EncryptedKey   []byte `json:"encrypted_key"`   // ChaCha20Poly1305 encrypted private key
-	PublicKey      []byte `json:"public_key"`      // Public key (not encrypted)
-	Salt           []byte `json:"salt"`            // Argon2 salt for key derivation
-	Algorithm      string `json:"algorithm"`       // "ChaCha20Poly1305"
-	KeyDerivation  string `json:"key_derivation"`  // "Argon2id"
+	Version       int    `json:"version"`
+	EncryptedKey  []byte `json:"encrypted_key"`  // ChaCha20Poly1305 encrypted private key
+	PublicKey     []byte `json:"public_key"`     // Public key (not encrypted)
+	Salt          []byte `json:"salt"`           // Argon2 salt for key derivation
+	Algorithm     string `json:"algorithm"`      // "ChaCha20Poly1305"
+	KeyDerivation string `json:"key_derivation"` // "Argon2id"
 }
 
 const (
-	keyStoreVersion   = 1
-	argon2Time        = 3
-	argon2Memory      = 64 * 1024 // 64 MB
-	argon2Threads     = 4
-	argon2KeyLen      = 32
-	saltLen           = 32
+	keyStoreVersion = 1
+	argon2Time      = 3
+	argon2Memory    = 64 * 1024 // 64 MB
+	argon2Threads   = 4
+	argon2KeyLen    = 32
+	saltLen         = 32
 )
 
 // NewRequesterKeyManager creates a new requester key manager
@@ -87,12 +87,12 @@ func (rkm *RequesterKeyManager) SaveKeys(passphrase string) error {
 
 	// Create key store
 	keyStore := EncryptedKeyStore{
-		Version:        keyStoreVersion,
-		EncryptedKey:   encryptedPrivKey,
-		PublicKey:      pubKey,
-		Salt:           salt,
-		Algorithm:      "ChaCha20Poly1305",
-		KeyDerivation:  "Argon2id",
+		Version:       keyStoreVersion,
+		EncryptedKey:  encryptedPrivKey,
+		PublicKey:     pubKey,
+		Salt:          salt,
+		Algorithm:     "ChaCha20Poly1305",
+		KeyDerivation: "Argon2id",
 	}
 
 	// Marshal to JSON

@@ -12,13 +12,13 @@ import (
 
 // ServiceHealth tracks the health status of an exposed service.
 type ServiceHealth struct {
-	DeploymentID string    `json:"deployment_id"`
-	Healthy      bool      `json:"healthy"`
-	LastCheck    time.Time `json:"last_check"`
-	LastError    string    `json:"last_error,omitempty"`
+	DeploymentID string        `json:"deployment_id"`
+	Healthy      bool          `json:"healthy"`
+	LastCheck    time.Time     `json:"last_check"`
+	LastError    string        `json:"last_error,omitempty"`
 	Latency      time.Duration `json:"latency"`
-	CheckCount   int       `json:"check_count"`
-	FailCount    int       `json:"fail_count"`
+	CheckCount   int           `json:"check_count"`
+	FailCount    int           `json:"fail_count"`
 }
 
 // HealthChecker periodically checks the health of exposed services

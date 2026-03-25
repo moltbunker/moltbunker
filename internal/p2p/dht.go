@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/p2p/discovery/mdns"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/moltbunker/moltbunker/internal/identity"
@@ -144,7 +144,7 @@ func NewDHT(ctx context.Context, config *DHTConfig, keyManager *identity.KeyMana
 	// Enable NAT traversal options when configured
 	if config.EnableNAT {
 		opts = append(opts,
-			libp2p.NATPortMap(),        // Automatic port mapping via UPnP/NAT-PMP
+			libp2p.NATPortMap(),         // Automatic port mapping via UPnP/NAT-PMP
 			libp2p.EnableNATService(),   // Help other nodes determine their NAT status
 			libp2p.EnableRelay(),        // Act as a relay for nodes behind NAT
 			libp2p.EnableHolePunching(), // Direct connection upgrade via hole punching

@@ -22,24 +22,24 @@ type NodeLocation struct {
 	Region      string  `json:"region"`                 // Broad region: Americas, Europe, Asia-Pacific, Middle-East, Africa
 	Country     string  `json:"country"`                // ISO 3166-1 alpha-2 code (e.g., "FR")
 	CountryName string  `json:"country_name,omitempty"` // Full country name (e.g., "France")
-	City        string  `json:"city,omitempty"`          // City name (e.g., "Strasbourg")
-	Lat         float64 `json:"lat,omitempty"`           // Latitude
-	Lon         float64 `json:"lon,omitempty"`           // Longitude
+	City        string  `json:"city,omitempty"`         // City name (e.g., "Strasbourg")
+	Lat         float64 `json:"lat,omitempty"`          // Latitude
+	Lon         float64 `json:"lon,omitempty"`          // Longitude
 }
 
 // Node represents a peer in the P2P network
 type Node struct {
 	ID            NodeID
 	PublicKey     ed25519.PublicKey
-	Address       string         // Clearnet address or .onion address
+	Address       string // Clearnet address or .onion address
 	Port          int
-	Region        string         // Geographic region (kept for backward compat)
-	Country       string         // ISO 3166-1 alpha-2 (kept for backward compat)
-	Location      NodeLocation   // Detailed location info
-	OnionAddr     string         // .onion address if available
+	Region        string       // Geographic region (kept for backward compat)
+	Country       string       // ISO 3166-1 alpha-2 (kept for backward compat)
+	Location      NodeLocation // Detailed location info
+	OnionAddr     string       // .onion address if available
 	LastSeen      time.Time
 	WalletAddress common.Address // Ethereum wallet address (set after announce)
-	ProviderTier  ProviderTier  // Provider isolation tier (set after announce)
+	ProviderTier  ProviderTier   // Provider isolation tier (set after announce)
 	Capabilities  NodeCapabilities
 }
 
@@ -63,15 +63,15 @@ type NodeCapabilities struct {
 
 // Container represents a running container instance
 type Container struct {
-	ID          string
-	ImageCID    string // IPFS CID of container image
-	NodeID      NodeID
-	Status      ContainerStatus
-	Resources   ResourceLimits
-	CreatedAt   time.Time
-	Health      HealthStatus
-	Encrypted   bool
-	OnionAddr   string // .onion address if Tor-enabled
+	ID        string
+	ImageCID  string // IPFS CID of container image
+	NodeID    NodeID
+	Status    ContainerStatus
+	Resources ResourceLimits
+	CreatedAt time.Time
+	Health    HealthStatus
+	Encrypted bool
+	OnionAddr string // .onion address if Tor-enabled
 
 	// RuntimeType is "container" (default) or "molt" for WASM workloads.
 	RuntimeType RuntimeType `json:"runtime_type,omitempty"`
@@ -148,7 +148,7 @@ const (
 	MessageTypeNodes           MessageType = "nodes"
 	MessageTypeHealth          MessageType = "health"
 	MessageTypeDeploy          MessageType = "deploy"
-	MessageTypeDeployAck       MessageType = "deploy_ack"  // Acknowledgment of deployment
+	MessageTypeDeployAck       MessageType = "deploy_ack" // Acknowledgment of deployment
 	MessageTypeBid             MessageType = "bid"
 	MessageTypeGossip          MessageType = "gossip"
 	MessageTypeContainerStatus MessageType = "container_status"
@@ -273,13 +273,13 @@ type ExecClosePayload struct {
 // AnnouncePayload is sent after TLS handshake to prove wallet ownership.
 // The sender signs a message binding their NodeID to their wallet address.
 type AnnouncePayload struct {
-	WalletAddress string `json:"wallet_address"` // 0x-prefixed checksummed Ethereum address
-	NodeID        string `json:"node_id"`         // Hex-encoded node ID (binds wallet to node)
-	Timestamp     int64  `json:"timestamp"`       // Unix timestamp (must be within 5 min)
-	Nonce         string `json:"nonce"`            // Random 32-byte hex string
-	EthSignature     string       `json:"eth_signature"`              // EIP-191 personal_sign (65 bytes, hex)
-	ProviderTier     ProviderTier `json:"provider_tier,omitempty"`    // Self-reported provider tier
-	MoltAvailable    bool         `json:"molt_available,omitempty"`   // Whether Molt (WASM) runtime is available
+	WalletAddress    string       `json:"wallet_address"`               // 0x-prefixed checksummed Ethereum address
+	NodeID           string       `json:"node_id"`                      // Hex-encoded node ID (binds wallet to node)
+	Timestamp        int64        `json:"timestamp"`                    // Unix timestamp (must be within 5 min)
+	Nonce            string       `json:"nonce"`                        // Random 32-byte hex string
+	EthSignature     string       `json:"eth_signature"`                // EIP-191 personal_sign (65 bytes, hex)
+	ProviderTier     ProviderTier `json:"provider_tier,omitempty"`      // Self-reported provider tier
+	MoltAvailable    bool         `json:"molt_available,omitempty"`     // Whether Molt (WASM) runtime is available
 	MoltMaxMemoryMB  int          `json:"molt_max_memory_mb,omitempty"` // Max WASM memory per instance
 	MoltMaxInstances int          `json:"molt_max_instances,omitempty"` // Max concurrent WASM instances
 

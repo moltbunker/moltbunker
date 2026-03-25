@@ -124,12 +124,12 @@ func (h *RESTHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeProxyJSON(w, http.StatusOK, map[string]any{
-		"running":        h.server.IsRunning(),
-		"socks5_addr":    h.server.cfg.SOCKS5Addr,
-		"http_addr":      h.server.cfg.HTTPAddr,
-		"use_tor":        h.server.cfg.UseTor,
+		"running":         h.server.IsRunning(),
+		"socks5_addr":     h.server.cfg.SOCKS5Addr,
+		"http_addr":       h.server.cfg.HTTPAddr,
+		"use_tor":         h.server.cfg.UseTor,
 		"active_sessions": h.server.Tracker().Count(),
-		"max_sessions":   h.server.cfg.MaxSessions,
+		"max_sessions":    h.server.cfg.MaxSessions,
 	})
 }
 

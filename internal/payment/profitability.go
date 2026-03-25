@@ -44,11 +44,11 @@ type ProfitabilityReport struct {
 	TotalCost          float64
 
 	// Profit
-	NetProfit      float64 // Net revenue minus total costs
-	ProfitMargin   float64 // Percentage (0-100)
-	MonthlyROI     float64 // Return on staked investment percentage
-	BreakEvenJobs  int     // Jobs needed per month to break even
-	PaybackPeriod  float64 // Months to recover stake from profit
+	NetProfit     float64 // Net revenue minus total costs
+	ProfitMargin  float64 // Percentage (0-100)
+	MonthlyROI    float64 // Return on staked investment percentage
+	BreakEvenJobs int     // Jobs needed per month to break even
+	PaybackPeriod float64 // Months to recover stake from profit
 
 	// Staking
 	StakeTier        string  // Tier name
@@ -301,4 +301,3 @@ func weiBigIntToBunker(wei *big.Int) float64 {
 	result, _ := new(big.Float).Quo(f, divisor).Float64()
 	return result
 }
-

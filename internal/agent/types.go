@@ -29,9 +29,9 @@ const (
 type AgentSpec struct {
 	Name          string            `json:"name"`
 	Framework     Framework         `json:"framework"`
-	Image         string            `json:"image,omitempty"`   // Container image CID or reference
-	Config        map[string]string `json:"config,omitempty"`  // Framework-specific config
-	Env           map[string]string `json:"env,omitempty"`     // Environment variables
+	Image         string            `json:"image,omitempty"`  // Container image CID or reference
+	Config        map[string]string `json:"config,omitempty"` // Framework-specific config
+	Env           map[string]string `json:"env,omitempty"`    // Environment variables
 	MCPTools      []MCPToolDef      `json:"mcp_tools,omitempty"`
 	MemoryBucket  string            `json:"memory_bucket,omitempty"` // Object storage bucket for memory
 	MaxTokens     int64             `json:"max_tokens,omitempty"`    // Budget cap
@@ -61,15 +61,15 @@ type AgentDeployment struct {
 	Error       string      `json:"error,omitempty"`
 
 	// Metrics
-	TokensUsed    int64   `json:"tokens_used"`
-	InvocationCount int64 `json:"invocation_count"`
-	TotalCostWei  string  `json:"total_cost_wei,omitempty"`
+	TokensUsed      int64  `json:"tokens_used"`
+	InvocationCount int64  `json:"invocation_count"`
+	TotalCostWei    string `json:"total_cost_wei,omitempty"`
 }
 
 // AgentInvokeRequest is a message sent to an agent.
 type AgentInvokeRequest struct {
-	AgentID string `json:"agent_id"`
-	Message string `json:"message"`
+	AgentID string            `json:"agent_id"`
+	Message string            `json:"message"`
 	Context map[string]string `json:"context,omitempty"`
 }
 

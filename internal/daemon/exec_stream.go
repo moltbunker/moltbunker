@@ -30,7 +30,9 @@ type ExecStream struct {
 	containerID string
 	fromNode    types.NodeID
 	session     *runtime.InteractiveSession
-	router      interface{ SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error }
+	router      interface {
+		SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error
+	}
 	localNodeID types.NodeID
 
 	execAgentMode bool // true when bridging to exec-agent (E2E encrypted exec)
@@ -49,7 +51,9 @@ func newExecStream(
 	fromNode types.NodeID,
 	localNodeID types.NodeID,
 	session *runtime.InteractiveSession,
-	router interface{ SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error },
+	router interface {
+		SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error
+	},
 	execAgentMode bool,
 ) *ExecStream {
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -269,7 +273,7 @@ type ExecStreamManager struct {
 // NewExecStreamManager creates a new exec stream manager
 func NewExecStreamManager() *ExecStreamManager {
 	return &ExecStreamManager{
-		streams:               make(map[string]*ExecStream),
+		streams:                make(map[string]*ExecStream),
 		maxStreamsPerContainer: 3,
 		maxTotalStreams:        20,
 	}

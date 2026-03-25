@@ -8,20 +8,20 @@ import (
 
 const (
 	defaultMaxConsecutiveErrors = 3
-	defaultRecoveryInterval    = 30 * time.Second
-	ewmaAlpha                  = 0.3  // Weight for new latency samples
-	defaultInitialLatency      = 100 * time.Millisecond // Sentinel latency for unmeasured endpoints
+	defaultRecoveryInterval     = 30 * time.Second
+	ewmaAlpha                   = 0.3                    // Weight for new latency samples
+	defaultInitialLatency       = 100 * time.Millisecond // Sentinel latency for unmeasured endpoints
 )
 
 // EndpointHealth tracks the health state of a single RPC endpoint.
 type EndpointHealth struct {
-	URL              string
-	Latency          time.Duration // EWMA
-	ConsecutiveErrs  int
-	LastSuccess      time.Time
-	LastError        time.Time
-	Healthy          bool
-	latencySamples   int // number of samples seen (0 = no EWMA yet)
+	URL             string
+	Latency         time.Duration // EWMA
+	ConsecutiveErrs int
+	LastSuccess     time.Time
+	LastError       time.Time
+	Healthy         bool
+	latencySamples  int // number of samples seen (0 = no EWMA yet)
 }
 
 // EndpointTracker manages health state for a set of RPC endpoints.

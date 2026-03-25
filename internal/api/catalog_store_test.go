@@ -342,7 +342,7 @@ func TestValidateID(t *testing.T) {
 		{"test123", true},
 		{"a", true},
 		{"", false},
-		{"Invalid", false},       // uppercase
+		{"Invalid", false}, // uppercase
 		{"has spaces", false},
 		{"has.dots", false},
 	}

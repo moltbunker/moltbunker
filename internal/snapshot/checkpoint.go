@@ -37,11 +37,11 @@ type StateProvider interface {
 
 // Checkpointer handles automatic periodic checkpoints
 type Checkpointer struct {
-	config   *CheckpointConfig
-	manager  *Manager
-	mu       sync.RWMutex
-	running  bool
-	stopCh   chan struct{}
+	config  *CheckpointConfig
+	manager *Manager
+	mu      sync.RWMutex
+	running bool
+	stopCh  chan struct{}
 
 	// Tracked containers
 	containers map[string]StateProvider

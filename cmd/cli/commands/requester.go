@@ -14,10 +14,10 @@ import (
 
 // Requester command flags
 var (
-	requesterOutputDir  string
-	requesterFollow     bool
-	requesterDecrypt    bool
-	requesterKeyFile    string
+	requesterOutputDir string
+	requesterFollow    bool
+	requesterDecrypt   bool
+	requesterKeyFile   string
 )
 
 // NewRequesterCmd creates the requester command with subcommands

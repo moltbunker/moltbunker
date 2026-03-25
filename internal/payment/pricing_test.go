@@ -13,9 +13,9 @@ func TestPricingCalculator_CalculatePrice(t *testing.T) {
 	pc := NewPricingCalculator(basePrice)
 
 	resources := types.ResourceLimits{
-		CPUQuota:    1000000,  // 1 CPU
-		CPUPeriod:   100000,   // 100ms period
-		MemoryLimit: 1073741824, // 1GB
+		CPUQuota:    1000000,     // 1 CPU
+		CPUPeriod:   100000,      // 100ms period
+		MemoryLimit: 1073741824,  // 1GB
 		DiskLimit:   10737418240, // 10GB
 		NetworkBW:   10485760,    // 10MB/s
 		PIDLimit:    100,
@@ -73,8 +73,8 @@ func TestPricingCalculator_CalculateBid_HigherStake(t *testing.T) {
 	}
 
 	duration := 1 * time.Hour
-	stake1 := big.NewInt(1000000000000000000)  // 1 BUNKER
-	stake2 := big.NewInt(2000000000000000000)  // 2 BUNKER
+	stake1 := big.NewInt(1000000000000000000) // 1 BUNKER
+	stake2 := big.NewInt(2000000000000000000) // 2 BUNKER
 
 	bid1 := pc.CalculateBid(resources, duration, stake1)
 	bid2 := pc.CalculateBid(resources, duration, stake2)

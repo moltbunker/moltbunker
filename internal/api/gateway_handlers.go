@@ -51,15 +51,15 @@ type GatewayKeyUpdateRequest struct {
 
 // GatewayMetricsResponse is the combined metrics for the API gateway.
 type GatewayMetricsResponse struct {
-	Uptime            string                        `json:"uptime"`
-	UptimeSeconds     float64                       `json:"uptime_seconds"`
-	TotalKeys         int                           `json:"total_keys"`
-	ActiveKeys        int                           `json:"active_keys"`
-	RevokedKeys       int                           `json:"revoked_keys"`
-	RequestCounts     map[string]uint64             `json:"request_counts"`
+	Uptime            string                          `json:"uptime"`
+	UptimeSeconds     float64                         `json:"uptime_seconds"`
+	TotalKeys         int                             `json:"total_keys"`
+	ActiveKeys        int                             `json:"active_keys"`
+	RevokedKeys       int                             `json:"revoked_keys"`
+	RequestCounts     map[string]uint64               `json:"request_counts"`
 	RequestLatencies  map[string]metrics.LatencyStats `json:"request_latencies"`
-	ActiveConnections int64                         `json:"active_connections"`
-	RateLimitConfig   GatewayRateLimitInfo          `json:"rate_limit_config"`
+	ActiveConnections int64                           `json:"active_connections"`
+	RateLimitConfig   GatewayRateLimitInfo            `json:"rate_limit_config"`
 }
 
 // GatewayRateLimitInfo exposes the global rate limit settings.

@@ -304,9 +304,9 @@ func (s *APIServer) handleSnapshotRestore(ctx context.Context, req *APIRequest) 
 
 	return &APIResponse{
 		Result: map[string]interface{}{
-			"status":       "restoring",
-			"snapshot_id":  params.SnapshotID,
-			"data_size":    len(data),
+			"status":        "restoring",
+			"snapshot_id":   params.SnapshotID,
+			"data_size":     len(data),
 			"target_region": params.TargetRegion,
 			"new_container": params.NewContainer,
 		},

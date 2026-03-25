@@ -51,7 +51,7 @@ func TestRegisterUnregisterProbe(t *testing.T) {
 
 	t.Run("register replaces existing probe", func(t *testing.T) {
 		hc.RegisterProbe("container-1", HealthProbeConfig{
-			Type:    ProbeHTTP,
+			Type:     ProbeHTTP,
 			HTTPPort: 9090,
 		})
 		if hc.ProbeCount() != 1 {
@@ -141,13 +141,13 @@ func TestHTTPProbe_Success(t *testing.T) {
 	})
 
 	hc.RegisterProbe("http-ok", HealthProbeConfig{
-		Type:             ProbeHTTP,
-		HTTPPath:         "/healthz",
-		HTTPPort:         port,
+		Type:              ProbeHTTP,
+		HTTPPath:          "/healthz",
+		HTTPPort:          port,
 		HTTPExpectedCodes: []int{200},
-		Timeout:          5 * time.Second,
-		SuccessThreshold: 1,
-		FailureThreshold: 3,
+		Timeout:           5 * time.Second,
+		SuccessThreshold:  1,
+		FailureThreshold:  3,
 	})
 
 	ok, err := hc.CheckHealth(context.Background(), "http-ok")
@@ -184,13 +184,13 @@ func TestHTTPProbe_WrongStatusCode(t *testing.T) {
 	})
 
 	hc.RegisterProbe("http-503", HealthProbeConfig{
-		Type:             ProbeHTTP,
-		HTTPPath:         "/",
-		HTTPPort:         port,
+		Type:              ProbeHTTP,
+		HTTPPath:          "/",
+		HTTPPort:          port,
 		HTTPExpectedCodes: []int{200},
-		Timeout:          5 * time.Second,
-		SuccessThreshold: 1,
-		FailureThreshold: 1,
+		Timeout:           5 * time.Second,
+		SuccessThreshold:  1,
+		FailureThreshold:  1,
 	})
 
 	ok, err := hc.CheckHealth(context.Background(), "http-503")
@@ -221,13 +221,13 @@ func TestHTTPProbe_MultipleExpectedCodes(t *testing.T) {
 	})
 
 	hc.RegisterProbe("http-204", HealthProbeConfig{
-		Type:             ProbeHTTP,
-		HTTPPath:         "/",
-		HTTPPort:         port,
+		Type:              ProbeHTTP,
+		HTTPPath:          "/",
+		HTTPPort:          port,
 		HTTPExpectedCodes: []int{200, 204},
-		Timeout:          5 * time.Second,
-		SuccessThreshold: 1,
-		FailureThreshold: 3,
+		Timeout:           5 * time.Second,
+		SuccessThreshold:  1,
+		FailureThreshold:  3,
 	})
 
 	ok, err := hc.CheckHealth(context.Background(), "http-204")

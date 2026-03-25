@@ -41,7 +41,7 @@ func TestFullDeploymentFlow(t *testing.T) {
 	t.Log("=== Phase 1: On-chain setup ===")
 
 	escrowAmount := "50000000000000000000" // 50 BUNKER
-	duration := "7200"                      // 2 hours
+	duration := "7200"                     // 2 hours
 
 	// Requester approves and creates reservation
 	_, err := castSend(requesterPK, tokenAddr,
@@ -266,4 +266,3 @@ func waitForDiscovery(t *testing.T, ctx context.Context, nodes []*testNode, minP
 		}
 	}
 }
-

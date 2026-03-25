@@ -17,8 +17,8 @@ import (
 // It provides helpers to propagate state between nodes, simulating what
 // the real GossipProtocol does over P2P transport.
 type gossipNetwork struct {
-	nodes       []*redundancy.ConsensusManager
-	partitions  map[int]int // node index -> partition group
+	nodes      []*redundancy.ConsensusManager
+	partitions map[int]int // node index -> partition group
 }
 
 // newGossipNetwork creates a simulated gossip network with n nodes.
@@ -465,8 +465,8 @@ func TestGossipConvergence_VersionConflict(t *testing.T) {
 		types.ContainerStatusPaused,
 	)
 
-	nodeE.UpdateState(containerID, types.ContainerStatusRunning, runningReplicas)   // v1
-	nodeF.UpdateState(containerID, types.ContainerStatusPaused, pausedReplicas)     // v1
+	nodeE.UpdateState(containerID, types.ContainerStatusRunning, runningReplicas) // v1
+	nodeF.UpdateState(containerID, types.ContainerStatusPaused, pausedReplicas)   // v1
 
 	stateE, _ := nodeE.GetState(containerID)
 	stateF, _ := nodeF.GetState(containerID)

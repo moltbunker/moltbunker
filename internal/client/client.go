@@ -36,9 +36,9 @@ type APIResponse struct {
 
 // AggregatedCapacity contains aggregated node resource capacity
 type AggregatedCapacity struct {
-	CPUTotal       int     `json:"cpu_total"`
-	MemoryTotalGB  int     `json:"memory_total_gb"`
-	StorageTotalGB int     `json:"storage_total_gb"`
+	CPUTotal       int `json:"cpu_total"`
+	MemoryTotalGB  int `json:"memory_total_gb"`
+	StorageTotalGB int `json:"storage_total_gb"`
 
 	CPUUsed       int     `json:"cpu_used"`
 	MemoryUsedGB  float64 `json:"memory_used_gb"`
@@ -66,21 +66,21 @@ type SecurityStatus struct {
 
 // NodeProfile represents a known node in the network
 type NodeProfile struct {
-	NodeID           string    `json:"node_id"`
-	Address          string    `json:"address,omitempty"`
-	WalletAddress    string    `json:"wallet_address,omitempty"`
-	Region           string    `json:"region"`
-	Country          string    `json:"country,omitempty"`
-	Online           bool      `json:"online"`
-	LastSeen         time.Time `json:"last_seen"`
+	NodeID           string          `json:"node_id"`
+	Address          string          `json:"address,omitempty"`
+	WalletAddress    string          `json:"wallet_address,omitempty"`
+	Region           string          `json:"region"`
+	Country          string          `json:"country,omitempty"`
+	Online           bool            `json:"online"`
+	LastSeen         time.Time       `json:"last_seen"`
 	Capacity         CapacityProfile `json:"capacity"`
-	Tier             string    `json:"tier"`
-	Role             string    `json:"role"`
-	ReputationScore  int       `json:"reputation_score"`
-	StakingAmount    uint64    `json:"staking_amount"`
-	ActiveContainers int       `json:"active_containers"`
-	EncryptedCount   int       `json:"encrypted_containers"`
-	Version          string    `json:"version,omitempty"`
+	Tier             string          `json:"tier"`
+	Role             string          `json:"role"`
+	ReputationScore  int             `json:"reputation_score"`
+	StakingAmount    uint64          `json:"staking_amount"`
+	ActiveContainers int             `json:"active_containers"`
+	EncryptedCount   int             `json:"encrypted_containers"`
+	Version          string          `json:"version,omitempty"`
 
 	// Admin-assigned metadata
 	Badges  []string `json:"badges,omitempty"`
@@ -161,16 +161,16 @@ type ExposedPort struct {
 
 // DeployRequest contains deployment parameters
 type DeployRequest struct {
-	Image           string          `json:"image"`
-	CodeHash        string          `json:"code_hash,omitempty"`
-	Resources       *ResourceLimits `json:"resources,omitempty"`
-	TorOnly         bool            `json:"tor_only"`
-	OnionService    bool            `json:"onion_service"`
-	OnionPort       int             `json:"onion_port,omitempty"`        // Port to expose via Tor (default: 80)
-	WaitForReplicas bool            `json:"wait_for_replicas,omitempty"` // If true, wait for at least 1 replica ack before returning
-	ReservationID   string          `json:"reservation_id,omitempty"`    // On-chain escrow reservation ID (user-created)
-	Owner           string          `json:"owner,omitempty"`             // Wallet address of the deployer
-	MinProviderTier  string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
+	Image            string          `json:"image"`
+	CodeHash         string          `json:"code_hash,omitempty"`
+	Resources        *ResourceLimits `json:"resources,omitempty"`
+	TorOnly          bool            `json:"tor_only"`
+	OnionService     bool            `json:"onion_service"`
+	OnionPort        int             `json:"onion_port,omitempty"`         // Port to expose via Tor (default: 80)
+	WaitForReplicas  bool            `json:"wait_for_replicas,omitempty"`  // If true, wait for at least 1 replica ack before returning
+	ReservationID    string          `json:"reservation_id,omitempty"`     // On-chain escrow reservation ID (user-created)
+	Owner            string          `json:"owner,omitempty"`              // Wallet address of the deployer
+	MinProviderTier  string          `json:"min_provider_tier,omitempty"`  // Minimum provider tier ("confidential", "standard", "dev")
 	EncryptedExecKey []byte          `json:"encrypted_exec_key,omitempty"` // Exec key for E2E encrypted exec (32 bytes)
 	DeployNonce      string          `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key derivation
 	ExposePorts      []ExposedPort   `json:"expose_ports,omitempty"`       // Container ports to expose via ingress
@@ -207,7 +207,7 @@ type ContainerInfo struct {
 
 // HealthResponse contains health information
 type HealthResponse struct {
-	Healthy             bool           `json:"healthy"`
+	Healthy             bool             `json:"healthy"`
 	UnhealthyContainers map[string][]int `json:"unhealthy_containers,omitempty"`
 }
 

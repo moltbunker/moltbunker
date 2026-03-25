@@ -192,19 +192,19 @@ func (s *DHTNodeSelector) scoreNode(node *types.Node, targetRegion string) float
 // isSameContinent checks if two regions are on the same continent
 func (s *DHTNodeSelector) isSameContinent(region1, region2 string) bool {
 	continentMap := map[string]string{
-		"americas":          "americas",
-		"us-east":           "americas",
-		"us-west":           "americas",
-		"sa-east":           "americas",
-		"europe":            "europe",
-		"eu-west":           "europe",
-		"eu-central":        "europe",
-		"asia_pacific":      "asia",
-		"ap-southeast":      "asia",
-		"ap-northeast":      "asia",
-		"ap-south":          "asia",
-		"middle_east":       "middle_east",
-		"africa":            "africa",
+		"americas":     "americas",
+		"us-east":      "americas",
+		"us-west":      "americas",
+		"sa-east":      "americas",
+		"europe":       "europe",
+		"eu-west":      "europe",
+		"eu-central":   "europe",
+		"asia_pacific": "asia",
+		"ap-southeast": "asia",
+		"ap-northeast": "asia",
+		"ap-south":     "asia",
+		"middle_east":  "middle_east",
+		"africa":       "africa",
 	}
 
 	c1, ok1 := continentMap[region1]

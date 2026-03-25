@@ -70,7 +70,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 	return map[StakingTier]*StakingTierConfig{
 		StakingTierStarter: {
 			Name:              StakingTierStarter,
-			MinStakeString:    "1000000000000000000000000",      // 1,000,000 BUNKER (18 decimals)
+			MinStakeString:    "1000000000000000000000000", // 1,000,000 BUNKER (18 decimals)
 			MaxConcurrentJobs: 3,
 			RewardMultiplier:  1.0,
 			PriorityQueue:     false,
@@ -79,7 +79,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierBronze: {
 			Name:              StakingTierBronze,
-			MinStakeString:    "5000000000000000000000000",      // 5,000,000 BUNKER
+			MinStakeString:    "5000000000000000000000000", // 5,000,000 BUNKER
 			MaxConcurrentJobs: 10,
 			RewardMultiplier:  1.0,
 			PriorityQueue:     false,
@@ -88,7 +88,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierSilver: {
 			Name:              StakingTierSilver,
-			MinStakeString:    "10000000000000000000000000",     // 10,000,000 BUNKER
+			MinStakeString:    "10000000000000000000000000", // 10,000,000 BUNKER
 			MaxConcurrentJobs: 50,
 			RewardMultiplier:  1.05,
 			PriorityQueue:     true,
@@ -97,7 +97,7 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierGold: {
 			Name:              StakingTierGold,
-			MinStakeString:    "100000000000000000000000000",    // 100,000,000 BUNKER
+			MinStakeString:    "100000000000000000000000000", // 100,000,000 BUNKER
 			MaxConcurrentJobs: 200,
 			RewardMultiplier:  1.1,
 			PriorityQueue:     true,
@@ -106,8 +106,8 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 		},
 		StakingTierPlatinum: {
 			Name:              StakingTierPlatinum,
-			MinStakeString:    "1000000000000000000000000000",   // 1,000,000,000 BUNKER
-			MaxConcurrentJobs: -1,                               // Unlimited
+			MinStakeString:    "1000000000000000000000000000", // 1,000,000,000 BUNKER
+			MaxConcurrentJobs: -1,                             // Unlimited
 			RewardMultiplier:  1.2,
 			PriorityQueue:     true,
 			Governance:        true,
@@ -118,18 +118,18 @@ func DefaultStakingTiers() map[StakingTier]*StakingTierConfig {
 
 // PricingConfig defines resource pricing (in BUNKER wei per unit)
 type PricingConfig struct {
-	CPUPerCoreHour     string `yaml:"cpu_per_core_hour" json:"cpu_per_core_hour"`         // BUNKER per CPU core-hour
-	MemoryPerGBHour    string `yaml:"memory_per_gb_hour" json:"memory_per_gb_hour"`       // BUNKER per GB-hour
-	StoragePerGBMonth  string `yaml:"storage_per_gb_month" json:"storage_per_gb_month"`   // BUNKER per GB-month
-	NetworkPerGB       string `yaml:"network_per_gb" json:"network_per_gb"`               // BUNKER per GB egress
-	GPUBasicPerHour    string `yaml:"gpu_basic_per_hour" json:"gpu_basic_per_hour"`       // BUNKER per basic GPU-hour
-	GPUPremiumPerHour  string `yaml:"gpu_premium_per_hour" json:"gpu_premium_per_hour"`   // BUNKER per premium GPU-hour
+	CPUPerCoreHour    string `yaml:"cpu_per_core_hour" json:"cpu_per_core_hour"`       // BUNKER per CPU core-hour
+	MemoryPerGBHour   string `yaml:"memory_per_gb_hour" json:"memory_per_gb_hour"`     // BUNKER per GB-hour
+	StoragePerGBMonth string `yaml:"storage_per_gb_month" json:"storage_per_gb_month"` // BUNKER per GB-month
+	NetworkPerGB      string `yaml:"network_per_gb" json:"network_per_gb"`             // BUNKER per GB egress
+	GPUBasicPerHour   string `yaml:"gpu_basic_per_hour" json:"gpu_basic_per_hour"`     // BUNKER per basic GPU-hour
+	GPUPremiumPerHour string `yaml:"gpu_premium_per_hour" json:"gpu_premium_per_hour"` // BUNKER per premium GPU-hour
 
 	// Multipliers
-	RedundancyMultiplier float64 `yaml:"redundancy_multiplier" json:"redundancy_multiplier"` // For 3x redundancy (default: 3.0)
-	TorMultiplier        float64 `yaml:"tor_multiplier" json:"tor_multiplier"`               // For Tor-only mode
+	RedundancyMultiplier float64 `yaml:"redundancy_multiplier" json:"redundancy_multiplier"`   // For 3x redundancy (default: 3.0)
+	TorMultiplier        float64 `yaml:"tor_multiplier" json:"tor_multiplier"`                 // For Tor-only mode
 	PremiumSLAMultiplier float64 `yaml:"premium_sla_multiplier" json:"premium_sla_multiplier"` // For 99.99% SLA
-	SpotMultiplier       float64 `yaml:"spot_multiplier" json:"spot_multiplier"`             // For preemptible instances
+	SpotMultiplier       float64 `yaml:"spot_multiplier" json:"spot_multiplier"`               // For preemptible instances
 
 	// Minimums
 	MinimumServiceHours   int `yaml:"minimum_service_hours" json:"minimum_service_hours"`     // Min billing for services
@@ -142,23 +142,23 @@ func DefaultPricingConfig() *PricingConfig {
 	return &PricingConfig{
 		// Base prices in BUNKER wei (18 decimals)
 		// 0.50 BUNKER per CPU core-hour
-		CPUPerCoreHour:    "500000000000000000",
+		CPUPerCoreHour: "500000000000000000",
 		// 0.10 BUNKER per GB-hour
-		MemoryPerGBHour:   "100000000000000000",
+		MemoryPerGBHour: "100000000000000000",
 		// 0.05 BUNKER per GB-month
 		StoragePerGBMonth: "50000000000000000",
 		// 0.02 BUNKER per GB
-		NetworkPerGB:      "20000000000000000",
+		NetworkPerGB: "20000000000000000",
 		// 5.00 BUNKER per basic GPU-hour
-		GPUBasicPerHour:   "5000000000000000000",
+		GPUBasicPerHour: "5000000000000000000",
 		// 15.00 BUNKER per premium GPU-hour
 		GPUPremiumPerHour: "15000000000000000000",
 
 		// Multipliers
-		RedundancyMultiplier: 3.0,  // 3x for mandatory redundancy
-		TorMultiplier:        1.2,  // 20% premium for Tor
-		PremiumSLAMultiplier: 1.5,  // 50% premium for 99.99% SLA
-		SpotMultiplier:       0.5,  // 50% discount for preemptible
+		RedundancyMultiplier: 3.0, // 3x for mandatory redundancy
+		TorMultiplier:        1.2, // 20% premium for Tor
+		PremiumSLAMultiplier: 1.5, // 50% premium for 99.99% SLA
+		SpotMultiplier:       0.5, // 50% discount for preemptible
 
 		// Minimums
 		MinimumServiceHours:   1,
@@ -183,21 +183,21 @@ const (
 // SlashingConfig defines slashing parameters for violations
 type SlashingConfig struct {
 	// Violation percentages (0-100)
-	DowntimePerHourPercent      float64 `yaml:"downtime_per_hour_percent" json:"downtime_per_hour_percent"`           // Per hour of downtime
-	DowntimeMaxPercent          float64 `yaml:"downtime_max_percent" json:"downtime_max_percent"`                     // Maximum for downtime
-	JobAbandonmentPercent       float64 `yaml:"job_abandonment_percent" json:"job_abandonment_percent"`
-	HealthFailurePercent        float64 `yaml:"health_failure_percent" json:"health_failure_percent"`
-	ResourceFraudPercent        float64 `yaml:"resource_fraud_percent" json:"resource_fraud_percent"`
-	ReplicaMismatchPercent      float64 `yaml:"replica_mismatch_percent" json:"replica_mismatch_percent"`
-	SecurityViolationPercent    float64 `yaml:"security_violation_percent" json:"security_violation_percent"`
-	MaliciousActivityPercent    float64 `yaml:"malicious_activity_percent" json:"malicious_activity_percent"`
+	DowntimePerHourPercent   float64 `yaml:"downtime_per_hour_percent" json:"downtime_per_hour_percent"` // Per hour of downtime
+	DowntimeMaxPercent       float64 `yaml:"downtime_max_percent" json:"downtime_max_percent"`           // Maximum for downtime
+	JobAbandonmentPercent    float64 `yaml:"job_abandonment_percent" json:"job_abandonment_percent"`
+	HealthFailurePercent     float64 `yaml:"health_failure_percent" json:"health_failure_percent"`
+	ResourceFraudPercent     float64 `yaml:"resource_fraud_percent" json:"resource_fraud_percent"`
+	ReplicaMismatchPercent   float64 `yaml:"replica_mismatch_percent" json:"replica_mismatch_percent"`
+	SecurityViolationPercent float64 `yaml:"security_violation_percent" json:"security_violation_percent"`
+	MaliciousActivityPercent float64 `yaml:"malicious_activity_percent" json:"malicious_activity_percent"`
 
 	// Appeal windows (in hours)
-	DowntimeAppealHours         int `yaml:"downtime_appeal_hours" json:"downtime_appeal_hours"`
-	JobAbandonmentAppealHours   int `yaml:"job_abandonment_appeal_hours" json:"job_abandonment_appeal_hours"`
-	HealthFailureAppealHours    int `yaml:"health_failure_appeal_hours" json:"health_failure_appeal_hours"`
-	ResourceFraudAppealHours    int `yaml:"resource_fraud_appeal_hours" json:"resource_fraud_appeal_hours"`
-	ReplicaMismatchAppealHours  int `yaml:"replica_mismatch_appeal_hours" json:"replica_mismatch_appeal_hours"`
+	DowntimeAppealHours          int `yaml:"downtime_appeal_hours" json:"downtime_appeal_hours"`
+	JobAbandonmentAppealHours    int `yaml:"job_abandonment_appeal_hours" json:"job_abandonment_appeal_hours"`
+	HealthFailureAppealHours     int `yaml:"health_failure_appeal_hours" json:"health_failure_appeal_hours"`
+	ResourceFraudAppealHours     int `yaml:"resource_fraud_appeal_hours" json:"resource_fraud_appeal_hours"`
+	ReplicaMismatchAppealHours   int `yaml:"replica_mismatch_appeal_hours" json:"replica_mismatch_appeal_hours"`
 	SecurityViolationAppealHours int `yaml:"security_violation_appeal_hours" json:"security_violation_appeal_hours"`
 	MaliciousActivityAppealHours int `yaml:"malicious_activity_appeal_hours" json:"malicious_activity_appeal_hours"`
 
@@ -221,11 +221,11 @@ func DefaultSlashingConfig() *SlashingConfig {
 		MaliciousActivityPercent: 100.0,
 
 		// Appeal windows
-		DowntimeAppealHours:        0,  // No appeal for downtime
-		JobAbandonmentAppealHours:  12,
-		HealthFailureAppealHours:   24,
-		ResourceFraudAppealHours:   24,
-		ReplicaMismatchAppealHours: 24,
+		DowntimeAppealHours:          0, // No appeal for downtime
+		JobAbandonmentAppealHours:    12,
+		HealthFailureAppealHours:     24,
+		ResourceFraudAppealHours:     24,
+		ReplicaMismatchAppealHours:   24,
 		SecurityViolationAppealHours: 48,
 		MaliciousActivityAppealHours: 72,
 
@@ -244,9 +244,9 @@ type ReputationConfig struct {
 	InitialScore int `yaml:"initial_score" json:"initial_score"`
 
 	// Positive actions
-	JobCompletedPoints        int `yaml:"job_completed_points" json:"job_completed_points"`
-	JobEarlyCompletionPoints  int `yaml:"job_early_completion_points" json:"job_early_completion_points"`
-	PerfectMonthPoints        int `yaml:"perfect_month_points" json:"perfect_month_points"`
+	JobCompletedPoints          int `yaml:"job_completed_points" json:"job_completed_points"`
+	JobEarlyCompletionPoints    int `yaml:"job_early_completion_points" json:"job_early_completion_points"`
+	PerfectMonthPoints          int `yaml:"perfect_month_points" json:"perfect_month_points"`
 	CommunityVerificationPoints int `yaml:"community_verification_points" json:"community_verification_points"`
 
 	// Negative actions
@@ -261,16 +261,16 @@ type ReputationConfig struct {
 	DecayFloor             int `yaml:"decay_floor" json:"decay_floor"` // Minimum score from decay
 
 	// Tier thresholds
-	EliteThreshold      int     `yaml:"elite_threshold" json:"elite_threshold"`
-	TrustedThreshold    int     `yaml:"trusted_threshold" json:"trusted_threshold"`
-	StandardThreshold   int     `yaml:"standard_threshold" json:"standard_threshold"`
-	ProbationThreshold  int     `yaml:"probation_threshold" json:"probation_threshold"`
+	EliteThreshold     int `yaml:"elite_threshold" json:"elite_threshold"`
+	TrustedThreshold   int `yaml:"trusted_threshold" json:"trusted_threshold"`
+	StandardThreshold  int `yaml:"standard_threshold" json:"standard_threshold"`
+	ProbationThreshold int `yaml:"probation_threshold" json:"probation_threshold"`
 
 	// Tier multipliers
-	EliteMultiplier     float64 `yaml:"elite_multiplier" json:"elite_multiplier"`
-	TrustedMultiplier   float64 `yaml:"trusted_multiplier" json:"trusted_multiplier"`
-	StandardMultiplier  float64 `yaml:"standard_multiplier" json:"standard_multiplier"`
-	ProbationMultiplier float64 `yaml:"probation_multiplier" json:"probation_multiplier"`
+	EliteMultiplier      float64 `yaml:"elite_multiplier" json:"elite_multiplier"`
+	TrustedMultiplier    float64 `yaml:"trusted_multiplier" json:"trusted_multiplier"`
+	StandardMultiplier   float64 `yaml:"standard_multiplier" json:"standard_multiplier"`
+	ProbationMultiplier  float64 `yaml:"probation_multiplier" json:"probation_multiplier"`
 	RestrictedMultiplier float64 `yaml:"restricted_multiplier" json:"restricted_multiplier"`
 }
 
@@ -316,21 +316,21 @@ func DefaultReputationConfig() *ReputationConfig {
 
 // ProviderState represents the current state of a provider
 type ProviderState struct {
-	NodeID            NodeID      `json:"node_id"`
-	WalletAddress     string      `json:"wallet_address"`
-	StakedAmount      *big.Int    `json:"staked_amount"`
-	Tier              StakingTier `json:"tier"`
-	ReputationScore   int         `json:"reputation_score"`
-	Uptime30Days      float64     `json:"uptime_30_days"`       // Percentage
-	JobsCompleted     int         `json:"jobs_completed"`
-	JobsCompleted7Days int        `json:"jobs_completed_7_days"`
-	ActiveJobs        int         `json:"active_jobs"`
-	TotalEarnings     *big.Int    `json:"total_earnings"`
-	RegisteredAt      time.Time   `json:"registered_at"`
-	LastSeenAt        time.Time   `json:"last_seen_at"`
-	UnstakeInitiated  *time.Time  `json:"unstake_initiated,omitempty"`
-	Region            string      `json:"region"`
-	Country           string      `json:"country"`
+	NodeID             NodeID      `json:"node_id"`
+	WalletAddress      string      `json:"wallet_address"`
+	StakedAmount       *big.Int    `json:"staked_amount"`
+	Tier               StakingTier `json:"tier"`
+	ReputationScore    int         `json:"reputation_score"`
+	Uptime30Days       float64     `json:"uptime_30_days"` // Percentage
+	JobsCompleted      int         `json:"jobs_completed"`
+	JobsCompleted7Days int         `json:"jobs_completed_7_days"`
+	ActiveJobs         int         `json:"active_jobs"`
+	TotalEarnings      *big.Int    `json:"total_earnings"`
+	RegisteredAt       time.Time   `json:"registered_at"`
+	LastSeenAt         time.Time   `json:"last_seen_at"`
+	UnstakeInitiated   *time.Time  `json:"unstake_initiated,omitempty"`
+	Region             string      `json:"region"`
+	Country            string      `json:"country"`
 }
 
 // FairnessConfig defines fairness algorithm parameters
@@ -343,9 +343,9 @@ type FairnessConfig struct {
 	LongevityWeight  float64 `yaml:"longevity_weight" json:"longevity_weight"`
 
 	// Fairness boost
-	MaxFairnessBoost     float64 `yaml:"max_fairness_boost" json:"max_fairness_boost"`           // Maximum boost (e.g., 0.5 = 50%)
-	FairnessWindowDays   int     `yaml:"fairness_window_days" json:"fairness_window_days"`       // Look back period
-	MinReputationToAccept int    `yaml:"min_reputation_to_accept" json:"min_reputation_to_accept"` // Minimum rep to accept jobs
+	MaxFairnessBoost      float64 `yaml:"max_fairness_boost" json:"max_fairness_boost"`             // Maximum boost (e.g., 0.5 = 50%)
+	FairnessWindowDays    int     `yaml:"fairness_window_days" json:"fairness_window_days"`         // Look back period
+	MinReputationToAccept int     `yaml:"min_reputation_to_accept" json:"min_reputation_to_accept"` // Minimum rep to accept jobs
 }
 
 // DefaultFairnessConfig returns the default fairness configuration
@@ -359,17 +359,17 @@ func DefaultFairnessConfig() *FairnessConfig {
 		LongevityWeight:  0.10,
 
 		// Fairness boost
-		MaxFairnessBoost:      0.5,  // 50% max boost
-		FairnessWindowDays:    7,    // 7-day window
-		MinReputationToAccept: 250,  // Minimum 250 rep to accept jobs
+		MaxFairnessBoost:      0.5, // 50% max boost
+		FairnessWindowDays:    7,   // 7-day window
+		MinReputationToAccept: 250, // Minimum 250 rep to accept jobs
 	}
 }
 
 // ProtocolFees defines protocol fee distribution
 type ProtocolFees struct {
-	TotalFeePercent   float64 `yaml:"total_fee_percent" json:"total_fee_percent"`     // Total protocol fee (e.g., 5%)
-	BurnPercent       float64 `yaml:"burn_percent" json:"burn_percent"`               // Percentage of fee burned
-	TreasuryPercent   float64 `yaml:"treasury_percent" json:"treasury_percent"`       // Percentage to treasury
+	TotalFeePercent float64 `yaml:"total_fee_percent" json:"total_fee_percent"` // Total protocol fee (e.g., 5%)
+	BurnPercent     float64 `yaml:"burn_percent" json:"burn_percent"`           // Percentage of fee burned
+	TreasuryPercent float64 `yaml:"treasury_percent" json:"treasury_percent"`   // Percentage to treasury
 }
 
 // DefaultProtocolFees returns the default protocol fee configuration
@@ -383,7 +383,7 @@ func DefaultProtocolFees() *ProtocolFees {
 
 // UnstakingConfig defines unstaking parameters
 type UnstakingConfig struct {
-	CooldownDays       int `yaml:"cooldown_days" json:"cooldown_days"`               // Days to wait before unstaking
+	CooldownDays       int `yaml:"cooldown_days" json:"cooldown_days"`                 // Days to wait before unstaking
 	MaxActiveJobsHours int `yaml:"max_active_jobs_hours" json:"max_active_jobs_hours"` // Max time to finish active jobs
 }
 

@@ -15,14 +15,14 @@ import (
 
 // MoltDeployment tracks an active Molt deployment on this provider node.
 type MoltDeployment struct {
-	ID           string                       `json:"id"`
-	ModuleCID    string                       `json:"module_cid"`
-	Status       types.MoltDeploymentStatus   `json:"status"`
-	CreatedAt    time.Time                    `json:"created_at"`
-	Owner        string                       `json:"owner,omitempty"`
-	Spec         *types.MoltSpec              `json:"spec"`
-	Handler      http.Handler                 `json:"-"`
-	compiled     *molt.CompiledMolt
+	ID        string                     `json:"id"`
+	ModuleCID string                     `json:"module_cid"`
+	Status    types.MoltDeploymentStatus `json:"status"`
+	CreatedAt time.Time                  `json:"created_at"`
+	Owner     string                     `json:"owner,omitempty"`
+	Spec      *types.MoltSpec            `json:"spec"`
+	Handler   http.Handler               `json:"-"`
+	compiled  *molt.CompiledMolt
 }
 
 // MoltManager manages the lifecycle of Molt (WASM) deployments.

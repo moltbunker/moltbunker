@@ -16,9 +16,9 @@ import (
 )
 
 const (
-	attestationInterval     = 24 * time.Hour
-	attestationMaxMissed    = 3 // strikes before suspension
-	attestationSuspendDays  = 7
+	attestationInterval    = 24 * time.Hour
+	attestationMaxMissed   = 3 // strikes before suspension
+	attestationSuspendDays = 7
 )
 
 // VerificationContract provides interface to the BunkerVerification smart contract.

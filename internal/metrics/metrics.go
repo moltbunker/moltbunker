@@ -15,12 +15,12 @@ const GoroutineAlertThreshold = 10000
 // Collector collects and aggregates metrics for the daemon
 type Collector struct {
 	// Request counts by method
-	requestCounts map[string]*uint64
+	requestCounts   map[string]*uint64
 	requestCountsMu sync.RWMutex
 
 	// Request latencies by method (stored as nanoseconds)
-	latencies    map[string]*LatencyHistogram
-	latenciesMu  sync.RWMutex
+	latencies   map[string]*LatencyHistogram
+	latenciesMu sync.RWMutex
 
 	// Active connections gauge
 	activeConnections int64
@@ -150,23 +150,23 @@ func (c *Collector) CheckGoroutineHealth() (int, bool) {
 
 // Metrics represents the current state of all metrics
 type Metrics struct {
-	Uptime            string                     `json:"uptime"`
-	UptimeSeconds     float64                    `json:"uptime_seconds"`
-	RequestCounts     map[string]uint64          `json:"request_counts"`
-	RequestLatencies  map[string]LatencyStats    `json:"request_latencies"`
-	ActiveConnections int64                      `json:"active_connections"`
-	ContainerCount    int64                      `json:"container_count"`
-	PeerCount         int64                      `json:"peer_count"`
-	GoroutineCount    int64                      `json:"goroutine_count"`
-	CollectedAt       time.Time                  `json:"collected_at"`
+	Uptime            string                  `json:"uptime"`
+	UptimeSeconds     float64                 `json:"uptime_seconds"`
+	RequestCounts     map[string]uint64       `json:"request_counts"`
+	RequestLatencies  map[string]LatencyStats `json:"request_latencies"`
+	ActiveConnections int64                   `json:"active_connections"`
+	ContainerCount    int64                   `json:"container_count"`
+	PeerCount         int64                   `json:"peer_count"`
+	GoroutineCount    int64                   `json:"goroutine_count"`
+	CollectedAt       time.Time               `json:"collected_at"`
 }
 
 // LatencyStats contains latency statistics for a method
 type LatencyStats struct {
-	Count       uint64             `json:"count"`
-	SumMs       float64            `json:"sum_ms"`
-	AvgMs       float64            `json:"avg_ms"`
-	Buckets     map[string]uint64  `json:"buckets"`
+	Count   uint64            `json:"count"`
+	SumMs   float64           `json:"sum_ms"`
+	AvgMs   float64           `json:"avg_ms"`
+	Buckets map[string]uint64 `json:"buckets"`
 }
 
 // GetMetrics returns the current metrics as a Metrics struct

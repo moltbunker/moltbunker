@@ -13,12 +13,12 @@ import (
 
 // TorService manages Tor hidden service (.onion address)
 type TorService struct {
-	config       *TorConfig
-	tor          *tor.Tor
-	onion        *tor.OnionService
-	onionAddr    string
-	running      bool
-	mu           sync.RWMutex
+	config        *TorConfig
+	tor           *tor.Tor
+	onion         *tor.OnionService
+	onionAddr     string
+	running       bool
+	mu            sync.RWMutex
 	onionServices map[int]*tor.OnionService
 }
 

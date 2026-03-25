@@ -37,13 +37,13 @@ var DefaultSignalWeights = map[SignalType]float64{
 
 // Signal represents a detected threat signal
 type Signal struct {
-	Type       SignalType `json:"type"`
-	Score      float64    `json:"score"`      // Threat score (0.0-1.0)
-	Confidence float64    `json:"confidence"` // Detection confidence (0.0-1.0)
-	Source     string     `json:"source"`     // Where the signal was detected
-	Details    string     `json:"details"`    // Human-readable description
-	Timestamp  time.Time  `json:"timestamp"`
-	ContainerID string    `json:"container_id,omitempty"`
+	Type        SignalType `json:"type"`
+	Score       float64    `json:"score"`      // Threat score (0.0-1.0)
+	Confidence  float64    `json:"confidence"` // Detection confidence (0.0-1.0)
+	Source      string     `json:"source"`     // Where the signal was detected
+	Details     string     `json:"details"`    // Human-readable description
+	Timestamp   time.Time  `json:"timestamp"`
+	ContainerID string     `json:"container_id,omitempty"`
 }
 
 // EffectiveScore returns the weighted score based on confidence
@@ -106,11 +106,11 @@ func (c *SignalConfig) IsEnabled(signalType SignalType) bool {
 
 // ThreatLevel represents aggregated threat assessment
 type ThreatLevel struct {
-	Score          float64    `json:"score"`           // Aggregate threat score (0.0-1.0)
-	Level          string     `json:"level"`           // "low", "medium", "high", "critical"
-	ActiveSignals  []Signal   `json:"active_signals"`  // Currently active signals
-	Recommendation string     `json:"recommendation"`  // Suggested action
-	Timestamp      time.Time  `json:"timestamp"`
+	Score          float64   `json:"score"`          // Aggregate threat score (0.0-1.0)
+	Level          string    `json:"level"`          // "low", "medium", "high", "critical"
+	ActiveSignals  []Signal  `json:"active_signals"` // Currently active signals
+	Recommendation string    `json:"recommendation"` // Suggested action
+	Timestamp      time.Time `json:"timestamp"`
 }
 
 // NewThreatLevel creates a ThreatLevel from the current score

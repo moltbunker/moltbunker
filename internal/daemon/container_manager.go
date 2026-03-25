@@ -58,16 +58,16 @@ type ContainerManager struct {
 	execRelays   map[string]*ExecRelay
 	execRelaysMu sync.RWMutex
 
-	networkManager   *networking.NetworkManager
+	networkManager *networking.NetworkManager
 
 	dataDir          string
 	containerdSocket string
-	runtimeName      string          // resolved OCI runtime name for reconnection
-	kataConfig       *runtime.KataConfig // saved for reconnection path
-	acceptServices   bool                // accept long-running services
-	acceptJobs       bool                // accept batch jobs
-	acceptFunctions  bool                // accept serverless functions (Molt)
-	imageGC          *runtime.ImageGC    // image garbage collector (nil if no containerd)
+	runtimeName      string                  // resolved OCI runtime name for reconnection
+	kataConfig       *runtime.KataConfig     // saved for reconnection path
+	acceptServices   bool                    // accept long-running services
+	acceptJobs       bool                    // accept batch jobs
+	acceptFunctions  bool                    // accept serverless functions (Molt)
+	imageGC          *runtime.ImageGC        // image garbage collector (nil if no containerd)
 	cleanupMgr       *runtime.CleanupManager // P1-1: orphan container cleanup
 	healthChecker    *runtime.HealthChecker  // P1-2: container-level health probes
 

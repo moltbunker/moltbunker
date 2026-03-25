@@ -69,17 +69,17 @@ func NewMockNode() *MockNode {
 	}
 }
 
-func (n *MockNode) Router() *p2p.Router     { return n.router }
-func (n *MockNode) NodeInfo() *types.Node   { return n.nodeInfo }
-func (n *MockNode) IsRunning() bool         { return n.running }
-func (n *MockNode) Close() error            { return nil }
+func (n *MockNode) Router() *p2p.Router   { return n.router }
+func (n *MockNode) NodeInfo() *types.Node { return n.nodeInfo }
+func (n *MockNode) IsRunning() bool       { return n.running }
+func (n *MockNode) Close() error          { return nil }
 
 // MockContainerManager provides minimal container manager for testing
 type MockContainerManager struct {
-	deployments     map[string]*Deployment
-	torRunning      bool
-	torAddress      string
-	mu              sync.RWMutex
+	deployments map[string]*Deployment
+	torRunning  bool
+	torAddress  string
+	mu          sync.RWMutex
 }
 
 func NewMockContainerManager() *MockContainerManager {
@@ -109,8 +109,8 @@ func (m *MockContainerManager) GetUnhealthyDeployments() map[string][]int {
 // TestAPIServer wraps APIServer with mock components for testing
 type TestAPIServer struct {
 	*APIServer
-	mockNode      *MockNode
-	mockCM        *MockContainerManager
+	mockNode *MockNode
+	mockCM   *MockContainerManager
 }
 
 func newTestAPIServer(t *testing.T) *TestAPIServer {
@@ -130,21 +130,21 @@ func newTestAPIServer(t *testing.T) *TestAPIServer {
 	mockCM := NewMockContainerManager()
 
 	server := &APIServer{
-		node:             &Node{
+		node: &Node{
 			nodeInfo: mockNode.nodeInfo,
 			router:   mockNode.router,
 			running:  true,
 		},
-		socketPath:       socketPath,
-		dataDir:          dataDir,
-		startTime:        time.Now(),
-		running:          false,
+		socketPath: socketPath,
+		dataDir:    dataDir,
+		startTime:  time.Now(),
+		running:    false,
 	}
 
 	return &TestAPIServer{
-		APIServer:    server,
-		mockNode:     mockNode,
-		mockCM:       mockCM,
+		APIServer: server,
+		mockNode:  mockNode,
+		mockCM:    mockCM,
 	}
 }
 
@@ -236,16 +236,16 @@ func (ts *TestAPIServer) handleStatusMock(ctx context.Context, req *APIRequest) 
 	torRunning, torAddress := ts.mockCM.GetTorStatus()
 
 	status := StatusResponse{
-		NodeID:     ts.node.nodeInfo.ID.String(),
-		Running:    ts.node.IsRunning(),
-		Port:       ts.node.nodeInfo.Port,
+		NodeID:       ts.node.nodeInfo.ID.String(),
+		Running:      ts.node.IsRunning(),
+		Port:         ts.node.nodeInfo.Port,
 		NetworkNodes: len(peers) + 1,
-		Uptime:     uptime.String(),
-		Version:    "0.1.0",
-		TorEnabled: torRunning,
-		TorAddress: torAddress,
-		Containers: len(ts.mockCM.ListDeployments()),
-		Region:     ts.node.nodeInfo.Region,
+		Uptime:       uptime.String(),
+		Version:      "0.1.0",
+		TorEnabled:   torRunning,
+		TorAddress:   torAddress,
+		Containers:   len(ts.mockCM.ListDeployments()),
+		Region:       ts.node.nodeInfo.Region,
 	}
 
 	return &APIResponse{

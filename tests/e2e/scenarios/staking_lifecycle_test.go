@@ -393,11 +393,11 @@ func TestE2E_StakingMultiProviderTierVerification(t *testing.T) {
 	ctx := context.Background()
 
 	providers := []struct {
-		name     string
-		address  common.Address
-		stake    *big.Int
-		tier     types.StakingTier
-		hasMin   bool
+		name    string
+		address common.Address
+		stake   *big.Int
+		tier    types.StakingTier
+		hasMin  bool
 	}{
 		{
 			name:    "below-minimum",

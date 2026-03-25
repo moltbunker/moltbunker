@@ -88,7 +88,7 @@ type StatusResponse struct {
 type DeployRequest struct {
 	Image           string               `json:"image"`
 	Resources       types.ResourceLimits `json:"resources,omitempty"`
-	Duration        string               `json:"duration,omitempty"`          // Job duration (e.g. "24h", "720h"); default: 720h (30 days)
+	Duration        string               `json:"duration,omitempty"` // Job duration (e.g. "24h", "720h"); default: 720h (30 days)
 	TorOnly         bool                 `json:"tor_only"`
 	OnionService    bool                 `json:"onion_service"`
 	OnionPort       int                  `json:"onion_port,omitempty"`        // Port to expose via Tor (default: 80)
@@ -133,8 +133,8 @@ type DeployResponse struct {
 	EncryptedVolume string            `json:"encrypted_volume,omitempty"`
 	Regions         []string          `json:"regions"`
 	Locations       []ReplicaLocation `json:"locations,omitempty"`
-	ReplicaCount    int               `json:"replica_count"`             // Number of successful replica acks received
-	PublicURLs      []string          `json:"public_urls,omitempty"`     // Public URLs if ports are exposed
+	ReplicaCount    int               `json:"replica_count"`         // Number of successful replica acks received
+	PublicURLs      []string          `json:"public_urls,omitempty"` // Public URLs if ports are exposed
 }
 
 // LogsRequest contains log streaming parameters
@@ -300,23 +300,23 @@ type MoltDeployResponse struct {
 
 // MoltInfo describes a deployed Molt for list/get responses.
 type MoltInfo struct {
-	ID           string                        `json:"id"`
-	ModuleCID    string                        `json:"module_cid"`
-	Status       string                        `json:"status"`
-	CreatedAt    time.Time                     `json:"created_at"`
-	Owner        string                        `json:"owner,omitempty"`
+	ID            string                       `json:"id"`
+	ModuleCID     string                       `json:"module_cid"`
+	Status        string                       `json:"status"`
+	CreatedAt     time.Time                    `json:"created_at"`
+	Owner         string                       `json:"owner,omitempty"`
 	MemoryLimitMB uint32                       `json:"memory_limit_mb,omitempty"`
-	TimeoutMs    int                           `json:"timeout_ms,omitempty"`
-	Metrics      *types.MoltDeploymentMetrics  `json:"metrics,omitempty"`
+	TimeoutMs     int                          `json:"timeout_ms,omitempty"`
+	Metrics       *types.MoltDeploymentMetrics `json:"metrics,omitempty"`
 }
 
 // MoltInvokeRequest is the API request to invoke a Molt directly.
 type MoltInvokeRequest struct {
 	DeploymentID string            `json:"deployment_id"`
-	Method       string            `json:"method"`                // HTTP method (default: GET)
-	Path         string            `json:"path"`                  // HTTP path (default: /)
+	Method       string            `json:"method"` // HTTP method (default: GET)
+	Path         string            `json:"path"`   // HTTP path (default: /)
 	Headers      map[string]string `json:"headers,omitempty"`
-	Body         []byte            `json:"body,omitempty"`        // Request body
+	Body         []byte            `json:"body,omitempty"` // Request body
 }
 
 // MoltInvokeResponse is the API response from a Molt invocation.

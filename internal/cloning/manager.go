@@ -19,31 +19,31 @@ import (
 type CloneStatus string
 
 const (
-	CloneStatusPending    CloneStatus = "pending"
-	CloneStatusPreparing  CloneStatus = "preparing"
-	CloneStatusTransfer   CloneStatus = "transferring"
-	CloneStatusDeploying  CloneStatus = "deploying"
-	CloneStatusVerifying  CloneStatus = "verifying"
-	CloneStatusComplete   CloneStatus = "complete"
-	CloneStatusFailed     CloneStatus = "failed"
+	CloneStatusPending   CloneStatus = "pending"
+	CloneStatusPreparing CloneStatus = "preparing"
+	CloneStatusTransfer  CloneStatus = "transferring"
+	CloneStatusDeploying CloneStatus = "deploying"
+	CloneStatusVerifying CloneStatus = "verifying"
+	CloneStatusComplete  CloneStatus = "complete"
+	CloneStatusFailed    CloneStatus = "failed"
 )
 
 // Clone represents a clone operation
 type Clone struct {
-	ID            string            `json:"id"`
-	SourceID      string            `json:"source_id"`       // Original container ID
-	TargetID      string            `json:"target_id"`       // New container ID
-	TargetNodeID  types.NodeID      `json:"target_node_id"`
-	TargetRegion  string            `json:"target_region"`
-	Status        CloneStatus       `json:"status"`
-	SnapshotID    string            `json:"snapshot_id,omitempty"`
-	CodeHash      string            `json:"code_hash"`
-	Priority      int               `json:"priority"`
-	Reason        string            `json:"reason"`
-	CreatedAt     time.Time         `json:"created_at"`
-	CompletedAt   time.Time         `json:"completed_at,omitempty"`
-	Error         string            `json:"error,omitempty"`
-	Metadata      map[string]string `json:"metadata,omitempty"`
+	ID           string            `json:"id"`
+	SourceID     string            `json:"source_id"` // Original container ID
+	TargetID     string            `json:"target_id"` // New container ID
+	TargetNodeID types.NodeID      `json:"target_node_id"`
+	TargetRegion string            `json:"target_region"`
+	Status       CloneStatus       `json:"status"`
+	SnapshotID   string            `json:"snapshot_id,omitempty"`
+	CodeHash     string            `json:"code_hash"`
+	Priority     int               `json:"priority"`
+	Reason       string            `json:"reason"`
+	CreatedAt    time.Time         `json:"created_at"`
+	CompletedAt  time.Time         `json:"completed_at,omitempty"`
+	Error        string            `json:"error,omitempty"`
+	Metadata     map[string]string `json:"metadata,omitempty"`
 }
 
 // CloneConfig configures the cloning system
@@ -55,7 +55,7 @@ type CloneConfig struct {
 	CloneTimeoutSeconds int `yaml:"clone_timeout_seconds"`
 
 	// Retry configuration
-	MaxRetries   int `yaml:"max_retries"`
+	MaxRetries     int `yaml:"max_retries"`
 	RetryDelaySecs int `yaml:"retry_delay_seconds"`
 
 	// Target selection
@@ -101,15 +101,15 @@ type ContainerDeployer interface {
 
 // Manager handles self-cloning operations
 type Manager struct {
-	config     *CloneConfig
-	snapshots  *snapshot.Manager
-	selector   NodeSelector
-	deployer   ContainerDeployer
-	detector   *threat.Detector
-	responder  *threat.Responder
-	mu         sync.RWMutex
-	running    bool
-	stopCh     chan struct{}
+	config    *CloneConfig
+	snapshots *snapshot.Manager
+	selector  NodeSelector
+	deployer  ContainerDeployer
+	detector  *threat.Detector
+	responder *threat.Responder
+	mu        sync.RWMutex
+	running   bool
+	stopCh    chan struct{}
 
 	// Clone tracking
 	activeClones   map[string]*Clone
@@ -510,10 +510,10 @@ func (m *Manager) GetStats() CloneStats {
 	defer m.mu.RUnlock()
 
 	stats := CloneStats{
-		ActiveClones:    len(m.activeClones),
-		TotalCompleted:  0,
-		TotalFailed:     0,
-		MaxConcurrent:   m.config.MaxConcurrentClones,
+		ActiveClones:   len(m.activeClones),
+		TotalCompleted: 0,
+		TotalFailed:    0,
+		MaxConcurrent:  m.config.MaxConcurrentClones,
 	}
 
 	for _, clone := range m.cloneHistory {

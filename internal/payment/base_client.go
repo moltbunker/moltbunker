@@ -53,7 +53,7 @@ type BaseClient struct {
 	chainID    *big.Int
 
 	// Nonce management
-	nonceMu     sync.Mutex
+	nonceMu      sync.Mutex
 	pendingNonce uint64
 
 	// RPC failover

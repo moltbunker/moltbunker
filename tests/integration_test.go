@@ -638,9 +638,9 @@ func TestIntegration_ReplicationSystem(t *testing.T) {
 
 	// Test adding replicas
 	testContainer := &types.Container{
-		ID:      "container-instance-1",
-		Status:  types.ContainerStatusRunning,
-		NodeID:  types.NodeID{},
+		ID:     "container-instance-1",
+		Status: types.ContainerStatusRunning,
+		NodeID: types.NodeID{},
 	}
 
 	err := replicator.AddReplica(containerIDs[0], 0, testContainer)

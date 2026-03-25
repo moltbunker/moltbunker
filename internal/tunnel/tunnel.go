@@ -63,7 +63,7 @@ func newTunnel(streamID uint32, conn net.Conn) *tunnel {
 	}
 }
 
-func (t *tunnel) StreamID() uint32 { return t.streamID }
+func (t *tunnel) StreamID() uint32      { return t.streamID }
 func (t *tunnel) Done() <-chan struct{} { return t.done }
 
 func (t *tunnel) Read(buf []byte) (int, error) {

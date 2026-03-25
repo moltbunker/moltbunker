@@ -54,10 +54,10 @@ type Node struct {
 	running        bool
 
 	// Connection limiting (configurable)
-	connSemaphore      chan struct{}  // Semaphore for limiting concurrent connections
-	activeConns        int64          // Atomic counter for active connections
-	maxConcurrentConns int            // Maximum concurrent connections (from config)
-	connReadTimeout    time.Duration  // Connection read timeout (from config)
+	connSemaphore      chan struct{} // Semaphore for limiting concurrent connections
+	activeConns        int64         // Atomic counter for active connections
+	maxConcurrentConns int           // Maximum concurrent connections (from config)
+	connReadTimeout    time.Duration // Connection read timeout (from config)
 
 	// Stake verification and Sybil resistance
 	stakeVerifier *p2p.StakeVerifier
@@ -123,7 +123,7 @@ func NewNode(ctx context.Context, keyPath string, keystoreDir string, port int) 
 		Port:      port,
 		Capabilities: types.NodeCapabilities{
 			ContainerRuntime: true,
-			TorSupport:      true,
+			TorSupport:       true,
 		},
 	}
 

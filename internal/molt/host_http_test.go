@@ -236,8 +236,8 @@ func TestExecuteHTTPRequest_RawStringBody(t *testing.T) {
 
 func TestIsPrivateIP(t *testing.T) {
 	tests := []struct {
-		ip     string
-		want   bool
+		ip   string
+		want bool
 	}{
 		{"127.0.0.1", true},
 		{"10.0.0.1", true},

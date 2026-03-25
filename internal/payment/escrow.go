@@ -110,9 +110,9 @@ type MoltCreditManager struct {
 // MoltCredit tracks a requester's prepaid balance for Molt invocations.
 type MoltCredit struct {
 	RequesterAddress string
-	Balance          *big.Int  // Remaining credit (BUNKER wei)
-	TotalDeposited   *big.Int  // Lifetime deposits
-	TotalSpent       *big.Int  // Lifetime spend
+	Balance          *big.Int // Remaining credit (BUNKER wei)
+	TotalDeposited   *big.Int // Lifetime deposits
+	TotalSpent       *big.Int // Lifetime spend
 	CreatedAt        time.Time
 	LastInvocation   time.Time
 	mu               sync.Mutex

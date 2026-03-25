@@ -17,12 +17,12 @@ import (
 
 // AddressEntry stores peer address information with connection statistics.
 type AddressEntry struct {
-	PeerID       peer.ID  `json:"peer_id"`
-	Addrs        []string `json:"addrs"`          // multiaddr strings
+	PeerID       peer.ID   `json:"peer_id"`
+	Addrs        []string  `json:"addrs"` // multiaddr strings
 	LastSeen     time.Time `json:"last_seen"`
-	ConnAttempts int      `json:"conn_attempts"`
-	ConnSuccess  int      `json:"conn_success"`
-	Source       string   `json:"source"`          // "dht", "mdns", "manual", "bootstrap"
+	ConnAttempts int       `json:"conn_attempts"`
+	ConnSuccess  int       `json:"conn_success"`
+	Source       string    `json:"source"` // "dht", "mdns", "manual", "bootstrap"
 }
 
 // successRate returns the connection success rate as a float64 in [0, 1].

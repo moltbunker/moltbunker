@@ -115,11 +115,11 @@ func TestSummaryIsHealthy(t *testing.T) {
 
 func TestCheckResult(t *testing.T) {
 	result := CheckResult{
-		Name:       "Test Check",
-		Category:   CategoryRuntime,
-		Status:     StatusOK,
-		Message:    "All good",
-		Fixable:    false,
+		Name:     "Test Check",
+		Category: CategoryRuntime,
+		Status:   StatusOK,
+		Message:  "All good",
+		Fixable:  false,
 	}
 
 	if result.Name != "Test Check" {

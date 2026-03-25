@@ -295,10 +295,10 @@ func (s *APIServer) handleRequesterWithdraw(ctx context.Context, req *APIRequest
 
 	return &APIResponse{
 		Result: map[string]interface{}{
-			"transaction_hash": "0x" + generateMockTxHash(),
-			"withdrawn_amount": withdrawReq.Amount,
+			"transaction_hash":  "0x" + generateMockTxHash(),
+			"withdrawn_amount":  withdrawReq.Amount,
 			"remaining_balance": "0",
-			"status":           "pending",
+			"status":            "pending",
 		},
 		ID: req.ID,
 	}
@@ -307,12 +307,12 @@ func (s *APIServer) handleRequesterWithdraw(ctx context.Context, req *APIRequest
 // handleRequesterEstimate handles cost estimation for deployments
 func (s *APIServer) handleRequesterEstimate(ctx context.Context, req *APIRequest) *APIResponse {
 	var params struct {
-		Image        string `json:"image"`
-		CPUCores     int    `json:"cpu_cores"`
-		MemoryGB     int    `json:"memory_gb"`
-		StorageGB    int    `json:"storage_gb"`
-		DurationHours int   `json:"duration_hours"`
-		Replicas     int    `json:"replicas"`
+		Image         string `json:"image"`
+		CPUCores      int    `json:"cpu_cores"`
+		MemoryGB      int    `json:"memory_gb"`
+		StorageGB     int    `json:"storage_gb"`
+		DurationHours int    `json:"duration_hours"`
+		Replicas      int    `json:"replicas"`
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		return &APIResponse{
@@ -342,8 +342,8 @@ func (s *APIServer) handleRequesterEstimate(ctx context.Context, req *APIRequest
 	// For now, return a mock estimate
 
 	// Mock pricing (BUNKER tokens per resource per hour)
-	cpuRate := 0.01    // per core per hour
-	memRate := 0.005   // per GB per hour
+	cpuRate := 0.01      // per core per hour
+	memRate := 0.005     // per GB per hour
 	storageRate := 0.001 // per GB per hour
 
 	hourlyRate := float64(params.CPUCores)*cpuRate +
@@ -355,10 +355,10 @@ func (s *APIServer) handleRequesterEstimate(ctx context.Context, req *APIRequest
 	return &APIResponse{
 		Result: map[string]interface{}{
 			"estimate": map[string]interface{}{
-				"hourly_rate":   fmt.Sprintf("%.6f", hourlyRate),
-				"total_cost":    fmt.Sprintf("%.6f", totalCost),
+				"hourly_rate":    fmt.Sprintf("%.6f", hourlyRate),
+				"total_cost":     fmt.Sprintf("%.6f", totalCost),
 				"duration_hours": params.DurationHours,
-				"replicas":      params.Replicas,
+				"replicas":       params.Replicas,
 			},
 			"breakdown": map[string]interface{}{
 				"cpu_cost":     fmt.Sprintf("%.6f", float64(params.CPUCores)*cpuRate*float64(params.DurationHours)*float64(params.Replicas)),

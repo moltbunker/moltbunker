@@ -21,8 +21,8 @@ type TierBanDuration struct {
 
 // tierRateLimits maps staking tiers to their rate limits.
 var tierRateLimits = map[string]TierRateLimit{
-	"unstaked": {Rate: 10, Burst: 20},
-	"unknown":  {Rate: 20, Burst: 40}, // announced but stake not yet verified
+	"unstaked":                        {Rate: 10, Burst: 20},
+	"unknown":                         {Rate: 20, Burst: 40}, // announced but stake not yet verified
 	string(types.StakingTierStarter):  {Rate: 50, Burst: 100},
 	string(types.StakingTierBronze):   {Rate: 100, Burst: 200},
 	string(types.StakingTierSilver):   {Rate: 200, Burst: 400},
@@ -32,13 +32,13 @@ var tierRateLimits = map[string]TierRateLimit{
 
 // tierBanDurations maps staking tiers to their auto-ban durations.
 var tierBanDurations = map[string]time.Duration{
-	"unstaked":                         1 * time.Hour,
-	"unknown":                          1 * time.Hour,
-	string(types.StakingTierStarter):   30 * time.Minute,
-	string(types.StakingTierBronze):    30 * time.Minute,
-	string(types.StakingTierSilver):    15 * time.Minute,
-	string(types.StakingTierGold):      5 * time.Minute,
-	string(types.StakingTierPlatinum):  5 * time.Minute,
+	"unstaked":                        1 * time.Hour,
+	"unknown":                         1 * time.Hour,
+	string(types.StakingTierStarter):  30 * time.Minute,
+	string(types.StakingTierBronze):   30 * time.Minute,
+	string(types.StakingTierSilver):   15 * time.Minute,
+	string(types.StakingTierGold):     5 * time.Minute,
+	string(types.StakingTierPlatinum): 5 * time.Minute,
 }
 
 // GetTierRateLimit returns the rate limit for a given tier string.

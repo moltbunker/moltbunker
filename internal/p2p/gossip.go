@@ -47,10 +47,10 @@ type stateEntry struct {
 
 // GossipPeer represents a peer in the gossip network
 type GossipPeer struct {
-	Node      *types.Node
+	Node       *types.Node
 	LastGossip time.Time
 	LastSeen   time.Time
-	StateHash []byte
+	StateHash  []byte
 }
 
 // GossipMessage represents a gossip message

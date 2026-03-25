@@ -9,7 +9,7 @@ import (
 func TestMeter_RecordUploadAndUsage(t *testing.T) {
 	m := NewStorageMeter(DefaultMeteringConfig())
 
-	m.RecordUpload("wallet1", 1024*1024) // 1MB
+	m.RecordUpload("wallet1", 1024*1024)   // 1MB
 	m.RecordUpload("wallet1", 2*1024*1024) // 2MB
 
 	usage := m.GetUsage("wallet1")
@@ -133,7 +133,7 @@ func TestMeter_CalculateCostForSize_Zero(t *testing.T) {
 func TestMeter_SweepAndBill(t *testing.T) {
 	m := NewStorageMeter(DefaultMeteringConfig())
 
-	m.RecordUpload("w1", 1024*1024*1024) // 1GB
+	m.RecordUpload("w1", 1024*1024*1024)   // 1GB
 	m.RecordUpload("w2", 2*1024*1024*1024) // 2GB
 
 	records := m.SweepAndBill(context.Background())

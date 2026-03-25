@@ -163,9 +163,9 @@ func TestStakingFlow(t *testing.T) {
 
 func TestMultiProviderStaking(t *testing.T) {
 	providers := []struct {
-		name string
-		addr string
-		pk   string
+		name   string
+		addr   string
+		pk     string
 		amount string
 	}{
 		{"provider2", provider2Addr, provider2PK, "2000000000000000000000"},  // 2K BUNKER (Bronze)
@@ -198,7 +198,7 @@ func TestMultiProviderStaking(t *testing.T) {
 
 func TestEscrowFlow(t *testing.T) {
 	escrowAmount := "100000000000000000000" // 100 BUNKER
-	duration := "3600"                       // 1 hour in seconds
+	duration := "3600"                      // 1 hour in seconds
 
 	// 1. Requester approves escrow contract
 	t.Log("requester approving escrow contract...")

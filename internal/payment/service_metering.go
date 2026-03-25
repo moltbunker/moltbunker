@@ -45,12 +45,12 @@ type ServicePricing struct {
 // Based on 20,000 BUNKER = $1 USD.
 func DefaultServicePricing() ServicePricing {
 	return ServicePricing{
-		StoragePerGBMonth:  mustParseWei("50000000000000000"),   // 0.05 BUNKER/GB-month
-		ProxyPerGB:         mustParseWei("20000000000000000"),   // 0.02 BUNKER/GB
-		CrawlPerPage:      mustParseWei("1000000000000000"),    // 0.001 BUNKER/page
-		CrawlPerMBResult:  mustParseWei("5000000000000000"),    // 0.005 BUNKER/MB
-		AgentPerInvocation: mustParseWei("10000000000000000"),   // 0.01 BUNKER/invocation
-		AgentPer1KTokens:  mustParseWei("100000000000000000"),  // 0.1 BUNKER/1K tokens
+		StoragePerGBMonth:  mustParseWei("50000000000000000"),  // 0.05 BUNKER/GB-month
+		ProxyPerGB:         mustParseWei("20000000000000000"),  // 0.02 BUNKER/GB
+		CrawlPerPage:       mustParseWei("1000000000000000"),   // 0.001 BUNKER/page
+		CrawlPerMBResult:   mustParseWei("5000000000000000"),   // 0.005 BUNKER/MB
+		AgentPerInvocation: mustParseWei("10000000000000000"),  // 0.01 BUNKER/invocation
+		AgentPer1KTokens:   mustParseWei("100000000000000000"), // 0.1 BUNKER/1K tokens
 	}
 }
 

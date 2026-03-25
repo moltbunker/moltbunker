@@ -35,13 +35,13 @@ type NodeProfile struct {
 	StakingAmount   uint64 `json:"staking_amount"`
 
 	// Runtime
-	ActiveContainers int                       `json:"active_containers"`
-	EncryptedCount   int                       `json:"encrypted_containers"`
-	Version          string                    `json:"version,omitempty"`
-	ProviderTier     types.ProviderTier         `json:"provider_tier,omitempty"`
-	RuntimeName      string                    `json:"runtime_name,omitempty"`
-	KataSupported    bool                      `json:"kata_supported,omitempty"`
-	SEVSNPActive     bool                      `json:"sev_snp_active,omitempty"`
+	ActiveContainers int                `json:"active_containers"`
+	EncryptedCount   int                `json:"encrypted_containers"`
+	Version          string             `json:"version,omitempty"`
+	ProviderTier     types.ProviderTier `json:"provider_tier,omitempty"`
+	RuntimeName      string             `json:"runtime_name,omitempty"`
+	KataSupported    bool               `json:"kata_supported,omitempty"`
+	SEVSNPActive     bool               `json:"sev_snp_active,omitempty"`
 
 	// Molt (WASM serverless) capabilities
 	MoltAvailable    bool `json:"molt_available,omitempty"`
@@ -66,9 +66,9 @@ type CapacityProfile struct {
 
 // AggregatedCapacity sums capacity across all known online nodes
 type AggregatedCapacity struct {
-	CPUTotal       int     `json:"cpu_total"`
-	MemoryTotalGB  int     `json:"memory_total_gb"`
-	StorageTotalGB int     `json:"storage_total_gb"`
+	CPUTotal       int `json:"cpu_total"`
+	MemoryTotalGB  int `json:"memory_total_gb"`
+	StorageTotalGB int `json:"storage_total_gb"`
 
 	CPUUsed       int     `json:"cpu_used"`
 	MemoryUsedGB  float64 `json:"memory_used_gb"`

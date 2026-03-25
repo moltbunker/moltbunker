@@ -31,19 +31,19 @@ type ObjectReplica struct {
 
 // ObjectReplicaSet tracks all replicas for a single object.
 type ObjectReplicaSet struct {
-	Bucket   string           `json:"bucket"`
-	Key      string           `json:"key"`
-	Owner    string           `json:"owner"`
-	Size     int64            `json:"size"`
-	Replicas []ObjectReplica  `json:"replicas"`
-	Version  int64            `json:"version"` // LWW version for consensus
+	Bucket   string          `json:"bucket"`
+	Key      string          `json:"key"`
+	Owner    string          `json:"owner"`
+	Size     int64           `json:"size"`
+	Replicas []ObjectReplica `json:"replicas"`
+	Version  int64           `json:"version"` // LWW version for consensus
 }
 
 // ReplicationConfig configures the replication manager.
 type ReplicationConfig struct {
-	TargetReplicas    int           // Target replica count (default: 3)
-	HeartbeatTimeout  time.Duration // Max time before replica is degraded
-	RepairInterval    time.Duration // How often to check for under-replicated objects
+	TargetReplicas   int           // Target replica count (default: 3)
+	HeartbeatTimeout time.Duration // Max time before replica is degraded
+	RepairInterval   time.Duration // How often to check for under-replicated objects
 }
 
 // DefaultReplicationConfig returns sensible defaults.
@@ -312,9 +312,9 @@ func (rm *ReplicationManager) Stats() ReplicationStats {
 
 // ReplicationStats aggregates replication health metrics.
 type ReplicationStats struct {
-	TrackedObjects   int `json:"tracked_objects"`
-	TotalReplicas    int `json:"total_replicas"`
-	HealthyReplicas  int `json:"healthy_replicas"`
-	FullyReplicated  int `json:"fully_replicated"`
-	UnderReplicated  int `json:"under_replicated"`
+	TrackedObjects  int `json:"tracked_objects"`
+	TotalReplicas   int `json:"total_replicas"`
+	HealthyReplicas int `json:"healthy_replicas"`
+	FullyReplicated int `json:"fully_replicated"`
+	UnderReplicated int `json:"under_replicated"`
 }

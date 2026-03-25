@@ -12,24 +12,24 @@ import (
 type PeerEvent string
 
 const (
-	PeerEventValidMessage    PeerEvent = "valid_message"
-	PeerEventInvalidMessage  PeerEvent = "invalid_message"
-	PeerEventFailedDeploy    PeerEvent = "failed_deploy"
-	PeerEventGossipSpam      PeerEvent = "gossip_spam"
-	PeerEventRateLimitHit    PeerEvent = "rate_limit_hit"
+	PeerEventValidMessage     PeerEvent = "valid_message"
+	PeerEventInvalidMessage   PeerEvent = "invalid_message"
+	PeerEventFailedDeploy     PeerEvent = "failed_deploy"
+	PeerEventGossipSpam       PeerEvent = "gossip_spam"
+	PeerEventRateLimitHit     PeerEvent = "rate_limit_hit"
 	PeerEventMalformedPayload PeerEvent = "malformed_payload"
-	PeerEventGoodUptime      PeerEvent = "good_uptime"
+	PeerEventGoodUptime       PeerEvent = "good_uptime"
 )
 
 // eventDeltas maps events to their score impact.
 var eventDeltas = map[PeerEvent]float64{
-	PeerEventValidMessage:    +0.001,
-	PeerEventInvalidMessage:  -0.05,
-	PeerEventFailedDeploy:    -0.10,
-	PeerEventGossipSpam:      -0.03,
-	PeerEventRateLimitHit:    -0.02,
+	PeerEventValidMessage:     +0.001,
+	PeerEventInvalidMessage:   -0.05,
+	PeerEventFailedDeploy:     -0.10,
+	PeerEventGossipSpam:       -0.03,
+	PeerEventRateLimitHit:     -0.02,
 	PeerEventMalformedPayload: -0.05,
-	PeerEventGoodUptime:      +0.01,
+	PeerEventGoodUptime:       +0.01,
 }
 
 // PeerScorerConfig holds scoring thresholds and decay settings.
@@ -65,12 +65,12 @@ type PeerScore struct {
 // PeerScorer tracks behavioral patterns per peer. Score starts at 0.5 (neutral),
 // ranges from 0.0 (worst) to 1.0 (best).
 type PeerScorer struct {
-	mu      sync.RWMutex
-	scores  map[types.NodeID]*PeerScore
-	config  *PeerScorerConfig
-	banList *BanList
+	mu            sync.RWMutex
+	scores        map[types.NodeID]*PeerScore
+	config        *PeerScorerConfig
+	banList       *BanList
 	stakeVerifier *StakeVerifier
-	nowFunc func() time.Time
+	nowFunc       func() time.Time
 }
 
 // NewPeerScorer creates a new peer scorer.

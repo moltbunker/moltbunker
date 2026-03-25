@@ -28,11 +28,11 @@ type ReverseStreamOpener interface {
 // It supports both forward tunnels (ingress dials provider) and reverse tunnels
 // (provider dials ingress, traffic multiplexed via yamux).
 type Proxy struct {
-	resolver       *Resolver
-	tunnelClient   *tunnel.Client
-	reverseOpener  ReverseStreamOpener // reverse tunnel (optional)
-	domain         string              // e.g., "moltbunker.dev"
-	server         *http.Server
+	resolver      *Resolver
+	tunnelClient  *tunnel.Client
+	reverseOpener ReverseStreamOpener // reverse tunnel (optional)
+	domain        string              // e.g., "moltbunker.dev"
+	server        *http.Server
 }
 
 // NewProxy creates a new ingress proxy.
@@ -366,8 +366,7 @@ var allowedResponseHeaders = map[string]bool{
 	"Accept-Ranges": true,
 
 	// Misc safe headers
-	"Date":          true,
-	"Retry-After":   true,
-	"X-Request-Id":  true,
+	"Date":         true,
+	"Retry-After":  true,
+	"X-Request-Id": true,
 }
-

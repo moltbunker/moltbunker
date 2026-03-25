@@ -16,27 +16,27 @@ type mutexType = sync.Mutex
 
 // Deployment represents a deployed container with its metadata
 type Deployment struct {
-	ID              string                 `json:"id"`
-	Image           string                 `json:"image"`
-	Status          types.ContainerStatus  `json:"status"`
-	Resources       types.ResourceLimits   `json:"resources"`
-	CreatedAt       time.Time              `json:"created_at"`
-	StartedAt       time.Time              `json:"started_at,omitempty"`
-	Encrypted       bool                   `json:"encrypted"`
-	EncryptedVolume string                 `json:"encrypted_volume,omitempty"`
-	OnionService    bool                   `json:"onion_service"`
-	OnionAddress    string                 `json:"onion_address,omitempty"`
-	OnionPort       int                    `json:"onion_port,omitempty"` // Port exposed via Tor
-	TorOnly         bool                   `json:"tor_only"`
-	ReplicaSet      *types.ReplicaSet      `json:"replica_set,omitempty"`
-	LocalReplica    int                    `json:"local_replica"`
-	Regions         []string               `json:"regions"`
-	Locations       []ReplicaLocation      `json:"locations,omitempty"` // Detailed location per replica
-	OriginatorID    types.NodeID           `json:"originator_id"`       // Node that originated the deployment
-	Owner           string                 `json:"owner,omitempty"`     // Wallet address of the deployer
+	ID               string                `json:"id"`
+	Image            string                `json:"image"`
+	Status           types.ContainerStatus `json:"status"`
+	Resources        types.ResourceLimits  `json:"resources"`
+	CreatedAt        time.Time             `json:"created_at"`
+	StartedAt        time.Time             `json:"started_at,omitempty"`
+	Encrypted        bool                  `json:"encrypted"`
+	EncryptedVolume  string                `json:"encrypted_volume,omitempty"`
+	OnionService     bool                  `json:"onion_service"`
+	OnionAddress     string                `json:"onion_address,omitempty"`
+	OnionPort        int                   `json:"onion_port,omitempty"` // Port exposed via Tor
+	TorOnly          bool                  `json:"tor_only"`
+	ReplicaSet       *types.ReplicaSet     `json:"replica_set,omitempty"`
+	LocalReplica     int                   `json:"local_replica"`
+	Regions          []string              `json:"regions"`
+	Locations        []ReplicaLocation     `json:"locations,omitempty"`          // Detailed location per replica
+	OriginatorID     types.NodeID          `json:"originator_id"`                // Node that originated the deployment
+	Owner            string                `json:"owner,omitempty"`              // Wallet address of the deployer
 	ExecAgentEnabled bool                  `json:"exec_agent_enabled,omitempty"` // True if exec-agent binary is injected (E2E encrypted exec)
-	ExecKeyPath      string               `json:"exec_key_path,omitempty"`      // Host path to exec_key file (for cleanup)
-	DeployNonce      string               `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key re-derivation
+	ExecKeyPath      string                `json:"exec_key_path,omitempty"`      // Host path to exec_key file (for cleanup)
+	DeployNonce      string                `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key re-derivation
 	ExposedPorts     []ExposedPort         `json:"exposed_ports,omitempty"`      // Ports exposed publicly via ingress
 	PublicURLs       []string              `json:"public_urls,omitempty"`        // Generated public URLs
 	MinProviderTier  types.ProviderTier    `json:"min_provider_tier,omitempty"`  // Minimum provider tier required
@@ -49,16 +49,16 @@ type Deployment struct {
 
 // pendingDeployment tracks replica acknowledgments for a deployment
 type pendingDeployment struct {
-	containerID      string
-	ackChan          chan replicaAck
-	ackCount         int
-	successCount     int
-	acks             []replicaAck
-	mu               mutexType
-	created          time.Time
-	closeOnce        sync.Once // Ensures ackChan is closed exactly once
-	closed           bool      // tracks if ackChan has been closed (for readers)
-	escrowActivated  bool      // true once SelectProviders has been called
+	containerID     string
+	ackChan         chan replicaAck
+	ackCount        int
+	successCount    int
+	acks            []replicaAck
+	mu              mutexType
+	created         time.Time
+	closeOnce       sync.Once // Ensures ackChan is closed exactly once
+	closed          bool      // tracks if ackChan has been closed (for readers)
+	escrowActivated bool      // true once SelectProviders has been called
 }
 
 // replicaAck represents an acknowledgment from a replica node

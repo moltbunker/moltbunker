@@ -187,13 +187,13 @@ func (dem *DeploymentEncryptionManager) GetEncryptionMetadata(deploymentID strin
 	}
 
 	return &EncryptionMetadata{
-		DeploymentID:    deploymentID,
-		ProviderPubKey:  keys.ProviderPubKey,
-		EncryptedDEK:    keys.EncryptedDEK,
-		DEKNonce:        keys.DEKNonce,
-		Algorithm:       "AES-256-GCM",
-		KeyDerivation:   "HKDF-SHA3-256",
-		KeyExchange:     "X25519",
+		DeploymentID:   deploymentID,
+		ProviderPubKey: keys.ProviderPubKey,
+		EncryptedDEK:   keys.EncryptedDEK,
+		DEKNonce:       keys.DEKNonce,
+		Algorithm:      "AES-256-GCM",
+		KeyDerivation:  "HKDF-SHA3-256",
+		KeyExchange:    "X25519",
 	}, nil
 }
 

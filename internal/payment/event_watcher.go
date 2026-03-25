@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	eventBackfillBlocks = 100  // blocks to backfill on reconnect
+	eventBackfillBlocks = 100 // blocks to backfill on reconnect
 	eventReconnectBase  = 2 * time.Second
 	eventReconnectMax   = 60 * time.Second
 	eventChannelBuffer  = 64

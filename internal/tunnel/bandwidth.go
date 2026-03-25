@@ -10,8 +10,8 @@ import (
 
 // BandwidthLimiter enforces per-session bandwidth and request rate limits.
 type BandwidthLimiter struct {
-	bwLimit int64          // bytes per second
-	rps     *rate.Limiter  // per-subdomain RPS
+	bwLimit int64         // bytes per second
+	rps     *rate.Limiter // per-subdomain RPS
 }
 
 // NewBandwidthLimiter creates a limiter from tunnel limits.
@@ -30,10 +30,10 @@ func (b *BandwidthLimiter) AllowRequest() bool {
 // WrapConn wraps a net.Conn with bandwidth limiting.
 func (b *BandwidthLimiter) WrapConn(conn net.Conn) net.Conn {
 	return &rateLimitedConn{
-		Conn:     conn,
+		Conn:        conn,
 		bytesPerSec: b.bwLimit,
-		bucket:   b.bwLimit, // start with full bucket
-		lastFill: time.Now(),
+		bucket:      b.bwLimit, // start with full bucket
+		lastFill:    time.Now(),
 	}
 }
 

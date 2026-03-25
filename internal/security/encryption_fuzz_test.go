@@ -15,10 +15,10 @@ func FuzzEncryptDecryptChaCha20(f *testing.F) {
 	f.Add([]byte(""))
 	f.Add([]byte("a"))
 	f.Add([]byte("The quick brown fox jumps over the lazy dog"))
-	f.Add(bytes.Repeat([]byte("X"), 1024))       // 1 KB
-	f.Add(bytes.Repeat([]byte("\x00"), 256))      // null bytes
-	f.Add(bytes.Repeat([]byte("\xff"), 256))       // all 0xFF
-	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}) // binary data
+	f.Add(bytes.Repeat([]byte("X"), 1024))                         // 1 KB
+	f.Add(bytes.Repeat([]byte("\x00"), 256))                       // null bytes
+	f.Add(bytes.Repeat([]byte("\xff"), 256))                       // all 0xFF
+	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})                    // binary data
 	f.Add([]byte(`{"container_id":"ctr-123","status":"running"}`)) // JSON payload
 
 	f.Fuzz(func(t *testing.T, plaintext []byte) {
@@ -90,10 +90,10 @@ func FuzzEncryptDecryptAES256GCM(f *testing.F) {
 	f.Add([]byte(""))
 	f.Add([]byte("a"))
 	f.Add([]byte("The quick brown fox jumps over the lazy dog"))
-	f.Add(bytes.Repeat([]byte("X"), 1024))       // 1 KB
-	f.Add(bytes.Repeat([]byte("\x00"), 256))      // null bytes
-	f.Add(bytes.Repeat([]byte("\xff"), 256))       // all 0xFF
-	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}) // binary data
+	f.Add(bytes.Repeat([]byte("X"), 1024))                     // 1 KB
+	f.Add(bytes.Repeat([]byte("\x00"), 256))                   // null bytes
+	f.Add(bytes.Repeat([]byte("\xff"), 256))                   // all 0xFF
+	f.Add([]byte{0, 1, 2, 3, 4, 5, 6, 7, 8, 9})                // binary data
 	f.Add([]byte(`{"image_cid":"QmABC123","encrypted":true}`)) // JSON payload
 
 	f.Fuzz(func(t *testing.T, plaintext []byte) {

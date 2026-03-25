@@ -46,11 +46,11 @@ func TestCreateBucket_InvalidName(t *testing.T) {
 	tests := []struct {
 		name string
 	}{
-		{"ab"},                 // too short
-		{"AB"},                 // uppercase
-		{"-bucket"},            // starts with hyphen
-		{"bucket-"},            // ends with hyphen
-		{"bucket name"},        // space
+		{"ab"},                    // too short
+		{"AB"},                    // uppercase
+		{"-bucket"},               // starts with hyphen
+		{"bucket-"},               // ends with hyphen
+		{"bucket name"},           // space
 		{strings.Repeat("a", 64)}, // too long
 	}
 
@@ -539,8 +539,8 @@ func TestPutObject_InvalidKey(t *testing.T) {
 		key     string
 		wantErr bool
 	}{
-		{"", true},           // empty
-		{"../escape", true},  // path traversal
+		{"", true},          // empty
+		{"../escape", true}, // path traversal
 		{"valid/key.txt", false},
 		{"deep/nested/path/file.dat", false},
 	}

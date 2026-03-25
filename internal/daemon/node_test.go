@@ -69,13 +69,13 @@ func TestAPIResponse_Structure(t *testing.T) {
 
 func TestStatusResponse_Structure(t *testing.T) {
 	status := StatusResponse{
-		NodeID:     "test-node-id",
-		Running:    true,
-		Port:       9000,
+		NodeID:       "test-node-id",
+		Running:      true,
+		Port:         9000,
 		NetworkNodes: 5,
-		Version:    "0.1.0",
-		TorEnabled: true,
-		TorAddress: "test.onion",
+		Version:      "0.1.0",
+		TorEnabled:   true,
+		TorAddress:   "test.onion",
 	}
 
 	if status.NodeID != "test-node-id" {

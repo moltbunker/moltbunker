@@ -26,8 +26,8 @@ type TunnelSession struct {
 // TunnelRegistry is a thread-safe subdomain → yamux session mapping.
 type TunnelRegistry struct {
 	mu       sync.RWMutex
-	sessions map[string]*TunnelSession  // subdomain → session
-	byNodeID map[types.NodeID][]string  // nodeID → subdomains
+	sessions map[string]*TunnelSession // subdomain → session
+	byNodeID map[types.NodeID][]string // nodeID → subdomains
 }
 
 // NewTunnelRegistry creates an empty tunnel registry.

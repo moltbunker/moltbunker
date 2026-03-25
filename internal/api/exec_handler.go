@@ -77,10 +77,10 @@ type ExecChallengeResponse struct {
 
 // WSFrame types for the exec WebSocket protocol
 const (
-	WSFrameData   byte = 0x01 // Terminal data (stdin/stdout)
-	WSFrameResize byte = 0x02 // Terminal resize event
-	WSFramePing   byte = 0x03 // Keep-alive ping
-	WSFramePong   byte = 0x04 // Keep-alive pong
+	WSFrameData    byte = 0x01 // Terminal data (stdin/stdout)
+	WSFrameResize  byte = 0x02 // Terminal resize event
+	WSFramePing    byte = 0x03 // Keep-alive ping
+	WSFramePong    byte = 0x04 // Keep-alive pong
 	WSFrameClose   byte = 0x05 // Close session
 	WSFrameError   byte = 0x06 // Error message
 	WSFrameKeyInit byte = 0x07 // Session key initialization (carries session_nonce)

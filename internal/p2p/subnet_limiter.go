@@ -19,8 +19,8 @@ const (
 // to defend against Sybil attacks from a single network.
 type SubnetLimiter struct {
 	mu           sync.RWMutex
-	subnetCounts map[string]int           // /24 prefix → count
-	peerSubnets  map[types.NodeID]string  // nodeID → /24 prefix
+	subnetCounts map[string]int          // /24 prefix → count
+	peerSubnets  map[types.NodeID]string // nodeID → /24 prefix
 	maxPerSubnet int
 }
 
@@ -149,8 +149,8 @@ func isExemptIP(ip net.IP) bool {
 		{mustParseCIDR("10.0.0.0/8")},
 		{mustParseCIDR("172.16.0.0/12")},
 		{mustParseCIDR("192.168.0.0/16")},
-		{mustParseCIDR("fc00::/7")},   // IPv6 unique local
-		{mustParseCIDR("fe80::/10")},  // IPv6 link-local
+		{mustParseCIDR("fc00::/7")},  // IPv6 unique local
+		{mustParseCIDR("fe80::/10")}, // IPv6 link-local
 	}
 
 	for _, pr := range privateRanges {

@@ -105,32 +105,32 @@ func TestDefaultSeccompProfile_DangerousSyscallsBlocked(t *testing.T) {
 
 	// These dangerous syscalls must NOT be in the allow list
 	dangerous := []string{
-		"ptrace",           // process tracing
-		"mount",            // mount filesystem
-		"umount2",          // unmount filesystem
-		"reboot",           // reboot system
-		"swapon",           // enable swap
-		"swapoff",          // disable swap
-		"sethostname",      // change hostname
-		"setdomainname",    // change domain name
-		"iopl",             // I/O privilege level
-		"ioperm",           // I/O port permissions
-		"create_module",    // load kernel modules
-		"init_module",      // load kernel modules
-		"delete_module",    // unload kernel modules
-		"finit_module",     // load kernel modules from fd
-		"kexec_load",       // load new kernel
-		"kexec_file_load",  // load new kernel from file
-		"bpf",              // BPF programs
-		"pivot_root",       // change root filesystem
-		"process_vm_readv", // read another process memory
+		"ptrace",            // process tracing
+		"mount",             // mount filesystem
+		"umount2",           // unmount filesystem
+		"reboot",            // reboot system
+		"swapon",            // enable swap
+		"swapoff",           // disable swap
+		"sethostname",       // change hostname
+		"setdomainname",     // change domain name
+		"iopl",              // I/O privilege level
+		"ioperm",            // I/O port permissions
+		"create_module",     // load kernel modules
+		"init_module",       // load kernel modules
+		"delete_module",     // unload kernel modules
+		"finit_module",      // load kernel modules from fd
+		"kexec_load",        // load new kernel
+		"kexec_file_load",   // load new kernel from file
+		"bpf",               // BPF programs
+		"pivot_root",        // change root filesystem
+		"process_vm_readv",  // read another process memory
 		"process_vm_writev", // write another process memory
-		"settimeofday",     // set system time
-		"clock_settime",    // set system clock
-		"acct",             // process accounting
-		"syslog",           // kernel log
-		"userfaultfd",      // userfault fd
-		"perf_event_open",  // performance monitoring
+		"settimeofday",      // set system time
+		"clock_settime",     // set system clock
+		"acct",              // process accounting
+		"syslog",            // kernel log
+		"userfaultfd",       // userfault fd
+		"perf_event_open",   // performance monitoring
 	}
 
 	for _, name := range dangerous {

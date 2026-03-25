@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	reputationInitialScore  = 500
-	reputationMaxScore      = 1000
-	reputationMinScoreJobs  = 250
-	reputationMaxDelta      = 200
+	reputationInitialScore = 500
+	reputationMaxScore     = 1000
+	reputationMinScoreJobs = 250
+	reputationMaxDelta     = 200
 )
 
 // ReputationContract provides interface to the BunkerReputation smart contract.

@@ -22,10 +22,10 @@ type MockIPFSClient struct {
 	callsMu sync.Mutex
 
 	// Error injection
-	addErr  error
-	getErr  error
-	pinErr  error
-	catErr  error
+	addErr error
+	getErr error
+	pinErr error
+	catErr error
 
 	// Behavior customization
 	AddDelay time.Duration
@@ -266,10 +266,10 @@ func (m *MockIPFSClient) Stats() MockIPFSStats {
 	}
 
 	return MockIPFSStats{
-		NumObjects:   len(m.objects),
-		NumPinned:    len(m.pins),
-		TotalSize:    totalSize,
-		RepoSize:     totalSize,
+		NumObjects: len(m.objects),
+		NumPinned:  len(m.pins),
+		TotalSize:  totalSize,
+		RepoSize:   totalSize,
 	}
 }
 

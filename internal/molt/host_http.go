@@ -229,7 +229,7 @@ func isPrivateIP(ip net.IP) bool {
 		{mustParseCIDR("172.16.0.0/12")},
 		{mustParseCIDR("192.168.0.0/16")},
 		{mustParseCIDR("127.0.0.0/8")},
-		{mustParseCIDR("169.254.0.0/16")},   // link-local
+		{mustParseCIDR("169.254.0.0/16")},     // link-local
 		{mustParseCIDR("169.254.169.254/32")}, // AWS/GCP metadata
 		{mustParseCIDR("::1/128")},            // IPv6 loopback
 		{mustParseCIDR("fc00::/7")},           // IPv6 unique local

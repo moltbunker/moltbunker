@@ -15,11 +15,11 @@ import (
 
 // PaymentService provides a unified interface for all payment operations
 type PaymentService struct {
-	config          *PaymentServiceConfig
-	baseClient      *BaseClient
-	tokenContract   *TokenContract
-	stakingContract *StakingContract
-	escrowContract  *EscrowContract
+	config           *PaymentServiceConfig
+	baseClient       *BaseClient
+	tokenContract    *TokenContract
+	stakingContract  *StakingContract
+	escrowContract   *EscrowContract
 	slashingContract *SlashingContract
 
 	// Governance contracts
@@ -56,16 +56,16 @@ type PaymentServiceConfig struct {
 	BlockConfirmations int
 
 	// Contract addresses
-	TokenAddress              common.Address
-	RegistryAddress           common.Address
-	EscrowAddress             common.Address
-	StakingAddress            common.Address
-	SlashingAddress           common.Address
-	DelegationAddress         common.Address
-	ReputationAddress         common.Address
-	VerificationAddress       common.Address
-	PricingAddress            common.Address
-	SubdomainRegistryAddress  common.Address
+	TokenAddress             common.Address
+	RegistryAddress          common.Address
+	EscrowAddress            common.Address
+	StakingAddress           common.Address
+	SlashingAddress          common.Address
+	DelegationAddress        common.Address
+	ReputationAddress        common.Address
+	VerificationAddress      common.Address
+	PricingAddress           common.Address
+	SubdomainRegistryAddress common.Address
 
 	// Wallet (nil for read-only mode)
 	PrivateKey *ecdsa.PrivateKey

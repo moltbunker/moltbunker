@@ -268,9 +268,9 @@ func TestLocalNet_StakingFlow(t *testing.T) {
 
 	// --- Stake for 3 providers ---
 
-	stake5 := newBigInt("5000000000000000000")    // 5 BUNKER
-	stake10 := newBigInt("10000000000000000000")  // 10 BUNKER
-	stake2 := newBigInt("2000000000000000000")    // 2 BUNKER
+	stake5 := newBigInt("5000000000000000000")   // 5 BUNKER
+	stake10 := newBigInt("10000000000000000000") // 10 BUNKER
+	stake2 := newBigInt("2000000000000000000")   // 2 BUNKER
 
 	stakeAmounts := map[common.Address]*big.Int{
 		provider1: stake5,

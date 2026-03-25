@@ -41,17 +41,17 @@ func DecompressState(data []byte) ([]byte, error) {
 
 // CloneDeployRequest is the payload for clone deployment
 type CloneDeployRequest struct {
-	CloneID      string            `json:"clone_id"`
-	SourceID     string            `json:"source_id"`
-	Image        string            `json:"image"`
-	StateData    []byte            `json:"state_data,omitempty"`
-	Compressed   bool              `json:"compressed"`
-	Encrypted    bool              `json:"encrypted"`
-	Priority     int               `json:"priority"`
+	CloneID      string               `json:"clone_id"`
+	SourceID     string               `json:"source_id"`
+	Image        string               `json:"image"`
+	StateData    []byte               `json:"state_data,omitempty"`
+	Compressed   bool                 `json:"compressed"`
+	Encrypted    bool                 `json:"encrypted"`
+	Priority     int                  `json:"priority"`
 	Resources    types.ResourceLimits `json:"resources,omitempty"`
-	TorOnly      bool              `json:"tor_only"`
-	OnionService bool              `json:"onion_service"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	TorOnly      bool                 `json:"tor_only"`
+	OnionService bool                 `json:"onion_service"`
+	Metadata     map[string]string    `json:"metadata,omitempty"`
 }
 
 // CloneDeployResponse is the response from clone deployment
@@ -73,10 +73,10 @@ type CloneVerifyRequest struct {
 
 // CloneVerifyResponse is the response from verification
 type CloneVerifyResponse struct {
-	CloneID   string `json:"clone_id"`
-	Healthy   bool   `json:"healthy"`
-	Status    string `json:"status"`
-	Error     string `json:"error,omitempty"`
+	CloneID string `json:"clone_id"`
+	Healthy bool   `json:"healthy"`
+	Status  string `json:"status"`
+	Error   string `json:"error,omitempty"`
 }
 
 // P2PContainerDeployer deploys containers via P2P network

@@ -26,12 +26,12 @@ import (
 
 // SlashingContract provides interface to the slashing smart contract
 type SlashingContract struct {
-	baseClient   *BaseClient
+	baseClient      *BaseClient
 	stakingContract *StakingContract
-	contract     *bind.BoundContract
-	contractABI  abi.ABI
-	contractAddr common.Address
-	mockMode     bool
+	contract        *bind.BoundContract
+	contractABI     abi.ABI
+	contractAddr    common.Address
+	mockMode        bool
 
 	// Mock state
 	mockDisputes map[[32]byte]*DisputeData
@@ -69,11 +69,11 @@ type SlashEvent struct {
 // NewSlashingContract creates a new slashing contract client
 func NewSlashingContract(baseClient *BaseClient, stakingContract *StakingContract, contractAddr common.Address) (*SlashingContract, error) {
 	sc := &SlashingContract{
-		baseClient:     baseClient,
+		baseClient:      baseClient,
 		stakingContract: stakingContract,
-		contractAddr:   contractAddr,
-		mockDisputes:   make(map[[32]byte]*DisputeData),
-		mockHistory:    make(map[common.Address]*SlashingHistory),
+		contractAddr:    contractAddr,
+		mockDisputes:    make(map[[32]byte]*DisputeData),
+		mockHistory:     make(map[common.Address]*SlashingHistory),
 	}
 
 	// Require a connected base client; use NewMockSlashingContract() for testing

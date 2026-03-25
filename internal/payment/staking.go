@@ -33,15 +33,15 @@ const UnstakeCooldownDuration = 7 * 24 * time.Hour
 
 // StakingManager manages provider staking
 type StakingManager struct {
-	client              *ethclient.Client
-	stakes              map[common.Address]*big.Int
-	beneficiaries       map[common.Address]common.Address
-	pendingBeneficiary  map[common.Address]*beneficiaryChange
-	rewards             map[common.Address]*big.Int
-	unstakeRequests     map[common.Address]*unstakeRequest
-	mu                  sync.RWMutex
-	minStake            *big.Int
-	nowFunc             func() time.Time // for testing
+	client             *ethclient.Client
+	stakes             map[common.Address]*big.Int
+	beneficiaries      map[common.Address]common.Address
+	pendingBeneficiary map[common.Address]*beneficiaryChange
+	rewards            map[common.Address]*big.Int
+	unstakeRequests    map[common.Address]*unstakeRequest
+	mu                 sync.RWMutex
+	minStake           *big.Int
+	nowFunc            func() time.Time // for testing
 }
 
 // SetNowFunc sets the time function used by the staking manager (for testing)

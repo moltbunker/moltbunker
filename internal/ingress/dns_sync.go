@@ -48,8 +48,8 @@ type cfDNSRecord struct {
 
 // cfAPIResponse wraps a Cloudflare API response.
 type cfAPIResponse struct {
-	Success bool          `json:"success"`
-	Errors  []cfAPIError  `json:"errors"`
+	Success bool            `json:"success"`
+	Errors  []cfAPIError    `json:"errors"`
 	Result  json.RawMessage `json:"result"`
 }
 

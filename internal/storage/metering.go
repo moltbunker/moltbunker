@@ -16,17 +16,17 @@ type StorageMeter struct {
 	wallets map[string]*WalletUsage
 
 	// Pricing (in wei per GB-month)
-	ratePerGBMonth    *big.Int
-	redundancyFactor  int // number of replicas (default: 3)
+	ratePerGBMonth   *big.Int
+	redundancyFactor int // number of replicas (default: 3)
 }
 
 // WalletUsage tracks storage usage for a single wallet.
 type WalletUsage struct {
-	Address      string    `json:"address"`
-	TotalBytes   int64     `json:"total_bytes"`
-	ObjectCount  int64     `json:"object_count"`
-	BucketCount  int       `json:"bucket_count"`
-	LastUpdated  time.Time `json:"last_updated"`
+	Address     string    `json:"address"`
+	TotalBytes  int64     `json:"total_bytes"`
+	ObjectCount int64     `json:"object_count"`
+	BucketCount int       `json:"bucket_count"`
+	LastUpdated time.Time `json:"last_updated"`
 }
 
 // MeteringConfig configures the storage meter.
@@ -209,7 +209,7 @@ func (m *StorageMeter) SweepAndBill(_ context.Context) []BillingRecord {
 type BillingRecord struct {
 	Wallet     string    `json:"wallet"`
 	TotalBytes int64     `json:"total_bytes"`
-	Cost       *big.Int  `json:"cost"`       // Cost in wei
+	Cost       *big.Int  `json:"cost"` // Cost in wei
 	Period     time.Time `json:"period"`
 }
 
