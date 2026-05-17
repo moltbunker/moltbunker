@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -555,10 +556,13 @@ func TestIntegration_HealthMonitoring(t *testing.T) {
 	healthMonitor := redundancy.NewHealthMonitor()
 	healthMonitor.SetInterval(100 * time.Millisecond) // Short interval for testing
 
-	// Set up probe function that simulates container health checks
-	probeCount := 0
+	// Set up probe function that simulates container health checks.
+	// probeCount is touched from the HealthMonitor's goroutine via the
+	// probe callback and from the test's main goroutine at the t.Logf
+	// below, so it must be atomic.
+	var probeCount atomic.Int32
 	healthMonitor.SetProbeFunc(func(ctx context.Context, containerID string) (bool, error) {
-		probeCount++
+		probeCount.Add(1)
 		// Simulate healthy container
 		return true, nil
 	})
@@ -603,7 +607,7 @@ func TestIntegration_HealthMonitoring(t *testing.T) {
 		t.Error("Replica 1 should be marked as unhealthy")
 	}
 
-	t.Logf("Health monitoring test completed, %d probes executed", probeCount)
+	t.Logf("Health monitoring test completed, %d probes executed", probeCount.Load())
 }
 
 // --- Replication Integration Tests ---
