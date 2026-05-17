@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -221,6 +222,9 @@ func TestNetworkManager_PortAllocation(t *testing.T) {
 // --- Fallback network tests (non-Linux) ---
 
 func TestFallbackNetwork_ContainerIP(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("Linux uses linuxContainerNetwork; container IP is empty until Setup")
+	}
 	net := newContainerNetwork("test", []ExposedPort{
 		{ContainerPort: 80, HostPort: 8080},
 	})

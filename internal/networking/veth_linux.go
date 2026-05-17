@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"net"
 	"sync"
-)
 
-// containerSubnet is the private range used for container networks.
-const containerSubnet = "10.88.0.0/16"
+	"github.com/moltbunker/moltbunker/internal/logging"
+)
 
 // maxContainerIPs is the max number of IPs in the /16 subnet (minus .0 and .1).
 const maxContainerIPs = 65534
@@ -96,8 +95,12 @@ func (n *linuxContainerNetwork) Setup() error {
 	// Setup nftables DNAT rules for each exposed port
 	for _, p := range n.ports {
 		if err := addDNATRule(p.HostPort, n.containerIP, p.ContainerPort, p.Protocol); err != nil {
-			// Best-effort cleanup
-			n.Teardown()
+			// Best-effort cleanup — log any failure but return the original error.
+			if teardownErr := n.Teardown(); teardownErr != nil {
+				logging.Warn("veth teardown after DNAT failure",
+					"err", teardownErr.Error(),
+					logging.Component("networking"))
+			}
 			return fmt.Errorf("add DNAT rule %d→%s:%d: %w", p.HostPort, n.containerIP, p.ContainerPort, err)
 		}
 	}

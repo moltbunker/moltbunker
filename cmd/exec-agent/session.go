@@ -36,6 +36,7 @@ type Session struct {
 	// Separate counters for encrypt (outgoing) and decrypt (incoming)
 	// because each side maintains its own send counter.
 	encryptCounter atomic.Uint64
+	//nolint:unused
 	decryptCounter atomic.Uint64
 
 	mu sync.Mutex // protects Seal calls (concurrent PTY reads)
