@@ -61,7 +61,9 @@ func TestStakingManager_GetStake_AfterStaking(t *testing.T) {
 	provider := common.HexToAddress("0x1234567890123456789012345678901234567890")
 	amount := big.NewInt(2000000000000000000)
 
-	sm.Stake(nil, provider, amount)
+	if err := sm.Stake(nil, provider, amount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	stake := sm.GetStake(provider)
 	if stake.Cmp(amount) != 0 {
@@ -76,7 +78,9 @@ func TestStakingManager_Slash(t *testing.T) {
 	stakeAmount := big.NewInt(2000000000000000000)
 	slashAmount := big.NewInt(500000000000000000) // 0.5 BUNKER
 
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	err := sm.Slash(nil, provider, slashAmount)
 	if err != nil {
@@ -98,7 +102,9 @@ func TestStakingManager_Slash_ExceedsStake(t *testing.T) {
 	stakeAmount := big.NewInt(2000000000000000000)
 	slashAmount := big.NewInt(3000000000000000000) // More than stake
 
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	err := sm.Slash(nil, provider, slashAmount)
 	if err != nil {
@@ -118,11 +124,13 @@ func TestStakingManager_HasMinimumStake(t *testing.T) {
 	provider1 := common.HexToAddress("0x1111111111111111111111111111111111111111")
 	provider2 := common.HexToAddress("0x2222222222222222222222222222222222222222")
 
-	// Provider 1: below minimum
-	sm.Stake(nil, provider1, big.NewInt(500000000000000000))
+	// Provider 1: below minimum (expected to fail, which is what we test)
+	_ = sm.Stake(nil, provider1, big.NewInt(500000000000000000))
 
 	// Provider 2: above minimum
-	sm.Stake(nil, provider2, big.NewInt(2000000000000000000))
+	if err := sm.Stake(nil, provider2, big.NewInt(2000000000000000000)); err != nil {
+		t.Fatalf("Stake provider2: %v", err)
+	}
 
 	if sm.HasMinimumStake(provider1) {
 		t.Error("Provider 1 should not have minimum stake")
@@ -147,7 +155,9 @@ func TestStakingManager_SetBeneficiary(t *testing.T) {
 	}
 
 	// Stake first
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	// Should fail with zero address
 	err = sm.SetBeneficiary(provider, common.Address{})
@@ -175,7 +185,9 @@ func TestStakingManager_BeneficiaryTimelock(t *testing.T) {
 	beneficiary := common.HexToAddress("0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
 	stakeAmount := big.NewInt(2000000000000000000)
 
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	// Set a fixed time for deterministic testing
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -276,7 +288,9 @@ func TestStakingManager_GetTier(t *testing.T) {
 			if amount.Sign() > 0 {
 				// Use low minStake so we can stake any amount
 				sm.minStake = big.NewInt(1)
-				sm.Stake(nil, provider, amount)
+				if err := sm.Stake(nil, provider, amount); err != nil {
+					t.Fatalf("Stake: %v", err)
+				}
 			}
 
 			tier := sm.GetTier(provider)
@@ -295,7 +309,9 @@ func TestStakingManager_ClaimRewards(t *testing.T) {
 	stakeAmount := big.NewInt(2000000000000000000)
 	rewardAmount := big.NewInt(500000000000000000) // 0.5 BUNKER
 
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	// Claiming with no rewards should fail
 	_, err := sm.ClaimRewards(nil, provider)
@@ -324,7 +340,9 @@ func TestStakingManager_ClaimRewards(t *testing.T) {
 	// Set beneficiary and advance timelock
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	sm.nowFunc = func() time.Time { return now }
-	sm.SetBeneficiary(provider, beneficiary)
+	if err := sm.SetBeneficiary(provider, beneficiary); err != nil {
+		t.Fatalf("SetBeneficiary: %v", err)
+	}
 
 	// Advance past timelock
 	sm.nowFunc = func() time.Time { return now.Add(25 * time.Hour) }
@@ -359,7 +377,9 @@ func TestStakingManager_Unstake(t *testing.T) {
 		t.Error("Should fail when provider has no stake")
 	}
 
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	// Should fail with zero or negative amount
 	err = sm.Unstake(nil, provider, big.NewInt(0))
@@ -430,12 +450,16 @@ func TestStakingManager_Unstake_CooldownNotElapsed(t *testing.T) {
 	stakeAmount := big.NewInt(5000000000000000000)
 	unstakeAmount := big.NewInt(2000000000000000000)
 
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	sm.nowFunc = func() time.Time { return now }
 
-	sm.Unstake(nil, provider, unstakeAmount)
+	if err := sm.Unstake(nil, provider, unstakeAmount); err != nil {
+		t.Fatalf("Unstake: %v", err)
+	}
 
 	// Try to complete before cooldown
 	sm.nowFunc = func() time.Time { return now.Add(6 * 24 * time.Hour) } // 6 days, not enough
@@ -453,7 +477,9 @@ func TestStakingManager_GetProviderState(t *testing.T) {
 
 	// Stake enough for starter tier (1,000,000 BUNKER)
 	stakeAmount, _ := new(big.Int).SetString("1000000000000000000000000", 10) // 1,000,000 BUNKER
-	sm.Stake(nil, provider, stakeAmount)
+	if err := sm.Stake(nil, provider, stakeAmount); err != nil {
+		t.Fatalf("Stake: %v", err)
+	}
 
 	// Add rewards
 	rewardAmount := big.NewInt(500000000000000000)
@@ -486,7 +512,9 @@ func TestStakingManager_GetProviderState(t *testing.T) {
 	// Initiate unstake and check state
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	sm.nowFunc = func() time.Time { return now }
-	sm.Unstake(nil, provider, big.NewInt(1000000000000000000))
+	if err := sm.Unstake(nil, provider, big.NewInt(1000000000000000000)); err != nil {
+		t.Fatalf("Unstake: %v", err)
+	}
 
 	state = sm.GetProviderState(provider)
 	if state.UnstakeInitiated == nil {

@@ -22,7 +22,7 @@ func TestExecuteHTTPRequest_GET(t *testing.T) {
 		}
 		w.Header().Set("X-Test", "hello")
 		w.WriteHeader(200)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer ts.Close()
 
@@ -62,7 +62,7 @@ func TestExecuteHTTPRequest_POST(t *testing.T) {
 		}
 		body, _ := io.ReadAll(r.Body)
 		w.WriteHeader(201)
-		w.Write(body) // echo
+		_, _ = w.Write(body) // echo
 	}))
 	defer ts.Close()
 
@@ -212,7 +212,7 @@ func TestExecuteHTTPRequest_RawStringBody(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		w.Write(body)
+		_, _ = w.Write(body)
 	}))
 	defer ts.Close()
 

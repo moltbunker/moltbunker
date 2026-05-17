@@ -23,7 +23,9 @@ func TestAuthManager_CreateAuthToken(t *testing.T) {
 	am := NewAuthManager(km)
 
 	var nodeID types.NodeID
-	rand.Read(nodeID[:])
+	if _, err := rand.Read(nodeID[:]); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	timestamp := time.Now()
 	token, err := am.CreateAuthToken(nodeID, timestamp)
@@ -50,7 +52,9 @@ func TestAuthManager_VerifyAuthToken(t *testing.T) {
 	am := NewAuthManager(km)
 
 	var nodeID types.NodeID
-	rand.Read(nodeID[:])
+	if _, err := rand.Read(nodeID[:]); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	timestamp := time.Now()
 	token, err := am.CreateAuthToken(nodeID, timestamp)
@@ -86,7 +90,9 @@ func TestAuthManager_VerifyAuthToken_Expired(t *testing.T) {
 	am := NewAuthManager(km)
 
 	var nodeID types.NodeID
-	rand.Read(nodeID[:])
+	if _, err := rand.Read(nodeID[:]); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	// Create token with old timestamp (6 minutes ago)
 	timestamp := time.Now().Add(-6 * time.Minute)

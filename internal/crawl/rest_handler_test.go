@@ -37,7 +37,9 @@ func TestHandler_CreateJob(t *testing.T) {
 	}
 
 	var job CrawlJob
-	json.NewDecoder(w.Body).Decode(&job)
+	if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+		t.Fatalf("decode job: %v", err)
+	}
 	if job.ID == "" {
 		t.Error("job ID should not be empty")
 	}
@@ -77,7 +79,9 @@ func TestHandler_CreateJob_InvalidBody(t *testing.T) {
 
 func TestHandler_ListJobs(t *testing.T) {
 	h, mux := newTestServer()
-	h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}})
+	if _, err := h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs", nil)
 	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xwallet1")
@@ -89,7 +93,9 @@ func TestHandler_ListJobs(t *testing.T) {
 	}
 
 	var jobs []CrawlJob
-	json.NewDecoder(w.Body).Decode(&jobs)
+	if err := json.NewDecoder(w.Body).Decode(&jobs); err != nil {
+		t.Fatalf("decode jobs: %v", err)
+	}
 	if len(jobs) != 1 {
 		t.Errorf("jobs = %d, want 1", len(jobs))
 	}
@@ -109,8 +115,12 @@ func TestHandler_ListJobs_NoWallet(t *testing.T) {
 
 func TestHandler_ListJobs_CrossTenantIsolation(t *testing.T) {
 	h, mux := newTestServer()
-	h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}})
-	h.scheduler.CreateJob(nil, "0xwallet2", CrawlConfig{URLs: []string{"https://b.com"}})
+	if _, err := h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
+		t.Fatalf("CreateJob wallet1: %v", err)
+	}
+	if _, err := h.scheduler.CreateJob(nil, "0xwallet2", CrawlConfig{URLs: []string{"https://b.com"}}); err != nil {
+		t.Fatalf("CreateJob wallet2: %v", err)
+	}
 
 	// wallet1 should only see their own job
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs", nil)
@@ -119,7 +129,9 @@ func TestHandler_ListJobs_CrossTenantIsolation(t *testing.T) {
 	mux.ServeHTTP(w, req)
 
 	var jobs []CrawlJob
-	json.NewDecoder(w.Body).Decode(&jobs)
+	if err := json.NewDecoder(w.Body).Decode(&jobs); err != nil {
+		t.Fatalf("decode wallet1 jobs: %v", err)
+	}
 	if len(jobs) != 1 {
 		t.Errorf("wallet1 jobs = %d, want 1", len(jobs))
 	}
@@ -130,7 +142,9 @@ func TestHandler_ListJobs_CrossTenantIsolation(t *testing.T) {
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, req)
 
-	json.NewDecoder(w.Body).Decode(&jobs)
+	if err := json.NewDecoder(w.Body).Decode(&jobs); err != nil {
+		t.Fatalf("decode wallet2 jobs: %v", err)
+	}
 	if len(jobs) != 1 {
 		t.Errorf("wallet2 jobs = %d, want 1", len(jobs))
 	}
@@ -150,7 +164,9 @@ func TestHandler_GetJob(t *testing.T) {
 	}
 
 	var got CrawlJob
-	json.NewDecoder(w.Body).Decode(&got)
+	if err := json.NewDecoder(w.Body).Decode(&got); err != nil {
+		t.Fatalf("decode job: %v", err)
+	}
 	if got.ID != job.ID {
 		t.Errorf("id = %q, want %q", got.ID, job.ID)
 	}
@@ -186,7 +202,9 @@ func TestHandler_GetJob_NotFound(t *testing.T) {
 func TestHandler_GetResults(t *testing.T) {
 	h, mux := newTestServer()
 	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
-	h.scheduler.AddResult(job.ID, CrawlResult{URL: "https://a.com", StatusCode: 200})
+	if err := h.scheduler.AddResult(job.ID, CrawlResult{URL: "https://a.com", StatusCode: 200}); err != nil {
+		t.Fatalf("AddResult: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs/"+job.ID+"/results", nil)
 	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xowner")
@@ -198,7 +216,9 @@ func TestHandler_GetResults(t *testing.T) {
 	}
 
 	var results []CrawlResult
-	json.NewDecoder(w.Body).Decode(&results)
+	if err := json.NewDecoder(w.Body).Decode(&results); err != nil {
+		t.Fatalf("decode results: %v", err)
+	}
 	if len(results) != 1 {
 		t.Errorf("results = %d, want 1", len(results))
 	}
@@ -270,8 +290,12 @@ func TestHandler_CrawlPage_NoURL(t *testing.T) {
 func TestHandler_Stats(t *testing.T) {
 	h, mux := newTestServer()
 	job, _ := h.scheduler.CreateJob(nil, "w1", CrawlConfig{URLs: []string{"https://a.com"}})
-	h.scheduler.StartJob(job.ID)
-	h.scheduler.CompleteJob(job.ID)
+	if err := h.scheduler.StartJob(job.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if err := h.scheduler.CompleteJob(job.ID); err != nil {
+		t.Fatalf("CompleteJob: %v", err)
+	}
 
 	req := httptest.NewRequest("GET", "/v1/crawl/stats", nil)
 	w := httptest.NewRecorder()
@@ -282,7 +306,9 @@ func TestHandler_Stats(t *testing.T) {
 	}
 
 	var stats SchedulerStats
-	json.NewDecoder(w.Body).Decode(&stats)
+	if err := json.NewDecoder(w.Body).Decode(&stats); err != nil {
+		t.Fatalf("decode stats: %v", err)
+	}
 	if stats.TotalJobs != 1 {
 		t.Errorf("total = %d, want 1", stats.TotalJobs)
 	}

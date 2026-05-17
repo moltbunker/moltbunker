@@ -31,7 +31,9 @@ func TestMemory_GetNotFound(t *testing.T) {
 		t.Error("expected error for missing agent")
 	}
 
-	m.Put("agent-1", "key", "val")
+	if err := m.Put("agent-1", "key", "val"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
 	_, err = m.Get("agent-1", "missing-key")
 	if err == nil {
 		t.Error("expected error for missing key")
@@ -41,8 +43,12 @@ func TestMemory_GetNotFound(t *testing.T) {
 func TestMemory_Overwrite(t *testing.T) {
 	m := NewMemoryStore()
 
-	m.Put("a1", "key", "v1")
-	m.Put("a1", "key", "v2")
+	if err := m.Put("a1", "key", "v1"); err != nil {
+		t.Fatalf("Put v1: %v", err)
+	}
+	if err := m.Put("a1", "key", "v2"); err != nil {
+		t.Fatalf("Put v2: %v", err)
+	}
 
 	entry, _ := m.Get("a1", "key")
 	if entry.Value != "v2" {
@@ -53,8 +59,12 @@ func TestMemory_Overwrite(t *testing.T) {
 func TestMemory_Delete(t *testing.T) {
 	m := NewMemoryStore()
 
-	m.Put("a1", "key", "val")
-	m.Delete("a1", "key")
+	if err := m.Put("a1", "key", "val"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if err := m.Delete("a1", "key"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
 
 	_, err := m.Get("a1", "key")
 	if err == nil {
@@ -65,9 +75,15 @@ func TestMemory_Delete(t *testing.T) {
 func TestMemory_List(t *testing.T) {
 	m := NewMemoryStore()
 
-	m.Put("a1", "k1", "v1")
-	m.Put("a1", "k2", "v2")
-	m.Put("a2", "k1", "v3")
+	if err := m.Put("a1", "k1", "v1"); err != nil {
+		t.Fatalf("Put a1/k1: %v", err)
+	}
+	if err := m.Put("a1", "k2", "v2"); err != nil {
+		t.Fatalf("Put a1/k2: %v", err)
+	}
+	if err := m.Put("a2", "k1", "v3"); err != nil {
+		t.Fatalf("Put a2/k1: %v", err)
+	}
 
 	entries := m.List("a1")
 	if len(entries) != 2 {
@@ -88,8 +104,12 @@ func TestMemory_List(t *testing.T) {
 func TestMemory_Clear(t *testing.T) {
 	m := NewMemoryStore()
 
-	m.Put("a1", "k1", "v1")
-	m.Put("a1", "k2", "v2")
+	if err := m.Put("a1", "k1", "v1"); err != nil {
+		t.Fatalf("Put k1: %v", err)
+	}
+	if err := m.Put("a1", "k2", "v2"); err != nil {
+		t.Fatalf("Put k2: %v", err)
+	}
 	m.Clear("a1")
 
 	if m.Size("a1") != 0 {
@@ -104,8 +124,12 @@ func TestMemory_Size(t *testing.T) {
 		t.Error("empty agent should have size 0")
 	}
 
-	m.Put("a1", "k1", "v1")
-	m.Put("a1", "k2", "v2")
+	if err := m.Put("a1", "k1", "v1"); err != nil {
+		t.Fatalf("Put k1: %v", err)
+	}
+	if err := m.Put("a1", "k2", "v2"); err != nil {
+		t.Fatalf("Put k2: %v", err)
+	}
 
 	if m.Size("a1") != 2 {
 		t.Errorf("size = %d, want 2", m.Size("a1"))
@@ -125,7 +149,9 @@ func TestMemory_EmptyKeyOrAgent(t *testing.T) {
 
 func TestMemory_GetReturnsCopy(t *testing.T) {
 	m := NewMemoryStore()
-	m.Put("a1", "key", "original")
+	if err := m.Put("a1", "key", "original"); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
 
 	entry, _ := m.Get("a1", "key")
 	entry.Value = "mutated"

@@ -195,7 +195,9 @@ func TestMoltCreditManager_GetBalanceUnknown(t *testing.T) {
 func TestMoltCreditManager_RefundAll(t *testing.T) {
 	m := NewMoltCreditManager()
 	m.Deposit("0xabc", big.NewInt(1000))
-	m.Deduct("0xabc", big.NewInt(300))
+	if err := m.Deduct("0xabc", big.NewInt(300)); err != nil {
+		t.Fatalf("Deduct: %v", err)
+	}
 
 	refund := m.RefundAll("0xabc")
 	if refund.Cmp(big.NewInt(700)) != 0 {
@@ -221,7 +223,9 @@ func TestMoltCreditManager_RefundUnknown(t *testing.T) {
 func TestMoltCreditManager_GetCredit(t *testing.T) {
 	m := NewMoltCreditManager()
 	m.Deposit("0xabc", big.NewInt(500))
-	m.Deduct("0xabc", big.NewInt(100))
+	if err := m.Deduct("0xabc", big.NewInt(100)); err != nil {
+		t.Fatalf("Deduct: %v", err)
+	}
 
 	credit := m.GetCredit("0xabc")
 	if credit == nil {

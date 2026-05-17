@@ -413,7 +413,7 @@ func TestCertPinStore_ConcurrentAccess(t *testing.T) {
 			case 0:
 				store.PinCertificate(nodeID, cert)
 			case 1:
-				store.VerifyCertificate(nodeID, cert)
+				_ = store.VerifyCertificate(nodeID, cert)
 			case 2:
 				store.GetPin(nodeID)
 			}

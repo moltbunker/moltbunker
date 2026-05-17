@@ -67,7 +67,9 @@ func TestPortAllocator_IsAllocated(t *testing.T) {
 		t.Error("50000 should not be allocated yet")
 	}
 
-	pa.Allocate()
+	if _, err := pa.Allocate(); err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
 	if !pa.IsAllocated(50000) {
 		t.Error("50000 should be allocated")
 	}
@@ -80,8 +82,12 @@ func TestPortAllocator_Count(t *testing.T) {
 		t.Errorf("count = %d, want 0", pa.Count())
 	}
 
-	pa.Allocate()
-	pa.Allocate()
+	if _, err := pa.Allocate(); err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if _, err := pa.Allocate(); err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
 	if pa.Count() != 2 {
 		t.Errorf("count = %d, want 2", pa.Count())
 	}

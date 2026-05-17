@@ -35,7 +35,9 @@ func TestReplication_DuplicateProvider(t *testing.T) {
 	rm := NewReplicationManager(DefaultReplicationConfig())
 	rm.TrackObject("b", "k", "w", 100)
 
-	rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1", Region: "us"})
+	if err := rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1", Region: "us"}); err != nil {
+		t.Fatalf("AddReplica: %v", err)
+	}
 	err := rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1", Region: "eu"})
 	if err == nil {
 		t.Error("expected error for duplicate provider")
@@ -66,7 +68,9 @@ func TestReplication_MaxReplicas(t *testing.T) {
 func TestReplication_UpdateStatus(t *testing.T) {
 	rm := NewReplicationManager(DefaultReplicationConfig())
 	rm.TrackObject("b", "k", "w", 100)
-	rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1", Status: ReplicaStatusSyncing})
+	if err := rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1", Status: ReplicaStatusSyncing}); err != nil {
+		t.Fatalf("AddReplica: %v", err)
+	}
 
 	err := rm.UpdateReplicaStatus("b", "k", "p1", ReplicaStatusHealthy)
 	if err != nil {
@@ -109,7 +113,9 @@ func TestReplication_UntrackedObject(t *testing.T) {
 func TestReplication_RemoveObject(t *testing.T) {
 	rm := NewReplicationManager(DefaultReplicationConfig())
 	rm.TrackObject("b", "k", "w", 100)
-	rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1"})
+	if err := rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1"}); err != nil {
+		t.Fatalf("AddReplica: %v", err)
+	}
 
 	rm.RemoveObject("b", "k")
 
@@ -124,21 +130,25 @@ func TestReplication_GetUnderReplicated(t *testing.T) {
 
 	// Object with only 1 healthy replica
 	rm.TrackObject("b", "under", "w", 100)
-	rm.AddReplica("b", "under", ObjectReplica{
+	if err := rm.AddReplica("b", "under", ObjectReplica{
 		ProviderID:    "p1",
 		Status:        ReplicaStatusHealthy,
 		LastHeartbeat: time.Now(),
-	})
+	}); err != nil {
+		t.Fatalf("AddReplica under/p1: %v", err)
+	}
 
 	// Object with 3 healthy replicas
 	rm.TrackObject("b", "full", "w", 200)
 	for i := 0; i < 3; i++ {
-		rm.AddReplica("b", "full", ObjectReplica{
+		if err := rm.AddReplica("b", "full", ObjectReplica{
 			ProviderID:    fmt.Sprintf("p%d", i),
 			Region:        fmt.Sprintf("r%d", i),
 			Status:        ReplicaStatusHealthy,
 			LastHeartbeat: time.Now(),
-		})
+		}); err != nil {
+			t.Fatalf("AddReplica full/p%d: %v", i, err)
+		}
 	}
 
 	underRep := rm.GetUnderReplicated()
@@ -154,21 +164,27 @@ func TestReplication_HealthyReplicaCount(t *testing.T) {
 	rm := NewReplicationManager(DefaultReplicationConfig())
 	rm.TrackObject("b", "k", "w", 100)
 
-	rm.AddReplica("b", "k", ObjectReplica{
+	if err := rm.AddReplica("b", "k", ObjectReplica{
 		ProviderID:    "p1",
 		Status:        ReplicaStatusHealthy,
 		LastHeartbeat: time.Now(),
-	})
-	rm.AddReplica("b", "k", ObjectReplica{
+	}); err != nil {
+		t.Fatalf("AddReplica p1: %v", err)
+	}
+	if err := rm.AddReplica("b", "k", ObjectReplica{
 		ProviderID:    "p2",
 		Status:        ReplicaStatusDegraded,
 		LastHeartbeat: time.Now(),
-	})
-	rm.AddReplica("b", "k", ObjectReplica{
+	}); err != nil {
+		t.Fatalf("AddReplica p2: %v", err)
+	}
+	if err := rm.AddReplica("b", "k", ObjectReplica{
 		ProviderID:    "p3",
 		Status:        ReplicaStatusHealthy,
 		LastHeartbeat: time.Now(),
-	})
+	}); err != nil {
+		t.Fatalf("AddReplica p3: %v", err)
+	}
 
 	count := rm.HealthyReplicaCount("b", "k")
 	if count != 2 {
@@ -182,11 +198,13 @@ func TestReplication_StaleHeartbeat(t *testing.T) {
 	rm := NewReplicationManager(cfg)
 
 	rm.TrackObject("b", "k", "w", 100)
-	rm.AddReplica("b", "k", ObjectReplica{
+	if err := rm.AddReplica("b", "k", ObjectReplica{
 		ProviderID:    "p1",
 		Status:        ReplicaStatusHealthy,
 		LastHeartbeat: time.Now().Add(-time.Second), // stale
-	})
+	}); err != nil {
+		t.Fatalf("AddReplica: %v", err)
+	}
 
 	count := rm.HealthyReplicaCount("b", "k")
 	if count != 0 {
@@ -260,19 +278,23 @@ func TestReplication_Stats(t *testing.T) {
 
 	rm.TrackObject("b", "full", "w", 100)
 	for i := 0; i < 3; i++ {
-		rm.AddReplica("b", "full", ObjectReplica{
+		if err := rm.AddReplica("b", "full", ObjectReplica{
 			ProviderID:    fmt.Sprintf("p%d", i),
 			Status:        ReplicaStatusHealthy,
 			LastHeartbeat: time.Now(),
-		})
+		}); err != nil {
+			t.Fatalf("AddReplica full/p%d: %v", i, err)
+		}
 	}
 
 	rm.TrackObject("b", "partial", "w", 200)
-	rm.AddReplica("b", "partial", ObjectReplica{
+	if err := rm.AddReplica("b", "partial", ObjectReplica{
 		ProviderID:    "p1",
 		Status:        ReplicaStatusHealthy,
 		LastHeartbeat: time.Now(),
-	})
+	}); err != nil {
+		t.Fatalf("AddReplica partial/p1: %v", err)
+	}
 
 	stats := rm.Stats()
 	if stats.TrackedObjects != 2 {
@@ -295,7 +317,9 @@ func TestReplication_Stats(t *testing.T) {
 func TestReplication_DeepCopy(t *testing.T) {
 	rm := NewReplicationManager(DefaultReplicationConfig())
 	rm.TrackObject("b", "k", "w", 100)
-	rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1", Status: ReplicaStatusHealthy})
+	if err := rm.AddReplica("b", "k", ObjectReplica{ProviderID: "p1", Status: ReplicaStatusHealthy}); err != nil {
+		t.Fatalf("AddReplica: %v", err)
+	}
 
 	rs, _ := rm.GetReplicaSet("b", "k")
 	rs.Replicas[0].Status = ReplicaStatusLost // mutate copy

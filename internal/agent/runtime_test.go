@@ -121,10 +121,16 @@ func TestRecordInvocation(t *testing.T) {
 	ctx := context.Background()
 
 	dep, _ := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"})
-	rt.Start(ctx, dep.ID, "ctr-1")
+	if err := rt.Start(ctx, dep.ID, "ctr-1"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
 
-	rt.RecordInvocation(dep.ID, 100)
-	rt.RecordInvocation(dep.ID, 200)
+	if err := rt.RecordInvocation(dep.ID, 100); err != nil {
+		t.Fatalf("RecordInvocation 100: %v", err)
+	}
+	if err := rt.RecordInvocation(dep.ID, 200); err != nil {
+		t.Fatalf("RecordInvocation 200: %v", err)
+	}
 
 	agent, _ := rt.Get(dep.ID)
 	if agent.TokensUsed != 300 {
@@ -142,9 +148,13 @@ func TestRecordInvocation_BudgetExceeded(t *testing.T) {
 	ctx := context.Background()
 
 	dep, _ := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"})
-	rt.Start(ctx, dep.ID, "ctr-1")
+	if err := rt.Start(ctx, dep.ID, "ctr-1"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
 
-	rt.RecordInvocation(dep.ID, 150)
+	if err := rt.RecordInvocation(dep.ID, 150); err != nil {
+		t.Fatalf("RecordInvocation: %v", err)
+	}
 
 	agent, _ := rt.Get(dep.ID)
 	if agent.Status != AgentStatusStopped {
@@ -159,9 +169,15 @@ func TestList(t *testing.T) {
 	rt := NewAgentRuntime(DefaultRuntimeConfig())
 	ctx := context.Background()
 
-	rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"})
-	rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"})
-	rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w2"})
+	if _, err := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"}); err != nil {
+		t.Fatalf("Deploy w1[0]: %v", err)
+	}
+	if _, err := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"}); err != nil {
+		t.Fatalf("Deploy w1[1]: %v", err)
+	}
+	if _, err := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w2"}); err != nil {
+		t.Fatalf("Deploy w2: %v", err)
+	}
 
 	all := rt.List("")
 	if len(all) != 3 {
@@ -179,14 +195,18 @@ func TestDelete(t *testing.T) {
 	ctx := context.Background()
 
 	dep, _ := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"})
-	rt.Start(ctx, dep.ID, "ctr-1")
+	if err := rt.Start(ctx, dep.ID, "ctr-1"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
 
 	// Cannot delete running agent
 	if err := rt.Delete(dep.ID); err == nil {
 		t.Error("expected error deleting running agent")
 	}
 
-	rt.Stop(ctx, dep.ID)
+	if err := rt.Stop(ctx, dep.ID); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
 
 	if err := rt.Delete(dep.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -222,12 +242,20 @@ func TestStats(t *testing.T) {
 	d2, _ := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"})
 	d3, _ := rt.Deploy(ctx, AgentSpec{Framework: FrameworkCustom, Image: "img", Owner: "w1"})
 
-	rt.Start(ctx, d1.ID, "c1")
-	rt.Start(ctx, d2.ID, "c2")
-	rt.Stop(ctx, d2.ID)
+	if err := rt.Start(ctx, d1.ID, "c1"); err != nil {
+		t.Fatalf("Start d1: %v", err)
+	}
+	if err := rt.Start(ctx, d2.ID, "c2"); err != nil {
+		t.Fatalf("Start d2: %v", err)
+	}
+	if err := rt.Stop(ctx, d2.ID); err != nil {
+		t.Fatalf("Stop d2: %v", err)
+	}
 	rt.SetError(d3.ID, "boom")
 
-	rt.RecordInvocation(d1.ID, 500)
+	if err := rt.RecordInvocation(d1.ID, 500); err != nil {
+		t.Fatalf("RecordInvocation: %v", err)
+	}
 
 	stats := rt.Stats()
 	if stats.TotalAgents != 3 {

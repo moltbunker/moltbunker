@@ -66,7 +66,9 @@ func TestREST_CreateListBuckets(t *testing.T) {
 		Buckets []BucketInfo `json:"buckets"`
 		Count   int          `json:"count"`
 	}
-	json.NewDecoder(w.Body).Decode(&listResp)
+	if err := json.NewDecoder(w.Body).Decode(&listResp); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
 	if listResp.Count != 1 {
 		t.Errorf("count = %d, want 1", listResp.Count)
 	}
@@ -198,7 +200,9 @@ func TestREST_ListObjects(t *testing.T) {
 	}
 
 	var out ListObjectsOutput
-	json.NewDecoder(w.Body).Decode(&out)
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
 	if out.KeyCount != 3 {
 		t.Errorf("count = %d, want 3", out.KeyCount)
 	}
@@ -219,7 +223,9 @@ func TestREST_ListObjectsDelimited(t *testing.T) {
 	}
 
 	var out ListObjectsOutput
-	json.NewDecoder(w.Body).Decode(&out)
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
 	if out.KeyCount != 1 { // only a.txt at root level
 		t.Errorf("count = %d, want 1", out.KeyCount)
 	}
@@ -240,7 +246,9 @@ func TestREST_Usage(t *testing.T) {
 	}
 
 	var report UsageReport
-	json.NewDecoder(w.Body).Decode(&report)
+	if err := json.NewDecoder(w.Body).Decode(&report); err != nil {
+		t.Fatalf("decode usage report: %v", err)
+	}
 	if report.ObjectCount != 1 {
 		t.Errorf("object count = %d, want 1", report.ObjectCount)
 	}

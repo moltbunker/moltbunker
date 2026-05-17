@@ -86,7 +86,7 @@ func TestReverseServerClient_EndToEnd(t *testing.T) {
 			fmt.Fprintf(w, "hello from container on port %d", containerPort)
 		}),
 	}
-	go containerSrv.Serve(containerLis)
+	go func() { _ = containerSrv.Serve(containerLis) }()
 	defer containerSrv.Close()
 
 	// --- TLS certs ---
@@ -120,7 +120,7 @@ func TestReverseServerClient_EndToEnd(t *testing.T) {
 
 	reverseServer := NewReverseServer(serverLis, WithDomain("test.dev"))
 
-	go reverseServer.Serve(ctx)
+	go func() { _ = reverseServer.Serve(ctx) }()
 
 	serverAddr := serverLis.Addr().String()
 
@@ -218,7 +218,7 @@ func TestReverseServerClient_EndToEnd(t *testing.T) {
 	}
 
 	// Cleanup
-	revClient.Disconnect()
+	_ = revClient.Disconnect()
 }
 
 // staticPortResolver always returns the same port.

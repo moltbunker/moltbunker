@@ -13,7 +13,7 @@ import (
 func TestStakeVerifier_RegisterAndQuery(t *testing.T) {
 	sv := NewStakeVerifier(nil)
 
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 	wallet := common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
 
 	if sv.HasAnnounced(nodeID) {
@@ -35,7 +35,7 @@ func TestStakeVerifier_RegisterAndQuery(t *testing.T) {
 func TestStakeVerifier_NoPaymentService(t *testing.T) {
 	sv := NewStakeVerifier(nil)
 
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 	wallet := common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
 	sv.RegisterPeerWallet(nodeID, wallet)
 
@@ -57,7 +57,7 @@ func TestStakeVerifier_UnregisteredPeer(t *testing.T) {
 	sv := NewStakeVerifier(nil)
 	ctx := context.Background()
 
-	unknownNodeID := randomNodeID()
+	unknownNodeID := randomNodeID(t)
 
 	if sv.IsStaked(ctx, unknownNodeID) {
 		t.Fatal("unregistered peer should not be staked")
@@ -72,7 +72,7 @@ func TestStakeVerifier_UnregisteredPeer(t *testing.T) {
 func TestStakeVerifier_RemovePeer(t *testing.T) {
 	sv := NewStakeVerifier(nil)
 
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 	wallet := common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
 	sv.RegisterPeerWallet(nodeID, wallet)
 
@@ -92,7 +92,7 @@ func TestStakeVerifier_RemovePeer(t *testing.T) {
 }
 
 func TestStakeVerifier_MockVerifier(t *testing.T) {
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 	wallet := common.HexToAddress("0xabcdef1234567890abcdef1234567890abcdef12")
 
 	peers := map[types.NodeID]common.Address{
@@ -175,8 +175,8 @@ func TestStakeVerifier_MultiPeerSameWallet(t *testing.T) {
 	sv := NewStakeVerifier(nil)
 	wallet := common.HexToAddress("0x1234567890abcdef1234567890abcdef12345678")
 
-	nodeID1 := randomNodeID()
-	nodeID2 := randomNodeID()
+	nodeID1 := randomNodeID(t)
+	nodeID2 := randomNodeID(t)
 
 	sv.RegisterPeerWallet(nodeID1, wallet)
 	sv.RegisterPeerWallet(nodeID2, wallet)

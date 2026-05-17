@@ -86,7 +86,7 @@ func TestCheckForUpdate_WithMockServer(t *testing.T) {
 			DownloadURL:  "https://releases.moltbunker.com/v1.1.0",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -122,7 +122,7 @@ func TestCheckForUpdate_NoUpdateAvailable(t *testing.T) {
 			Version: "1.0.0",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -146,7 +146,7 @@ func TestCheckForUpdate_CurrentVersionNewer(t *testing.T) {
 			Version: "0.9.0",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -202,7 +202,7 @@ func TestCheckForUpdate_ContextCancelled(t *testing.T) {
 func TestCheckForUpdate_InvalidJSON(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte("not json"))
+		_, _ = w.Write([]byte("not json"))
 	}))
 	defer server.Close()
 
@@ -222,7 +222,7 @@ func TestIsUpdateAvailable_Caching(t *testing.T) {
 			Version: "2.0.0",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -264,7 +264,7 @@ func TestGetVersionInfo_AfterCheck(t *testing.T) {
 			DownloadURL:  "https://example.com/download",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -307,7 +307,7 @@ func TestStartStop(t *testing.T) {
 			Version: "1.0.0",
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 
@@ -335,7 +335,7 @@ func TestStartIdempotent(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := versionResponse{Version: "1.0.0"}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	}))
 	defer server.Close()
 

@@ -282,7 +282,9 @@ func TestGetLatestSnapshot(t *testing.T) {
 	}
 
 	// Create snapshots
-	m.CreateSnapshot("container-1", []byte("first"), SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("container-1", []byte("first"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot first: %v", err)
+	}
 	time.Sleep(time.Millisecond)
 	last, err := m.CreateSnapshot("container-1", []byte("second"), SnapshotTypeFull, nil)
 	if err != nil {
@@ -357,9 +359,13 @@ func TestDeleteContainerSnapshots(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		m.CreateSnapshot("c1", []byte("data"), SnapshotTypeFull, nil)
+		if _, err := m.CreateSnapshot("c1", []byte("data"), SnapshotTypeFull, nil); err != nil {
+			t.Fatalf("CreateSnapshot[%d]: %v", i, err)
+		}
 	}
-	m.CreateSnapshot("c2", []byte("other data"), SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("c2", []byte("other data"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot c2: %v", err)
+	}
 
 	err = m.DeleteContainerSnapshots("c1")
 	if err != nil {
@@ -433,7 +439,9 @@ func TestCleanupExpired(t *testing.T) {
 	m.mu.Unlock()
 
 	// Also create a recent snapshot
-	m.CreateSnapshot("c1", []byte("new data"), SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("c1", []byte("new data"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot recent: %v", err)
+	}
 
 	removed := m.CleanupExpired()
 	if removed != 1 {
@@ -460,8 +468,12 @@ func TestGetStats(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m.CreateSnapshot("c1", []byte("data1"), SnapshotTypeFull, nil)
-	m.CreateSnapshot("c2", []byte("data2"), SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("c1", []byte("data1"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot c1: %v", err)
+	}
+	if _, err := m.CreateSnapshot("c2", []byte("data2"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot c2: %v", err)
+	}
 
 	stats := m.GetStats()
 	if stats.TotalCount != 2 {
@@ -491,7 +503,9 @@ func TestGetDetailedStats(t *testing.T) {
 
 	// Create data that compresses well
 	data := bytes.Repeat([]byte("x"), 10000)
-	m.CreateSnapshot("c1", data, SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("c1", data, SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot: %v", err)
+	}
 
 	stats := m.GetDetailedStats()
 	if stats.TotalCount != 1 {
@@ -519,11 +533,17 @@ func TestListAllSnapshots(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m.CreateSnapshot("c1", []byte("data1"), SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("c1", []byte("data1"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot c1/data1: %v", err)
+	}
 	time.Sleep(time.Millisecond)
-	m.CreateSnapshot("c2", []byte("data2"), SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("c2", []byte("data2"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot c2/data2: %v", err)
+	}
 	time.Sleep(time.Millisecond)
-	m.CreateSnapshot("c1", []byte("data3"), SnapshotTypeFull, nil)
+	if _, err := m.CreateSnapshot("c1", []byte("data3"), SnapshotTypeFull, nil); err != nil {
+		t.Fatalf("CreateSnapshot c1/data3: %v", err)
+	}
 
 	all := m.ListAllSnapshots()
 	if len(all) != 3 {
@@ -842,7 +862,9 @@ func TestCheckpointerTriggerCheckpoint(t *testing.T) {
 		containerID: "c1",
 		stateData:   []byte("checkpoint state data"),
 	}
-	cp.RegisterContainer(provider)
+	if err := cp.RegisterContainer(provider); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
 
 	snap, err := cp.TriggerCheckpoint("c1")
 	if err != nil {
@@ -889,7 +911,9 @@ func TestCheckpointerGetLastNextCheckpoint(t *testing.T) {
 	})
 
 	provider := &mockStateProvider{containerID: "c1", stateData: []byte("data")}
-	cp.RegisterContainer(provider)
+	if err := cp.RegisterContainer(provider); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
 
 	// Last checkpoint should be zero initially
 	_, hasLast := cp.GetLastCheckpoint("c1")
@@ -938,7 +962,9 @@ func TestCheckpointerSetInterval(t *testing.T) {
 	})
 
 	provider := &mockStateProvider{containerID: "c1", stateData: []byte("data")}
-	cp.RegisterContainer(provider)
+	if err := cp.RegisterContainer(provider); err != nil {
+		t.Fatalf("RegisterContainer: %v", err)
+	}
 
 	// Change interval
 	cp.SetInterval("c1", 60)

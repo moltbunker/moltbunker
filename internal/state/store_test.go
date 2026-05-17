@@ -50,7 +50,9 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 		defer s.Close()
 		ctx := context.Background()
 
-		s.PutDeployment(ctx, "dep-del", []byte("data"))
+		if err := s.PutDeployment(ctx, "dep-del", []byte("data")); err != nil {
+			t.Fatalf("PutDeployment: %v", err)
+		}
 		if err := s.DeleteDeployment(ctx, "dep-del"); err != nil {
 			t.Fatalf("DeleteDeployment: %v", err)
 		}
@@ -77,9 +79,15 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 		defer s.Close()
 		ctx := context.Background()
 
-		s.PutDeployment(ctx, "d1", []byte("one"))
-		s.PutDeployment(ctx, "d2", []byte("two"))
-		s.PutDeployment(ctx, "d3", []byte("three"))
+		if err := s.PutDeployment(ctx, "d1", []byte("one")); err != nil {
+			t.Fatalf("PutDeployment d1: %v", err)
+		}
+		if err := s.PutDeployment(ctx, "d2", []byte("two")); err != nil {
+			t.Fatalf("PutDeployment d2: %v", err)
+		}
+		if err := s.PutDeployment(ctx, "d3", []byte("three")); err != nil {
+			t.Fatalf("PutDeployment d3: %v", err)
+		}
 
 		all, err := s.ListDeployments(ctx)
 		if err != nil {
@@ -115,8 +123,12 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 		defer s.Close()
 		ctx := context.Background()
 
-		s.PutDeployment(ctx, "dep-1", []byte("v1"))
-		s.PutDeployment(ctx, "dep-1", []byte("v2"))
+		if err := s.PutDeployment(ctx, "dep-1", []byte("v1")); err != nil {
+			t.Fatalf("PutDeployment v1: %v", err)
+		}
+		if err := s.PutDeployment(ctx, "dep-1", []byte("v2")); err != nil {
+			t.Fatalf("PutDeployment v2: %v", err)
+		}
 
 		got, _ := s.GetDeployment(ctx, "dep-1")
 		if string(got) != "v2" {
@@ -129,15 +141,21 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 		defer s.Close()
 		ctx := context.Background()
 
-		s.PutBan(ctx, "peer-1", []byte(`{"reason":"spam"}`))
-		s.PutBan(ctx, "peer-2", []byte(`{"reason":"abuse"}`))
+		if err := s.PutBan(ctx, "peer-1", []byte(`{"reason":"spam"}`)); err != nil {
+			t.Fatalf("PutBan peer-1: %v", err)
+		}
+		if err := s.PutBan(ctx, "peer-2", []byte(`{"reason":"abuse"}`)); err != nil {
+			t.Fatalf("PutBan peer-2: %v", err)
+		}
 
 		all, _ := s.ListBans(ctx)
 		if len(all) != 2 {
 			t.Fatalf("expected 2 bans, got %d", len(all))
 		}
 
-		s.DeleteBan(ctx, "peer-1")
+		if err := s.DeleteBan(ctx, "peer-1"); err != nil {
+			t.Fatalf("DeleteBan: %v", err)
+		}
 		all, _ = s.ListBans(ctx)
 		if len(all) != 1 {
 			t.Fatalf("expected 1 ban after delete, got %d", len(all))
@@ -149,15 +167,21 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 		defer s.Close()
 		ctx := context.Background()
 
-		s.PutPeer(ctx, "p1", []byte("addr1"))
-		s.PutPeer(ctx, "p2", []byte("addr2"))
+		if err := s.PutPeer(ctx, "p1", []byte("addr1")); err != nil {
+			t.Fatalf("PutPeer p1: %v", err)
+		}
+		if err := s.PutPeer(ctx, "p2", []byte("addr2")); err != nil {
+			t.Fatalf("PutPeer p2: %v", err)
+		}
 
 		all, _ := s.ListPeers(ctx)
 		if len(all) != 2 {
 			t.Fatalf("expected 2 peers, got %d", len(all))
 		}
 
-		s.DeletePeer(ctx, "p1")
+		if err := s.DeletePeer(ctx, "p1"); err != nil {
+			t.Fatalf("DeletePeer: %v", err)
+		}
 		all, _ = s.ListPeers(ctx)
 		if len(all) != 1 {
 			t.Fatalf("expected 1 peer after delete, got %d", len(all))
@@ -171,7 +195,9 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 
 		hash := make([]byte, 32)
 		hash[0] = 0xAB
-		s.PutCertPin(ctx, "node-1", hash)
+		if err := s.PutCertPin(ctx, "node-1", hash); err != nil {
+			t.Fatalf("PutCertPin: %v", err)
+		}
 
 		all, _ := s.ListCertPins(ctx)
 		if len(all) != 1 {
@@ -181,7 +207,9 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 			t.Errorf("cert pin data mismatch")
 		}
 
-		s.DeleteCertPin(ctx, "node-1")
+		if err := s.DeleteCertPin(ctx, "node-1"); err != nil {
+			t.Fatalf("DeleteCertPin: %v", err)
+		}
 		all, _ = s.ListCertPins(ctx)
 		if len(all) != 0 {
 			t.Fatalf("expected 0 cert pins after delete, got %d", len(all))
@@ -193,13 +221,17 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 		defer s.Close()
 		ctx := context.Background()
 
-		s.PutAPIKey(ctx, "key-1", []byte(`{"hash":"abc"}`))
+		if err := s.PutAPIKey(ctx, "key-1", []byte(`{"hash":"abc"}`)); err != nil {
+			t.Fatalf("PutAPIKey: %v", err)
+		}
 		all, _ := s.ListAPIKeys(ctx)
 		if len(all) != 1 {
 			t.Fatalf("expected 1 api key, got %d", len(all))
 		}
 
-		s.DeleteAPIKey(ctx, "key-1")
+		if err := s.DeleteAPIKey(ctx, "key-1"); err != nil {
+			t.Fatalf("DeleteAPIKey: %v", err)
+		}
 		all, _ = s.ListAPIKeys(ctx)
 		if len(all) != 0 {
 			t.Fatalf("expected 0 after delete, got %d", len(all))
@@ -259,9 +291,15 @@ func conformanceTests(t *testing.T, name string, factory storeFactory) {
 		ctx := context.Background()
 
 		// Same key name in different buckets should not collide
-		s.PutDeployment(ctx, "shared-key", []byte("deployment"))
-		s.PutBan(ctx, "shared-key", []byte("ban"))
-		s.PutPeer(ctx, "shared-key", []byte("peer"))
+		if err := s.PutDeployment(ctx, "shared-key", []byte("deployment")); err != nil {
+			t.Fatalf("PutDeployment: %v", err)
+		}
+		if err := s.PutBan(ctx, "shared-key", []byte("ban")); err != nil {
+			t.Fatalf("PutBan: %v", err)
+		}
+		if err := s.PutPeer(ctx, "shared-key", []byte("peer")); err != nil {
+			t.Fatalf("PutPeer: %v", err)
+		}
 
 		d, _ := s.GetDeployment(ctx, "shared-key")
 		if string(d) != "deployment" {
@@ -307,8 +345,12 @@ func TestBboltStore_Persistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open 1: %v", err)
 	}
-	s1.PutDeployment(ctx, "dep-1", []byte("data-1"))
-	s1.SetSchemaVersion(ctx, 1)
+	if err := s1.PutDeployment(ctx, "dep-1", []byte("data-1")); err != nil {
+		t.Fatalf("PutDeployment: %v", err)
+	}
+	if err := s1.SetSchemaVersion(ctx, 1); err != nil {
+		t.Fatalf("SetSchemaVersion: %v", err)
+	}
 	s1.Close()
 
 	s2, err := NewBboltStore(path)

@@ -710,7 +710,7 @@ func TestDaemonClient_ConnectAndCall(t *testing.T) {
 			resp.Error = "unknown method"
 		}
 
-		encoder.Encode(resp)
+		_ = encoder.Encode(resp)
 	}()
 
 	// Create client and connect
@@ -779,7 +779,7 @@ func TestDaemonClient_CallWithError(t *testing.T) {
 			ID:    req.ID,
 			Error: "deployment failed: image not found",
 		}
-		encoder.Encode(resp)
+		_ = encoder.Encode(resp)
 	}()
 
 	client := NewDaemonClient(socketPath)
