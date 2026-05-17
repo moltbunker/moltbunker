@@ -60,12 +60,14 @@ func NewAPIKeyManagerInMemory() *APIKeyManager {
 		prefixes: make(map[string]string),
 	}
 
-	// Create a default development key
+	// Create a default development key. The structured log captures only
+	// the non-secret prefix; the plaintext key is written to stdout once,
+	// outside the log pipeline, so it doesn't end up in log aggregators.
 	key, plainKey, _ := m.CreateKey("default", []string{"read", "write"}, 0)
-	logging.Info("created default API key (development mode)",
+	logging.Info("created default API key (development mode — store the key shown on stdout safely)",
 		"key_prefix", key.KeyPrefix,
-		"plain_key", plainKey,
 		logging.Component("api"))
+	fmt.Printf("DEVELOPMENT API KEY: %s\n", plainKey)
 
 	return m
 }
