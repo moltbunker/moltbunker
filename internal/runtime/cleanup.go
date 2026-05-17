@@ -128,8 +128,16 @@ func (cm *CleanupManager) CleanupOrphaned(ctx context.Context) ([]string, error)
 
 		// Try to kill any running task first.
 		if task, taskErr := rc.Task(nsCtx, nil); taskErr == nil && task != nil {
-			task.Kill(nsCtx, 9) // SIGKILL
-			task.Delete(nsCtx)
+			if killErr := task.Kill(nsCtx, 9); killErr != nil { // SIGKILL
+				logging.Warn("failed to kill orphaned task",
+					logging.ContainerID(id),
+					logging.Err(killErr))
+			}
+			if _, delErr := task.Delete(nsCtx); delErr != nil {
+				logging.Warn("failed to delete orphaned task",
+					logging.ContainerID(id),
+					logging.Err(delErr))
+			}
 		}
 
 		// Delete the container and its snapshot.
@@ -142,7 +150,11 @@ func (cm *CleanupManager) CleanupOrphaned(ctx context.Context) ([]string, error)
 
 		// Remove cgroup if present.
 		if cm.cgroups != nil {
-			cm.cgroups.DeleteCgroup(id)
+			if cgErr := cm.cgroups.DeleteCgroup(id); cgErr != nil {
+				logging.Warn("failed to delete cgroup for orphaned container",
+					logging.ContainerID(id),
+					logging.Err(cgErr))
+			}
 		}
 
 		cleaned = append(cleaned, id)

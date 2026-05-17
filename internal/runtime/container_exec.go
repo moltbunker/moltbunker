@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/containerd/containerd/cio"
+	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
 // InteractiveSession represents an active PTY exec session in a container
@@ -93,7 +94,13 @@ func (cc *ContainerdClient) ExecInContainer(ctx context.Context, id string, cmd 
 	if err != nil {
 		return nil, fmt.Errorf("failed to create exec: %w", err)
 	}
-	defer process.Delete(ctx)
+	defer func() {
+		if _, delErr := process.Delete(ctx); delErr != nil {
+			logging.Warn("failed to delete exec process",
+				"exec_id", execID,
+				logging.Err(delErr))
+		}
+	}()
 
 	if err := process.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start exec: %w", err)
@@ -177,7 +184,11 @@ func (cc *ContainerdClient) ExecInteractive(ctx context.Context, id string, cols
 	}
 
 	if err := process.Start(execCtx); err != nil {
-		process.Delete(execCtx)
+		if _, delErr := process.Delete(execCtx); delErr != nil {
+			logging.Warn("failed to delete interactive exec process after start failure",
+				"exec_id", execID,
+				logging.Err(delErr))
+		}
 		execCancel()
 		stdinR.Close()
 		stdinW.Close()
@@ -202,7 +213,11 @@ func (cc *ContainerdClient) ExecInteractive(ctx context.Context, id string, cols
 		defer func() {
 			stdoutW.Close()
 			stdinR.Close()
-			process.Delete(context.Background())
+			if _, delErr := process.Delete(context.Background()); delErr != nil {
+				logging.Warn("failed to delete interactive exec process on exit",
+					"exec_id", execID,
+					logging.Err(delErr))
+			}
 			session.Close()
 		}()
 
@@ -274,7 +289,11 @@ func (cc *ContainerdClient) ExecRaw(ctx context.Context, id string, cmd []string
 	}
 
 	if err := process.Start(execCtx); err != nil {
-		process.Delete(execCtx)
+		if _, delErr := process.Delete(execCtx); delErr != nil {
+			logging.Warn("failed to delete raw exec process after start failure",
+				"exec_id", execID,
+				logging.Err(delErr))
+		}
 		execCancel()
 		stdinR.Close()
 		stdinW.Close()
@@ -296,7 +315,11 @@ func (cc *ContainerdClient) ExecRaw(ctx context.Context, id string, cmd []string
 		defer func() {
 			stdoutW.Close()
 			stdinR.Close()
-			process.Delete(context.Background())
+			if _, delErr := process.Delete(context.Background()); delErr != nil {
+				logging.Warn("failed to delete raw exec process on exit",
+					"exec_id", execID,
+					logging.Err(delErr))
+			}
 			session.Close()
 		}()
 

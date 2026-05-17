@@ -81,7 +81,12 @@ func (s *APIServer) handleRequesterJobs(ctx context.Context, req *APIRequest) *A
 
 	// Parse optional params
 	if req.Params != nil {
-		json.Unmarshal(req.Params, &params)
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return &APIResponse{
+				Error: fmt.Sprintf("invalid params: %v", err),
+				ID:    req.ID,
+			}
+		}
 	}
 
 	if params.Status == "" {

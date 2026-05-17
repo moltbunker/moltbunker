@@ -306,10 +306,12 @@ func applyDelta(baseData []byte, deltaData []byte, deltaBlocks []DeltaBlock) ([]
 }
 
 // generateKeyID generates a unique key identifier
-func generateKeyID() string {
+func generateKeyID() (string, error) {
 	b := make([]byte, 8)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate key ID: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }
 
 // getStoredSize returns the stored size of a snapshot (for backwards compatibility)
@@ -459,7 +461,10 @@ func (m *Manager) CreateSnapshot(containerID string, data []byte, snapshotType S
 		}
 		dataToStore = encryptedData
 		encrypted = true
-		keyID = generateKeyID()
+		keyID, err = generateKeyID()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate key ID: %w", err)
+		}
 	}
 
 	// Save snapshot data
@@ -1101,7 +1106,11 @@ func (m *Manager) RotateEncryptionKey() error {
 			// Update stored size
 			m.totalSize -= getStoredSize(snap)
 			snap.StoredSize = int64(len(encrypted))
-			snap.KeyID = generateKeyID()
+			newKeyID, err := generateKeyID()
+			if err != nil {
+				return fmt.Errorf("failed to generate key ID for snapshot %s: %w", snap.ID, err)
+			}
+			snap.KeyID = newKeyID
 			m.totalSize += getStoredSize(snap)
 
 			// Update metadata

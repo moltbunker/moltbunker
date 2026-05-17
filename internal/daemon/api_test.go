@@ -844,7 +844,7 @@ func TestAPIServer_MultipleRequests(t *testing.T) {
 func TestAPIServer_ConcurrentConnections(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -882,7 +882,7 @@ func TestAPIServer_ConcurrentConnections(t *testing.T) {
 func TestAPIServer_InvalidJSON(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 

@@ -107,7 +107,14 @@ func (p *HTTPProxyServer) handleConnect(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Create session
-	sessionID := generateSessionID()
+	sessionID, err := generateSessionID()
+	if err != nil {
+		logging.Warn("failed to generate http_connect session ID",
+			"error", err.Error(),
+			logging.Component("proxy"))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 	session := &Session{
 		ID:        sessionID,
 		Wallet:    wallet,
@@ -144,7 +151,12 @@ func (p *HTTPProxyServer) handleConnect(w http.ResponseWriter, r *http.Request, 
 	defer clientConn.Close()
 
 	// Send 200 Connection Established
-	clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	if _, err := clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n")); err != nil {
+		logging.Debug("failed to write connect response",
+			"error", err.Error(),
+			logging.Component("proxy"))
+		return
+	}
 
 	// Relay data with bandwidth metering
 	meter := NewBandwidthMeter()
@@ -186,7 +198,14 @@ func (p *HTTPProxyServer) handleForward(w http.ResponseWriter, r *http.Request, 
 	}
 
 	// Create session
-	sessionID := generateSessionID()
+	sessionID, err := generateSessionID()
+	if err != nil {
+		logging.Warn("failed to generate http_forward session ID",
+			"error", err.Error(),
+			logging.Component("proxy"))
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
 	session := &Session{
 		ID:        sessionID,
 		Wallet:    wallet,

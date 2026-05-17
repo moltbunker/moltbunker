@@ -329,7 +329,9 @@ func TestHandler_AnonymousOwner(t *testing.T) {
 	}
 
 	var job CrawlJob
-	json.NewDecoder(w.Body).Decode(&job)
+	if err := json.NewDecoder(w.Body).Decode(&job); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if job.Owner != "anonymous" {
 		t.Errorf("owner = %q, want anonymous", job.Owner)
 	}

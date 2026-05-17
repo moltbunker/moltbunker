@@ -135,10 +135,11 @@ func ProxyBidirectional(ctx context.Context, a, b net.Conn) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case err := <-errCh:
-		// One direction ended; set deadline to flush the other
+		// One direction ended; set deadline to flush the other.
+		// Errors here just mean the conn is already shut.
 		deadline := time.Now().Add(5 * time.Second)
-		a.SetDeadline(deadline)
-		b.SetDeadline(deadline)
+		_ = a.SetDeadline(deadline)
+		_ = b.SetDeadline(deadline)
 		return err
 	}
 }

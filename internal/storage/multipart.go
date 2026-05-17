@@ -13,6 +13,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+
+	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
 // MultipartUpload tracks a multipart upload in progress.
@@ -52,7 +54,12 @@ type multipartState struct {
 
 // NewMultipartManager creates a new multipart upload manager.
 func NewMultipartManager(partsDir string) *MultipartManager {
-	os.MkdirAll(partsDir, 0700)
+	if err := os.MkdirAll(partsDir, 0700); err != nil {
+		logging.Warn("failed to create multipart parts directory",
+			"path", partsDir,
+			"err", err.Error(),
+			logging.Component("storage"))
+	}
 	return &MultipartManager{
 		uploads:  make(map[string]*multipartState),
 		partsDir: partsDir,
@@ -61,7 +68,10 @@ func NewMultipartManager(partsDir string) *MultipartManager {
 
 // InitUpload creates a new multipart upload.
 func (m *MultipartManager) InitUpload(_ context.Context, bucket, key, owner, contentType string) (*MultipartUpload, error) {
-	id := generateUploadID()
+	id, err := generateUploadID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate upload ID: %w", err)
+	}
 
 	upload := &MultipartUpload{
 		UploadID:    id,
@@ -234,8 +244,10 @@ func (m *MultipartManager) cleanup(uploadID string) {
 	os.RemoveAll(dir)
 }
 
-func generateUploadID() string {
+func generateUploadID() (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate upload ID: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

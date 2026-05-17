@@ -971,7 +971,11 @@ func (s *Server) handleThreat(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status": "ok"}`))
+	if _, err := w.Write([]byte(`{"status": "ok"}`)); err != nil {
+		logging.Warn("failed to write health response",
+			"error", err.Error(),
+			logging.Component("api"))
+	}
 }
 
 // handleHealthz handles GET /v1/healthz
@@ -1024,7 +1028,11 @@ func (s *Server) readJSON(r *http.Request, v interface{}) error {
 func (s *Server) writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		logging.Warn("failed to encode JSON response",
+			"error", err.Error(),
+			logging.Component("api"))
+	}
 }
 
 // writeError writes an error response

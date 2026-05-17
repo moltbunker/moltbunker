@@ -322,7 +322,12 @@ func (cm *ContainerManager) deployReplica(ctx context.Context, deployment *Deplo
 		logging.Error("failed to start replica container",
 			logging.ContainerID(deployment.ID),
 			logging.Err(err))
-		cm.containerd.DeleteContainer(ctx, deployment.ID)
+		if cleanupErr := cm.containerd.DeleteContainer(ctx, deployment.ID); cleanupErr != nil {
+			logging.Warn("failed to delete replica container during cleanup",
+				logging.ContainerID(deployment.ID),
+				logging.Err(cleanupErr),
+				logging.Component("replication"))
+		}
 		cm.sendDeployAck(ctx, originatorID, deployment.ID, false, err.Error())
 		return fmt.Errorf("failed to start container: %w", err)
 	}

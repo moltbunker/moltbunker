@@ -147,7 +147,9 @@ func startDaemonProcess(keyPath, keystoreDir, dataDir, walletPassword string) er
 
 	logFile := filepath.Join(dataDir, "logs", "daemon.log")
 	logDir := filepath.Dir(logFile)
-	os.MkdirAll(logDir, 0755)
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		return fmt.Errorf("failed to create log directory %s: %w", logDir, err)
+	}
 
 	// Record log position before starting so we can read new output on failure
 	logOffset := getFileSize(logFile)
@@ -398,7 +400,9 @@ func readDaemonFailureReason(logFile string, startOffset int64) string {
 
 	// Seek to where the daemon started writing
 	if startOffset > 0 {
-		f.Seek(startOffset, 0)
+		if _, err := f.Seek(startOffset, 0); err != nil {
+			return ""
+		}
 	}
 
 	// Known error patterns → user-friendly messages

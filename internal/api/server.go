@@ -618,7 +618,11 @@ func (s *Server) withMiddleware(handler http.HandlerFunc) http.HandlerFunc {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error": "rate limit exceeded", "retry_after": 60}`))
+				if _, err := w.Write([]byte(`{"error": "rate limit exceeded", "retry_after": 60}`)); err != nil {
+					logging.Warn("failed to write rate limit response",
+						"error", err.Error(),
+						logging.Component("api"))
+				}
 				return
 			}
 		}
@@ -871,7 +875,11 @@ func (s *Server) withPermissionMiddleware(handler http.HandlerFunc, permission s
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error": "rate limit exceeded", "retry_after": 60}`))
+				if _, err := w.Write([]byte(`{"error": "rate limit exceeded", "retry_after": 60}`)); err != nil {
+					logging.Warn("failed to write rate limit response",
+						"error", err.Error(),
+						logging.Component("api"))
+				}
 				return
 			}
 		}
@@ -956,7 +964,11 @@ func (s *Server) withAdminMiddleware(handler http.HandlerFunc) http.HandlerFunc 
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Retry-After", "60")
 				w.WriteHeader(http.StatusTooManyRequests)
-				w.Write([]byte(`{"error": "rate limit exceeded", "retry_after": 60}`))
+				if _, err := w.Write([]byte(`{"error": "rate limit exceeded", "retry_after": 60}`)); err != nil {
+					logging.Warn("failed to write rate limit response",
+						"error", err.Error(),
+						logging.Component("api"))
+				}
 				return
 			}
 		}

@@ -182,7 +182,12 @@ func (c *Checkpointer) UnregisterContainer(containerID string) {
 
 	// Optionally delete checkpoints
 	if !c.config.RetainOnShutdown {
-		c.manager.DeleteContainerSnapshots(containerID)
+		if err := c.manager.DeleteContainerSnapshots(containerID); err != nil {
+			logging.Warn("failed to delete container snapshots on unregister",
+				"container_id", containerID,
+				"err", err.Error(),
+				logging.Component("checkpoint"))
+		}
 	}
 
 	logging.Info("container unregistered from checkpointing",

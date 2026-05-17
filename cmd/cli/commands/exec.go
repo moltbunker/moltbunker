@@ -217,7 +217,8 @@ func bridgeTerminalToWebSocket(ctx context.Context, conn *websocket.Conn, cols, 
 				frame := make([]byte, 1+len(resizePayload))
 				frame[0] = wsFrameResize
 				copy(frame[1:], resizePayload)
-				conn.WriteMessage(websocket.BinaryMessage, frame)
+				// Best-effort resize notification; failure surfaces via the read loop.
+				_ = conn.WriteMessage(websocket.BinaryMessage, frame)
 			}
 		}
 	}()
@@ -227,7 +228,8 @@ func bridgeTerminalToWebSocket(ctx context.Context, conn *websocket.Conn, cols, 
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		conn.WriteMessage(websocket.CloseMessage,
+		// Best-effort close; we are shutting down regardless.
+		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		return nil
 	}

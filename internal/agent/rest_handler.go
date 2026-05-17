@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
 // RESTHandler provides HTTP endpoints for agent management.
@@ -236,7 +238,13 @@ func (h *RESTHandler) handleMemory(w http.ResponseWriter, r *http.Request, agent
 		if key == "" {
 			h.memory.Clear(agentID)
 		} else {
-			h.memory.Delete(agentID, key)
+			if err := h.memory.Delete(agentID, key); err != nil {
+				logging.Warn("failed to delete agent memory entry",
+					"agent_id", agentID,
+					"key", key,
+					"err", err.Error(),
+					logging.Component("agent"))
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 
@@ -248,7 +256,11 @@ func (h *RESTHandler) handleMemory(w http.ResponseWriter, r *http.Request, agent
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		logging.Warn("failed to encode agent JSON response",
+			"err", err.Error(),
+			logging.Component("agent"))
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

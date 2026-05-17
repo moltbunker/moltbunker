@@ -113,7 +113,11 @@ func newSafeWSConn(conn *websocket.Conn) *safeWSConn {
 func (c *safeWSConn) writeMessage(data []byte) error {
 	c.wmu.Lock()
 	defer c.wmu.Unlock()
-	c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait))
+	if err := c.conn.SetWriteDeadline(time.Now().Add(wsWriteWait)); err != nil {
+		logging.Warn("failed to set websocket write deadline",
+			logging.Err(err),
+			logging.Component("exec_handler"))
+	}
 	return c.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
@@ -193,10 +197,14 @@ func (s *Server) handleExecChallenge(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(ExecChallengeResponse{
+	if err := json.NewEncoder(w).Encode(ExecChallengeResponse{
 		Nonce:   challenge.Nonce,
 		Message: challenge.Message,
-	})
+	}); err != nil {
+		logging.Warn("failed to encode exec challenge response",
+			logging.Err(err),
+			logging.Component("exec_handler"))
+	}
 }
 
 // handleExecWebSocket upgrades to WebSocket and bridges to the container's PTY.
@@ -293,8 +301,16 @@ func (s *Server) handleExecWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Clear server-level Read/WriteTimeout deadlines inherited from http.Server.
 	// WebSocket is long-lived — the exec handler manages its own per-message deadlines.
-	conn.SetReadDeadline(time.Time{})
-	conn.SetWriteDeadline(time.Time{})
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		logging.Warn("failed to clear websocket read deadline",
+			logging.Err(err),
+			logging.Component("exec_handler"))
+	}
+	if err := conn.SetWriteDeadline(time.Time{}); err != nil {
+		logging.Warn("failed to clear websocket write deadline",
+			logging.Err(err),
+			logging.Component("exec_handler"))
+	}
 
 	logging.Info("exec WebSocket session started",
 		"session_id", sessionID,
@@ -406,7 +422,12 @@ func (s *Server) bridgeLocalExec(
 				// PTY closed — send close frame
 				closeFrame := []byte{WSFrameClose}
 				closeFrame = append(closeFrame, []byte("session_ended")...)
-				ws.writeMessage(closeFrame)
+				if writeErr := ws.writeMessage(closeFrame); writeErr != nil {
+					logging.Warn("failed to write close frame on PTY end",
+						"session_id", session.SessionID,
+						"error", writeErr.Error(),
+						logging.Component("exec_api"))
+				}
 				return
 			}
 		}
@@ -414,7 +435,12 @@ func (s *Server) bridgeLocalExec(
 
 	// Main loop: WebSocket → PTY stdin
 	conn.SetReadLimit(64 * 1024)
-	conn.SetReadDeadline(time.Now().Add(wsReadWait))
+	if err := conn.SetReadDeadline(time.Now().Add(wsReadWait)); err != nil {
+		logging.Warn("failed to set initial read deadline on exec WebSocket",
+			"session_id", session.SessionID,
+			"error", err.Error(),
+			logging.Component("exec_api"))
+	}
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -427,7 +453,12 @@ func (s *Server) bridgeLocalExec(
 			break
 		}
 		// Extend read deadline on every received message (client pings every 25s)
-		conn.SetReadDeadline(time.Now().Add(wsReadWait))
+		if err := conn.SetReadDeadline(time.Now().Add(wsReadWait)); err != nil {
+			logging.Warn("failed to extend read deadline on exec WebSocket",
+				"session_id", session.SessionID,
+				"error", err.Error(),
+				logging.Component("exec_api"))
+		}
 
 		if len(message) == 0 {
 			continue
@@ -438,19 +469,39 @@ func (s *Server) bridgeLocalExec(
 
 		switch frameType {
 		case WSFrameData:
-			ptySession.Stdin.Write(frameData)
+			if _, writeErr := ptySession.Stdin.Write(frameData); writeErr != nil {
+				logging.Warn("failed to write data to PTY stdin",
+					"session_id", session.SessionID,
+					"error", writeErr.Error(),
+					logging.Component("exec_api"))
+			}
 			s.execSessions.AddBytes(session.SessionID, 0, int64(len(frameData)))
 		case WSFrameResize:
 			if len(frameData) >= 4 {
 				newCols := uint16(frameData[0])<<8 | uint16(frameData[1])
 				newRows := uint16(frameData[2])<<8 | uint16(frameData[3])
-				ptySession.Resize(newCols, newRows)
+				if resizeErr := ptySession.Resize(newCols, newRows); resizeErr != nil {
+					logging.Warn("failed to resize PTY",
+						"session_id", session.SessionID,
+						"error", resizeErr.Error(),
+						logging.Component("exec_api"))
+				}
 			}
 		case WSFrameKeyInit, WSFrameKeyAck:
 			// E2E key exchange frames — relay to container stdin as exec-agent frames
-			ptySession.Stdin.Write(frameData)
+			if _, writeErr := ptySession.Stdin.Write(frameData); writeErr != nil {
+				logging.Warn("failed to relay key exchange frame to PTY stdin",
+					"session_id", session.SessionID,
+					"error", writeErr.Error(),
+					logging.Component("exec_api"))
+			}
 		case WSFramePing:
-			ws.writeMessage([]byte{WSFramePong})
+			if writeErr := ws.writeMessage([]byte{WSFramePong}); writeErr != nil {
+				logging.Warn("failed to write pong frame",
+					"session_id", session.SessionID,
+					"error", writeErr.Error(),
+					logging.Component("exec_api"))
+			}
 		case WSFrameClose:
 			goto cleanup
 		}
@@ -571,7 +622,12 @@ func (s *Server) bridgeRemoteExec(
 				// Provider closed the session
 				closeFrame := []byte{WSFrameClose}
 				closeFrame = append(closeFrame, []byte(reason)...)
-				ws.writeMessage(closeFrame)
+				if writeErr := ws.writeMessage(closeFrame); writeErr != nil {
+					logging.Warn("failed to write provider-close frame",
+						"session_id", session.SessionID,
+						"error", writeErr.Error(),
+						logging.Component("exec_api"))
+				}
 				return
 
 			case <-relayCtx.Done():
@@ -582,7 +638,12 @@ func (s *Server) bridgeRemoteExec(
 
 	// Main loop: WebSocket → Provider (reads from browser)
 	conn.SetReadLimit(64 * 1024) // 64KB max message
-	conn.SetReadDeadline(time.Now().Add(wsReadWait))
+	if err := conn.SetReadDeadline(time.Now().Add(wsReadWait)); err != nil {
+		logging.Warn("failed to set initial read deadline on remote exec WebSocket",
+			"session_id", session.SessionID,
+			"error", err.Error(),
+			logging.Component("exec_api"))
+	}
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
@@ -595,7 +656,12 @@ func (s *Server) bridgeRemoteExec(
 			break
 		}
 		// Extend read deadline on every received message (client pings every 25s)
-		conn.SetReadDeadline(time.Now().Add(wsReadWait))
+		if err := conn.SetReadDeadline(time.Now().Add(wsReadWait)); err != nil {
+			logging.Warn("failed to extend read deadline on remote exec WebSocket",
+				"session_id", session.SessionID,
+				"error", err.Error(),
+				logging.Component("exec_api"))
+		}
 
 		if len(message) == 0 {
 			continue
@@ -612,13 +678,19 @@ func (s *Server) bridgeRemoteExec(
 				Data:      frameData,
 			}
 			pb, _ := json.Marshal(dataPayload)
-			cm.SendExecMessage(ctx, providerID, &types.Message{
+			if sendErr := cm.SendExecMessage(ctx, providerID, &types.Message{
 				Type:      types.MessageTypeExecData,
 				From:      cm.LocalNodeID(),
 				To:        providerID,
 				Payload:   pb,
 				Timestamp: time.Now(),
-			})
+			}); sendErr != nil {
+				logging.Warn("failed to send exec data to provider",
+					"session_id", session.SessionID,
+					"provider_id", providerID,
+					"error", sendErr.Error(),
+					logging.Component("exec_api"))
+			}
 			s.execSessions.AddBytes(session.SessionID, 0, int64(len(frameData)))
 
 		case WSFrameResize:
@@ -631,13 +703,19 @@ func (s *Server) bridgeRemoteExec(
 					Rows:      newRows,
 				}
 				pb, _ := json.Marshal(resizePayload)
-				cm.SendExecMessage(ctx, providerID, &types.Message{
+				if sendErr := cm.SendExecMessage(ctx, providerID, &types.Message{
 					Type:      types.MessageTypeExecResize,
 					From:      cm.LocalNodeID(),
 					To:        providerID,
 					Payload:   pb,
 					Timestamp: time.Now(),
-				})
+				}); sendErr != nil {
+					logging.Warn("failed to send exec resize to provider",
+						"session_id", session.SessionID,
+						"provider_id", providerID,
+						"error", sendErr.Error(),
+						logging.Component("exec_api"))
+				}
 			}
 
 		case WSFrameKeyInit, WSFrameKeyAck:
@@ -648,16 +726,27 @@ func (s *Server) bridgeRemoteExec(
 				Data:      message, // include frame type byte — provider relays as-is
 			}
 			pb, _ := json.Marshal(dataPayload)
-			cm.SendExecMessage(ctx, providerID, &types.Message{
+			if sendErr := cm.SendExecMessage(ctx, providerID, &types.Message{
 				Type:      types.MessageTypeExecData,
 				From:      cm.LocalNodeID(),
 				To:        providerID,
 				Payload:   pb,
 				Timestamp: time.Now(),
-			})
+			}); sendErr != nil {
+				logging.Warn("failed to relay key exchange frame to provider",
+					"session_id", session.SessionID,
+					"provider_id", providerID,
+					"error", sendErr.Error(),
+					logging.Component("exec_api"))
+			}
 
 		case WSFramePing:
-			ws.writeMessage([]byte{WSFramePong})
+			if writeErr := ws.writeMessage([]byte{WSFramePong}); writeErr != nil {
+				logging.Warn("failed to write pong frame to remote exec WebSocket",
+					"session_id", session.SessionID,
+					"error", writeErr.Error(),
+					logging.Component("exec_api"))
+			}
 
 		case WSFrameClose:
 			// User requested close
@@ -672,13 +761,19 @@ cleanup:
 		Reason:    "client_disconnect",
 	}
 	pb, _ := json.Marshal(closePayload)
-	cm.SendExecMessage(ctx, providerID, &types.Message{
+	if sendErr := cm.SendExecMessage(ctx, providerID, &types.Message{
 		Type:      types.MessageTypeExecClose,
 		From:      cm.LocalNodeID(),
 		To:        providerID,
 		Payload:   pb,
 		Timestamp: time.Now(),
-	})
+	}); sendErr != nil {
+		logging.Warn("failed to notify provider of exec session close",
+			"session_id", session.SessionID,
+			"provider_id", providerID,
+			"error", sendErr.Error(),
+			logging.Component("exec_api"))
+	}
 
 	// Wait for the writer goroutine to finish
 	select {
@@ -723,7 +818,11 @@ func (s *Server) extractWalletAddress(r *http.Request) string {
 func sendWSError(conn *websocket.Conn, msg string) {
 	frame := []byte{WSFrameError}
 	frame = append(frame, []byte(msg)...)
-	conn.WriteMessage(websocket.BinaryMessage, frame)
+	if err := conn.WriteMessage(websocket.BinaryMessage, frame); err != nil {
+		logging.Warn("failed to write exec error frame",
+			"error", err.Error(),
+			logging.Component("exec_api"))
+	}
 }
 
 // parseIntParam parses an integer query parameter with a default value

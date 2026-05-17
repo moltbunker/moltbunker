@@ -178,7 +178,12 @@ func (s *Server) handleGatewayKeys(w http.ResponseWriter, r *http.Request) {
 		// Set custom rate limit if provided
 		if req.RateLimit > 0 {
 			rl := req.RateLimit
-			s.apiKeyManager.UpdateKey(key.ID, nil, &rl, nil)
+			if updateErr := s.apiKeyManager.UpdateKey(key.ID, nil, &rl, nil); updateErr != nil {
+				logging.Warn("failed to apply custom rate limit to new gateway key",
+					"key_id", key.ID,
+					"error", updateErr.Error(),
+					logging.Component("api"))
+			}
 		}
 
 		logging.Info("gateway key created via admin API",

@@ -14,6 +14,7 @@ import (
 	"github.com/containerd/containerd/oci"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -385,14 +386,26 @@ func (cc *ContainerdClient) StartContainer(ctx context.Context, id string) error
 
 	task, err := managed.Container.NewTask(ctx, taskCreator)
 	if err != nil {
-		cc.logManager.CloseLog(id)
+		if closeErr := cc.logManager.CloseLog(id); closeErr != nil {
+			logging.Warn("failed to close container log after task creation failure",
+				logging.ContainerID(id),
+				logging.Err(closeErr))
+		}
 		return fmt.Errorf("failed to create task: %w", err)
 	}
 
 	// Start task
 	if err := task.Start(ctx); err != nil {
-		task.Delete(ctx)
-		cc.logManager.CloseLog(id)
+		if _, delErr := task.Delete(ctx); delErr != nil {
+			logging.Warn("failed to delete task after start failure",
+				logging.ContainerID(id),
+				logging.Err(delErr))
+		}
+		if closeErr := cc.logManager.CloseLog(id); closeErr != nil {
+			logging.Warn("failed to close container log after task start failure",
+				logging.ContainerID(id),
+				logging.Err(closeErr))
+		}
 		return fmt.Errorf("failed to start task: %w", err)
 	}
 
@@ -455,7 +468,11 @@ func (cc *ContainerdClient) StopContainer(ctx context.Context, id string, timeou
 	}
 
 	// Close log files (but don't delete - keep for history)
-	cc.logManager.CloseLog(id)
+	if closeErr := cc.logManager.CloseLog(id); closeErr != nil {
+		logging.Warn("failed to close container log after stop",
+			logging.ContainerID(id),
+			logging.Err(closeErr))
+	}
 
 	managed.Task = nil
 	managed.Status = types.ContainerStatusStopped
@@ -481,12 +498,24 @@ func (cc *ContainerdClient) DeleteContainer(ctx context.Context, id string) erro
 
 	// Stop if running
 	if managed.Task != nil {
-		managed.Task.Kill(ctx, syscall.SIGKILL)
-		managed.Task.Delete(ctx)
+		if killErr := managed.Task.Kill(ctx, syscall.SIGKILL); killErr != nil {
+			logging.Warn("failed to send SIGKILL during container delete",
+				logging.ContainerID(id),
+				logging.Err(killErr))
+		}
+		if _, delErr := managed.Task.Delete(ctx); delErr != nil {
+			logging.Warn("failed to delete task during container delete",
+				logging.ContainerID(id),
+				logging.Err(delErr))
+		}
 	}
 
 	// Close and delete logs
-	cc.logManager.DeleteLog(id)
+	if delErr := cc.logManager.DeleteLog(id); delErr != nil {
+		logging.Warn("failed to delete container log",
+			logging.ContainerID(id),
+			logging.Err(delErr))
+	}
 
 	// Remove disk quota before snapshot cleanup (best-effort)
 	cc.RemoveDiskQuota(ctx, id)

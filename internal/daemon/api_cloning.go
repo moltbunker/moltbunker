@@ -170,7 +170,12 @@ func (s *APIServer) handleCloneList(ctx context.Context, req *APIRequest) *APIRe
 		Limit   int  `json:"limit"`
 	}
 	if req.Params != nil {
-		json.Unmarshal(req.Params, &params)
+		if err := json.Unmarshal(req.Params, &params); err != nil {
+			return &APIResponse{
+				Error: fmt.Sprintf("invalid params: %v", err),
+				ID:    req.ID,
+			}
+		}
 	}
 
 	if params.Limit <= 0 {

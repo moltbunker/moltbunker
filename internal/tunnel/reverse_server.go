@@ -115,7 +115,9 @@ func NewReverseServer(listener net.Listener, opts ...ReverseServerOption) *Rever
 
 	// Generate HMAC secret if not provided
 	s.hmacSecret = make([]byte, 32)
-	rand.Read(s.hmacSecret)
+	if _, err := rand.Read(s.hmacSecret); err != nil {
+		panic(fmt.Sprintf("crypto/rand failed during HMAC secret generation: %v", err))
+	}
 
 	for _, opt := range opts {
 		opt(s)
@@ -273,7 +275,11 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 			logging.Component("reverse-tunnel"))
 		return
 	}
-	tlsConn.SetDeadline(time.Time{}) // Clear deadline
+	if err := tlsConn.SetDeadline(time.Time{}); err != nil { // Clear deadline
+		logging.Debug("reverse tunnel: clear tls deadline failed",
+			logging.Err(err),
+			logging.Component("reverse-tunnel"))
+	}
 
 	tlsState := tlsConn.ConnectionState()
 	if len(tlsState.PeerCertificates) == 0 {
@@ -322,7 +328,12 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 	}
 	defer ctrlStream.Close()
 
-	ctrlStream.SetDeadline(time.Now().Add(controlStreamTimeout))
+	if err := ctrlStream.SetDeadline(time.Now().Add(controlStreamTimeout)); err != nil {
+		logging.Debug("reverse tunnel: set control stream deadline failed",
+			logging.Err(err),
+			logging.Component("reverse-tunnel"))
+		return
+	}
 
 	// Read registration request
 	msgType, payload, err := readControlMsg(ctrlStream)
@@ -333,13 +344,22 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 	if msgType != MsgTunnelRegister {
-		writeControlMsg(ctrlStream, MsgTunnelError, []byte("expected TUNNEL_REGISTER"))
+		// Best-effort error notification before dropping the connection.
+		if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte("expected TUNNEL_REGISTER")); writeErr != nil {
+			logging.Debug("reverse tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("reverse-tunnel"))
+		}
 		return
 	}
 
 	var req TunnelRegisterRequest
 	if err := json.Unmarshal(payload, &req); err != nil {
-		writeControlMsg(ctrlStream, MsgTunnelError, []byte("invalid registration payload"))
+		if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte("invalid registration payload")); writeErr != nil {
+			logging.Debug("reverse tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("reverse-tunnel"))
+		}
 		return
 	}
 
@@ -367,17 +387,29 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 	if req.ReconnToken != "" {
 		subdomain := req.Subdomain
 		if subdomain == "" {
-			writeControlMsg(ctrlStream, MsgTunnelError, []byte("reconnection requires subdomain"))
+			if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte("reconnection requires subdomain")); writeErr != nil {
+				logging.Debug("reverse tunnel: write protocol error failed",
+					logging.Err(writeErr),
+					logging.Component("reverse-tunnel"))
+			}
 			return
 		}
 		if !ValidateReconnToken(s.hmacSecret, req.ReconnToken, nodeID, subdomain,
 			time.Duration(ReconnGraceForTier(tier))*time.Second) {
-			writeControlMsg(ctrlStream, MsgTunnelError, []byte("invalid reconnection token"))
+			if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte("invalid reconnection token")); writeErr != nil {
+				logging.Debug("reverse tunnel: write protocol error failed",
+					logging.Err(writeErr),
+					logging.Component("reverse-tunnel"))
+			}
 			return
 		}
 	} else {
 		if err := ValidateRegistration(&req, tlsState, s.nonceTracker); err != nil {
-			writeControlMsg(ctrlStream, MsgTunnelError, []byte(fmt.Sprintf("registration rejected: %v", err)))
+			if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte(fmt.Sprintf("registration rejected: %v", err))); writeErr != nil {
+				logging.Debug("reverse tunnel: write protocol error failed",
+					logging.Err(writeErr),
+					logging.Component("reverse-tunnel"))
+			}
 			return
 		}
 	}
@@ -385,8 +417,12 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 	// Check subdomain cap
 	maxSubs := MaxSubdomainsForTier(tier)
 	if s.registry.CountForNodeID(nodeID) >= maxSubs {
-		writeControlMsg(ctrlStream, MsgTunnelError,
-			[]byte(fmt.Sprintf("subdomain limit reached (%d/%d)", s.registry.CountForNodeID(nodeID), maxSubs)))
+		if writeErr := writeControlMsg(ctrlStream, MsgTunnelError,
+			[]byte(fmt.Sprintf("subdomain limit reached (%d/%d)", s.registry.CountForNodeID(nodeID), maxSubs))); writeErr != nil {
+			logging.Debug("reverse tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("reverse-tunnel"))
+		}
 		return
 	}
 
@@ -396,13 +432,21 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 		// Free tier: auto-assign random subdomain
 		sub, err := s.registry.AssignRandomSubdomain()
 		if err != nil {
-			writeControlMsg(ctrlStream, MsgTunnelError, []byte("subdomain assignment failed"))
+			if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte("subdomain assignment failed")); writeErr != nil {
+				logging.Debug("reverse tunnel: write protocol error failed",
+					logging.Err(writeErr),
+					logging.Component("reverse-tunnel"))
+			}
 			return
 		}
 		subdomain = sub
 	} else if tier == "free" {
 		// Free tier cannot request vanity subdomains
-		writeControlMsg(ctrlStream, MsgTunnelError, []byte("free tier cannot request vanity subdomains"))
+		if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte("free tier cannot request vanity subdomains")); writeErr != nil {
+			logging.Debug("reverse tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("reverse-tunnel"))
+		}
 		return
 	}
 
@@ -421,7 +465,11 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 	}
 
 	if err := s.registry.Register(subdomain, tunnelSess); err != nil {
-		writeControlMsg(ctrlStream, MsgTunnelError, []byte(err.Error()))
+		if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte(err.Error())); writeErr != nil {
+			logging.Debug("reverse tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("reverse-tunnel"))
+		}
 		return
 	}
 	defer s.registry.Unregister(subdomain)
@@ -449,7 +497,11 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 		return
 	}
 
-	ctrlStream.SetDeadline(time.Time{}) // Clear deadline
+	if err := ctrlStream.SetDeadline(time.Time{}); err != nil { // Clear deadline
+		logging.Debug("reverse tunnel: clear control deadline failed",
+			logging.Err(err),
+			logging.Component("reverse-tunnel"))
+	}
 
 	logging.Info("reverse tunnel registered",
 		"subdomain", subdomain,
@@ -484,11 +536,23 @@ func (s *ReverseServer) heartbeatLoop(ctx context.Context, ctrl net.Conn,
 
 			// Send ping with challenge nonce
 			var challenge [16]byte
-			rand.Read(challenge[:])
+			if _, err := rand.Read(challenge[:]); err != nil {
+				logging.Warn("reverse tunnel: ping challenge generation failed",
+					"subdomain", subdomain,
+					logging.Err(err),
+					logging.Component("reverse-tunnel"))
+				continue
+			}
 			ping := TunnelPing{Challenge: challenge}
 			pingPayload, _ := json.Marshal(ping)
 
-			ctrl.SetWriteDeadline(time.Now().Add(heartbeatTimeout))
+			if err := ctrl.SetWriteDeadline(time.Now().Add(heartbeatTimeout)); err != nil {
+				logging.Debug("reverse tunnel: set ping write deadline failed",
+					"subdomain", subdomain,
+					logging.Err(err),
+					logging.Component("reverse-tunnel"))
+				return
+			}
 			if err := writeControlMsg(ctrl, MsgTunnelPing, pingPayload); err != nil {
 				missed++
 				logging.Debug("reverse tunnel ping failed",
@@ -507,7 +571,13 @@ func (s *ReverseServer) heartbeatLoop(ctx context.Context, ctrl net.Conn,
 			}
 
 			// Read pong
-			ctrl.SetReadDeadline(time.Now().Add(heartbeatTimeout))
+			if err := ctrl.SetReadDeadline(time.Now().Add(heartbeatTimeout)); err != nil {
+				logging.Debug("reverse tunnel: set pong read deadline failed",
+					"subdomain", subdomain,
+					logging.Err(err),
+					logging.Component("reverse-tunnel"))
+				return
+			}
 			msgType, pongPayload, err := readControlMsg(ctrl)
 			if err != nil || msgType != MsgTunnelPong {
 				missed++
@@ -532,7 +602,12 @@ func (s *ReverseServer) heartbeatLoop(ctx context.Context, ctrl net.Conn,
 			}
 
 			missed = 0 // Reset on successful pong
-			ctrl.SetDeadline(time.Time{})
+			if err := ctrl.SetDeadline(time.Time{}); err != nil {
+				logging.Debug("reverse tunnel: clear deadline after pong failed",
+					"subdomain", subdomain,
+					logging.Err(err),
+					logging.Component("reverse-tunnel"))
+			}
 		}
 	}
 }

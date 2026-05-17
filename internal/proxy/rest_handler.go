@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
 // RESTHandler serves the JSON REST API for proxy management under /v1/proxy/.
@@ -136,11 +138,19 @@ func (h *RESTHandler) handleStatus(w http.ResponseWriter, r *http.Request) {
 func writeProxyJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		logging.Warn("failed to encode proxy JSON response",
+			"err", err.Error(),
+			logging.Component("proxy"))
+	}
 }
 
 func writeProxyError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		logging.Warn("failed to encode proxy error response",
+			"err", err.Error(),
+			logging.Component("proxy"))
+	}
 }

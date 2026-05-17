@@ -137,7 +137,9 @@ func (m *APIKeyManager) CreateKey(name string, permissions []string, expiresInDa
 
 	// Generate ID
 	idBytes := make([]byte, 8)
-	rand.Read(idBytes)
+	if _, err := rand.Read(idBytes); err != nil {
+		return nil, "", fmt.Errorf("failed to generate key ID: %w", err)
+	}
 	id := hex.EncodeToString(idBytes)
 
 	// Create key object
@@ -216,7 +218,11 @@ func (m *APIKeyManager) ValidateKey(key string) bool {
 			k.LastUsedAt = time.Now()
 		}
 		m.mu.Unlock()
-		m.save()
+		if err := m.save(); err != nil {
+			logging.Warn("failed to persist API key store",
+				logging.Err(err),
+				logging.Component("api"))
+		}
 	}()
 
 	return true
@@ -274,7 +280,11 @@ func (m *APIKeyManager) ValidateKeyWithPermission(key, permission string) bool {
 			k.LastUsedAt = time.Now()
 		}
 		m.mu.Unlock()
-		m.save()
+		if err := m.save(); err != nil {
+			logging.Warn("failed to persist API key store",
+				logging.Err(err),
+				logging.Component("api"))
+		}
 	}()
 
 	return true

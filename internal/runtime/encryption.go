@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
 // EncryptionManager manages encrypted volumes for containers
@@ -295,7 +297,11 @@ func (em *EncryptionManager) DeleteEncryptedVolume(containerID string) error {
 
 	// Close volume first
 	em.mu.Unlock()
-	em.CloseVolume(containerID)
+	if err := em.CloseVolume(containerID); err != nil {
+		logging.Warn("failed to close encrypted volume before delete",
+			logging.ContainerID(containerID),
+			logging.Err(err))
+	}
 	em.mu.Lock()
 
 	// Delete files
@@ -339,21 +345,41 @@ func (em *EncryptionManager) SetupEncryptedVolume(containerID string, sizeGB int
 
 	// Open volume
 	if err := em.OpenVolume(containerID); err != nil {
-		em.DeleteEncryptedVolume(containerID)
+		if delErr := em.DeleteEncryptedVolume(containerID); delErr != nil {
+			logging.Warn("failed to clean up volume after open failure",
+				logging.ContainerID(containerID),
+				logging.Err(delErr))
+		}
 		return nil, err
 	}
 
 	// Format volume
 	if err := em.FormatVolume(containerID); err != nil {
-		em.CloseVolume(containerID)
-		em.DeleteEncryptedVolume(containerID)
+		if closeErr := em.CloseVolume(containerID); closeErr != nil {
+			logging.Warn("failed to close volume after format failure",
+				logging.ContainerID(containerID),
+				logging.Err(closeErr))
+		}
+		if delErr := em.DeleteEncryptedVolume(containerID); delErr != nil {
+			logging.Warn("failed to clean up volume after format failure",
+				logging.ContainerID(containerID),
+				logging.Err(delErr))
+		}
 		return nil, err
 	}
 
 	// Mount volume
 	if _, err := em.MountVolume(containerID); err != nil {
-		em.CloseVolume(containerID)
-		em.DeleteEncryptedVolume(containerID)
+		if closeErr := em.CloseVolume(containerID); closeErr != nil {
+			logging.Warn("failed to close volume after mount failure",
+				logging.ContainerID(containerID),
+				logging.Err(closeErr))
+		}
+		if delErr := em.DeleteEncryptedVolume(containerID); delErr != nil {
+			logging.Warn("failed to clean up volume after mount failure",
+				logging.ContainerID(containerID),
+				logging.Err(delErr))
+		}
 		return nil, err
 	}
 

@@ -246,7 +246,9 @@ func (r *Router) SendMessage(ctx context.Context, to types.NodeID, msg *types.Me
 	// Auto-generate nonce if zero (replay protection)
 	var zeroNonce [24]byte
 	if msg.Nonce == zeroNonce {
-		rand.Read(msg.Nonce[:])
+		if _, err := rand.Read(msg.Nonce[:]); err != nil {
+			return fmt.Errorf("failed to generate nonce: %w", err)
+		}
 	}
 
 	// Sign the message before sending

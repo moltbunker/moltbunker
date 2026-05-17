@@ -70,9 +70,13 @@ func MigrateFromJSON(ctx context.Context, store StateStore, dataDir string) erro
 	if err := store.SetSchemaVersion(ctx, CurrentSchemaVersion); err != nil {
 		return fmt.Errorf("set schema version: %w", err)
 	}
-	store.PutMeta(ctx, MetaCreatedAt, []byte(time.Now().UTC().Format(time.RFC3339)))
+	if err := store.PutMeta(ctx, MetaCreatedAt, []byte(time.Now().UTC().Format(time.RFC3339))); err != nil {
+		return fmt.Errorf("set created_at metadata: %w", err)
+	}
 	if migrated {
-		store.PutMeta(ctx, MetaMigratedFrom, []byte("json_v1"))
+		if err := store.PutMeta(ctx, MetaMigratedFrom, []byte("json_v1")); err != nil {
+			return fmt.Errorf("set migrated_from metadata: %w", err)
+		}
 	}
 
 	return nil

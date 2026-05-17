@@ -196,8 +196,12 @@ WantedBy=multi-user.target
 	}
 
 	// Reload systemd
-	exec.Command("systemctl", "daemon-reload").Run()
-	exec.Command("systemctl", "enable", "moltbunker").Run()
+	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
+		fmt.Printf("  systemctl daemon-reload failed: %v\n", err)
+	}
+	if err := exec.Command("systemctl", "enable", "moltbunker").Run(); err != nil {
+		fmt.Printf("  systemctl enable failed: %v\n", err)
+	}
 
 	fmt.Println("  Systemd service installed")
 	fmt.Println("  Start with: sudo systemctl start moltbunker")
@@ -240,7 +244,9 @@ func installLaunchdService(cmd *cobra.Command) {
 		return
 	}
 
-	exec.Command("launchctl", "load", plistPath).Run()
+	if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil {
+		fmt.Printf("  launchctl load failed: %v\n", err)
+	}
 
 	fmt.Println("  Launchd service installed")
 	fmt.Println("  Start with: launchctl start com.moltbunker.daemon")

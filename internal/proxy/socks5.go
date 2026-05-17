@@ -141,7 +141,10 @@ func (s *SOCKS5Server) Close() error {
 // handleConnection processes a single SOCKS5 client connection.
 func (s *SOCKS5Server) handleConnection(clientConn net.Conn) {
 	defer clientConn.Close()
-	clientConn.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := clientConn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		logging.Debug("socks5 set greeting deadline failed", "error", err.Error(), logging.Component("proxy"))
+		return
+	}
 
 	// Phase 1: Greeting — client sends supported auth methods
 	wallet, err := s.handleGreeting(clientConn)
@@ -151,7 +154,10 @@ func (s *SOCKS5Server) handleConnection(clientConn net.Conn) {
 	}
 
 	// Phase 2: Connect request
-	clientConn.SetDeadline(time.Now().Add(30 * time.Second))
+	if err := clientConn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		logging.Debug("socks5 set connect deadline failed", "error", err.Error(), logging.Component("proxy"))
+		return
+	}
 	target, err := s.handleConnectRequest(clientConn)
 	if err != nil {
 		logging.Debug("socks5 connect request failed", "error", err.Error(), logging.Component("proxy"))
@@ -166,7 +172,14 @@ func (s *SOCKS5Server) handleConnection(clientConn net.Conn) {
 	}
 
 	// Create session
-	sessionID := generateSessionID()
+	sessionID, err := generateSessionID()
+	if err != nil {
+		logging.Warn("failed to generate socks5 session ID",
+			"error", err.Error(),
+			logging.Component("proxy"))
+		s.sendReply(clientConn, repGeneralFailure, nil)
+		return
+	}
 	session := &Session{
 		ID:        sessionID,
 		Wallet:    wallet,
@@ -193,7 +206,9 @@ func (s *SOCKS5Server) handleConnection(clientConn net.Conn) {
 	s.sendReply(clientConn, repSuccess, localAddr)
 
 	// Clear deadline for relay phase
-	clientConn.SetDeadline(time.Time{})
+	if err := clientConn.SetDeadline(time.Time{}); err != nil {
+		logging.Debug("socks5 clear deadline failed", "error", err.Error(), logging.Component("proxy"))
+	}
 
 	// Relay data bidirectionally with bandwidth metering
 	meter := NewBandwidthMeter()
@@ -236,19 +251,25 @@ func (s *SOCKS5Server) handleGreeting(conn net.Conn) (string, error) {
 
 	if hasUserPass {
 		// Select username/password auth
-		conn.Write([]byte{socks5Version, authUsernamePasswd})
+		if _, err := conn.Write([]byte{socks5Version, authUsernamePasswd}); err != nil {
+			return "", fmt.Errorf("write auth method selection: %w", err)
+		}
 		return s.handleUserPassAuth(conn)
 	}
 
 	if hasNoAuth {
 		// No auth — use default wallet from authenticator
-		conn.Write([]byte{socks5Version, authNone})
+		if _, err := conn.Write([]byte{socks5Version, authNone}); err != nil {
+			return "", fmt.Errorf("write auth method selection: %w", err)
+		}
 		wallet := s.auth.Authenticate("", "")
 		return wallet, nil
 	}
 
 	// No acceptable method
-	conn.Write([]byte{socks5Version, authNoAcceptable})
+	if _, err := conn.Write([]byte{socks5Version, authNoAcceptable}); err != nil {
+		return "", fmt.Errorf("write auth method selection: %w", err)
+	}
 	return "", fmt.Errorf("no acceptable auth method")
 }
 
@@ -285,12 +306,16 @@ func (s *SOCKS5Server) handleUserPassAuth(conn net.Conn) (string, error) {
 	wallet := s.auth.Authenticate(string(username), string(password))
 	if wallet == "" {
 		// Auth failed
-		conn.Write([]byte{0x01, 0x01})
+		if _, err := conn.Write([]byte{0x01, 0x01}); err != nil {
+			return "", fmt.Errorf("write auth failure: %w", err)
+		}
 		return "", fmt.Errorf("authentication failed for user %q", string(username))
 	}
 
 	// Auth success
-	conn.Write([]byte{0x01, 0x00})
+	if _, err := conn.Write([]byte{0x01, 0x00}); err != nil {
+		return "", fmt.Errorf("write auth success: %w", err)
+	}
 	return wallet, nil
 }
 
@@ -369,7 +394,11 @@ func (s *SOCKS5Server) sendReply(conn net.Conn, rep byte, bindAddr *net.TCPAddr)
 		binary.BigEndian.PutUint16(port, uint16(bindAddr.Port))
 	}
 	reply = append(reply, port...)
-	conn.Write(reply)
+	if _, err := conn.Write(reply); err != nil {
+		logging.Debug("socks5 reply write failed",
+			"error", err.Error(),
+			logging.Component("proxy"))
+	}
 }
 
 // sendConnectError maps a dial error to an appropriate SOCKS5 reply code.
@@ -403,7 +432,8 @@ func relay(ctx context.Context, client, target net.Conn, meter *BandwidthMeter) 
 	// client → target (reads from client counted as BytesIn)
 	go func() {
 		defer wg.Done()
-		io.Copy(target, meteredClient)
+		// io.Copy errors are expected when the relay is torn down; ignore.
+		_, _ = io.Copy(target, meteredClient)
 		cancel()
 	}()
 
@@ -411,20 +441,24 @@ func relay(ctx context.Context, client, target net.Conn, meter *BandwidthMeter) 
 	meteredTarget := &MeteredConn{Conn: target, meter: meter}
 	go func() {
 		defer wg.Done()
-		io.Copy(client, meteredTarget)
+		// io.Copy errors are expected when the relay is torn down; ignore.
+		_, _ = io.Copy(client, meteredTarget)
 		cancel()
 	}()
 
 	// Wait for context cancellation, then close both sides
 	<-ctx.Done()
-	client.SetDeadline(time.Now())
-	target.SetDeadline(time.Now())
+	// Force-close both sides; errors here just mean the conn is already shut.
+	_ = client.SetDeadline(time.Now())
+	_ = target.SetDeadline(time.Now())
 	wg.Wait()
 }
 
 // generateSessionID creates a random session ID.
-func generateSessionID() string {
+func generateSessionID() (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return hex.EncodeToString(b)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate session ID: %w", err)
+	}
+	return hex.EncodeToString(b), nil
 }

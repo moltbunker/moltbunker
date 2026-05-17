@@ -15,7 +15,9 @@ func TestValidateRegistration_ValidRequest(t *testing.T) {
 	nt := p2p.NewNonceTrackerWithConfig(60*time.Second, 30*time.Second, 10*time.Minute)
 
 	var nonce [32]byte
-	rand.Read(nonce[:])
+	if _, err := rand.Read(nonce[:]); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	req := &TunnelRegisterRequest{
 		NodeID:    "abcdef1234567890",
@@ -33,7 +35,9 @@ func TestValidateRegistration_ReplayDetection(t *testing.T) {
 	nt := p2p.NewNonceTrackerWithConfig(60*time.Second, 30*time.Second, 10*time.Minute)
 
 	var nonce [32]byte
-	rand.Read(nonce[:])
+	if _, err := rand.Read(nonce[:]); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 	nonceHex := hex.EncodeToString(nonce[:])
 
 	req := &TunnelRegisterRequest{
@@ -59,7 +63,9 @@ func TestValidateRegistration_OldTimestamp(t *testing.T) {
 	nt := p2p.NewNonceTrackerWithConfig(60*time.Second, 30*time.Second, 10*time.Minute)
 
 	var nonce [32]byte
-	rand.Read(nonce[:])
+	if _, err := rand.Read(nonce[:]); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	req := &TunnelRegisterRequest{
 		NodeID:    "test",
@@ -90,7 +96,9 @@ func TestValidateRegistration_InvalidNonce(t *testing.T) {
 
 func TestIssueAndValidateReconnToken(t *testing.T) {
 	secret := make([]byte, 32)
-	rand.Read(secret)
+	if _, err := rand.Read(secret); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	nodeID := testNodeID(42)
 	subdomain := "abc12345"
@@ -118,7 +126,9 @@ func TestIssueAndValidateReconnToken(t *testing.T) {
 
 	// Wrong secret
 	wrongSecret := make([]byte, 32)
-	rand.Read(wrongSecret)
+	if _, err := rand.Read(wrongSecret); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 	if ValidateReconnToken(wrongSecret, token, nodeID, subdomain, 1*time.Hour) {
 		t.Fatal("wrong secret accepted")
 	}
@@ -126,7 +136,9 @@ func TestIssueAndValidateReconnToken(t *testing.T) {
 
 func TestReconnToken_Expiry(t *testing.T) {
 	secret := make([]byte, 32)
-	rand.Read(secret)
+	if _, err := rand.Read(secret); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	nodeID := testNodeID(1)
 	token := IssueReconnToken(secret, nodeID, "sub1")
