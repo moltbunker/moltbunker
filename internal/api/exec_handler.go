@@ -168,8 +168,10 @@ func (s *Server) handleExecChallenge(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"container not running"}`, http.StatusConflict)
 		return
 	}
-	// Ownership check: only the deployer's wallet can exec
-	if deployment.Owner != "" && !strings.EqualFold(deployment.Owner, walletAddr) {
+	// Ownership check: only the deployer's wallet can exec. An empty
+	// Owner field means no requester has claimed this deployment; treat
+	// that the same as a mismatched wallet rather than letting it through.
+	if deployment.Owner == "" || !strings.EqualFold(deployment.Owner, walletAddr) {
 		logging.Warn("exec challenge denied: wallet does not own container",
 			"wallet", walletAddr,
 			"owner", deployment.Owner,
