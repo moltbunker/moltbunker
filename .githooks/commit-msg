@@ -1,0 +1,45 @@
+#!/bin/sh
+# Enforce commit-subject format.
+# Format: [<TICKET-NN> ]<Imperative verb> <description>  (≤72 chars, capitalized, no trailing period)
+# To bypass intentionally (rare): git commit --no-verify
+
+SUBJECT=$(head -1 "$1")
+
+# Allow git-generated subjects through (rebase fixup/squash, reverts, merges)
+case "$SUBJECT" in
+  "fixup! "*|"squash! "*|"Revert "*|"Merge "*) exit 0 ;;
+esac
+
+# Standard regex: optional ticket prefix + uppercase letter + 1-70 more printable chars
+# Internal periods are allowed (e.g., "Bump go-ethereum to v1.14.0", "migrate()").
+REGEX='^([A-Z]{2,5}-[0-9]+ )?[A-Z][[:print:]]{1,70}$'
+
+if ! printf '%s' "$SUBJECT" | grep -Eq "$REGEX"; then
+  echo "❌ Commit subject does not match the standard:"
+  echo "     $SUBJECT"
+  echo
+  echo "   Expected: [TICKET-NN ]<Imperative verb> <description>"
+  echo "   - ≤72 chars total"
+  echo "   - Capitalized (or starts with TICKET-NN, e.g. DEV-42)"
+  echo "   - No trailing period"
+  echo "   - Imperative verb (Add / Fix / Update / Remove / Refactor / etc.)"
+  exit 1
+fi
+
+# Reject trailing period
+case "$SUBJECT" in
+  *.)
+    echo "❌ Commit subject must not end with a period:"
+    echo "     $SUBJECT"
+    exit 1 ;;
+esac
+
+# Hard length cap
+LEN=$(printf '%s' "$SUBJECT" | wc -c | tr -d ' ')
+if [ "$LEN" -gt 72 ]; then
+  echo "❌ Commit subject is $LEN characters; must be ≤72."
+  echo "     $SUBJECT"
+  exit 1
+fi
+
+exit 0
