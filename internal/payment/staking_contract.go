@@ -365,7 +365,7 @@ func (sc *StakingContract) GetProviderInfo(ctx context.Context, provider common.
 		sc.mockMu.RLock()
 		defer sc.mockMu.RUnlock()
 
-		stake, _ := sc.mockStakes[provider]
+		stake := sc.mockStakes[provider]
 		if stake == nil {
 			stake = big.NewInt(0)
 		}

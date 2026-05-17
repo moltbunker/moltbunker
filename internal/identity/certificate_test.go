@@ -51,7 +51,7 @@ func TestCertificateManager_TLSConfig(t *testing.T) {
 
 	tlsConfig := cm.TLSConfig()
 	if tlsConfig == nil {
-		t.Error("TLS config is nil")
+		t.Fatal("TLS config is nil")
 	}
 
 	if len(tlsConfig.Certificates) == 0 {

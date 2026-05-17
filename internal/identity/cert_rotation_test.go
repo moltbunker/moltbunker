@@ -365,7 +365,7 @@ func TestCertRotator_LoadFromDisk(t *testing.T) {
 	cr2 := NewCertRotator(km, certPath, keyPath)
 	cert := cr2.GetCertificate()
 	if cert == nil {
-		t.Error("Second CertRotator should have loaded certificate from disk")
+		t.Fatal("Second CertRotator should have loaded certificate from disk")
 	}
 
 	if len(cert.Certificate) == 0 {

@@ -109,7 +109,7 @@ func NewResponder(detector *Detector, config *ResponseConfig) *Responder {
 
 // Start begins automatic response processing
 func (r *Responder) Start(ctx context.Context) {
-	ctx, r.cancel = context.WithCancel(ctx)
+	_, r.cancel = context.WithCancel(ctx)
 
 	logging.Info("threat responder started",
 		"auto_respond", r.config.AutoRespond,

@@ -59,7 +59,7 @@ func TestGeoLocator_GetLocationFromIP(t *testing.T) {
 	}
 
 	if location == nil {
-		t.Error("Location should not be nil")
+		t.Fatal("Location should not be nil")
 	}
 
 	if location.IP != "8.8.8.8" {

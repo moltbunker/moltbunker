@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -79,7 +80,7 @@ func TestHandler_CreateJob_InvalidBody(t *testing.T) {
 
 func TestHandler_ListJobs(t *testing.T) {
 	h, mux := newTestServer()
-	if _, err := h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
+	if _, err := h.scheduler.CreateJob(context.TODO(), "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
 		t.Fatalf("CreateJob: %v", err)
 	}
 
@@ -115,10 +116,10 @@ func TestHandler_ListJobs_NoWallet(t *testing.T) {
 
 func TestHandler_ListJobs_CrossTenantIsolation(t *testing.T) {
 	h, mux := newTestServer()
-	if _, err := h.scheduler.CreateJob(nil, "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
+	if _, err := h.scheduler.CreateJob(context.TODO(), "0xwallet1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
 		t.Fatalf("CreateJob wallet1: %v", err)
 	}
-	if _, err := h.scheduler.CreateJob(nil, "0xwallet2", CrawlConfig{URLs: []string{"https://b.com"}}); err != nil {
+	if _, err := h.scheduler.CreateJob(context.TODO(), "0xwallet2", CrawlConfig{URLs: []string{"https://b.com"}}); err != nil {
 		t.Fatalf("CreateJob wallet2: %v", err)
 	}
 
@@ -152,7 +153,7 @@ func TestHandler_ListJobs_CrossTenantIsolation(t *testing.T) {
 
 func TestHandler_GetJob(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(context.TODO(), "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs/"+job.ID, nil)
 	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xowner")
@@ -174,7 +175,7 @@ func TestHandler_GetJob(t *testing.T) {
 
 func TestHandler_GetJob_WrongOwner(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(context.TODO(), "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
 
 	req := httptest.NewRequest("GET", "/v1/crawl/jobs/"+job.ID, nil)
 	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xattacker")
@@ -201,7 +202,7 @@ func TestHandler_GetJob_NotFound(t *testing.T) {
 
 func TestHandler_GetResults(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(context.TODO(), "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
 	if err := h.scheduler.AddResult(job.ID, CrawlResult{URL: "https://a.com", StatusCode: 200}); err != nil {
 		t.Fatalf("AddResult: %v", err)
 	}
@@ -226,7 +227,7 @@ func TestHandler_GetResults(t *testing.T) {
 
 func TestHandler_CancelJob(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(context.TODO(), "0xowner", CrawlConfig{URLs: []string{"https://a.com"}})
 
 	req := httptest.NewRequest("POST", "/v1/crawl/jobs/"+job.ID+"/cancel", nil)
 	req.Header.Set("X-Moltbunker-Verified-Wallet", "0xowner")
@@ -289,7 +290,7 @@ func TestHandler_CrawlPage_NoURL(t *testing.T) {
 
 func TestHandler_Stats(t *testing.T) {
 	h, mux := newTestServer()
-	job, _ := h.scheduler.CreateJob(nil, "w1", CrawlConfig{URLs: []string{"https://a.com"}})
+	job, _ := h.scheduler.CreateJob(context.TODO(), "w1", CrawlConfig{URLs: []string{"https://a.com"}})
 	if err := h.scheduler.StartJob(job.ID); err != nil {
 		t.Fatalf("StartJob: %v", err)
 	}

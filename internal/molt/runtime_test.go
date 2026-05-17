@@ -566,7 +566,7 @@ func TestMoltHTTPHandler_POST(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if string(rec.Body.Bytes()) != body {
+	if rec.Body.String() != body {
 		t.Fatalf("body = %q, want %q", rec.Body.String(), body)
 	}
 }

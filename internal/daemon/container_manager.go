@@ -656,10 +656,9 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 				logging.Err(err))
 		} else {
 			deployment.ExposedPorts = req.ExposePorts
+			// no-op: ingress domain currently hardcoded; future versions may
+			// derive it from cm.node.nodeInfo when config plumbing is added.
 			ingressDomain := "moltbunker.dev"
-			if cm.node != nil && cm.node.nodeInfo != nil {
-				// Could be overridden by config; use default for now
-			}
 			subdomain := deploymentID[len("dep-"):]
 			if len(subdomain) > 8 {
 				subdomain = subdomain[:8]

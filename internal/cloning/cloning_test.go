@@ -183,6 +183,9 @@ func TestManagerGetClone(t *testing.T) {
 	if !ok {
 		t.Fatal("expected to find clone in history")
 	}
+	if found.ID != "test-clone-1" {
+		t.Errorf("expected ID 'test-clone-1' from history, got %s", found.ID)
+	}
 
 	// Should not find nonexistent
 	_, ok = m.GetClone("nonexistent")

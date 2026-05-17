@@ -118,15 +118,13 @@ func (c *ReverseClient) connectOnce(ctx context.Context, deploymentID string, co
 	}
 	defer conn.Close()
 
-	// Derive our NodeID from our TLS certificate
+	// Ingress SPKI pinning (TOFU) is already enforced by the TLS config,
+	// so we don't inspect peer certificates here. We do still need tlsState
+	// below for the TLS-unique channel binding.
 	tlsState := conn.ConnectionState()
-	if len(tlsState.PeerCertificates) > 0 {
-		// Pin ingress SPKI on first connect (TOFU)
-		// The TLS config already handles this
-	}
 
 	// Our NodeID from our local cert
-	if c.tlsConfig.Certificates != nil && len(c.tlsConfig.Certificates) > 0 {
+	if len(c.tlsConfig.Certificates) > 0 {
 		localCert := c.tlsConfig.Certificates[0]
 		if localCert.Leaf != nil {
 			spki := localCert.Leaf.RawSubjectPublicKeyInfo
@@ -323,7 +321,7 @@ func (c *ReverseClient) heartbeatResponder(ctx context.Context, ctrl net.Conn) {
 				continue
 			}
 			// Echo challenge back
-			pong := TunnelPong{Challenge: ping.Challenge}
+			pong := TunnelPong(ping)
 			pongPayload, _ := json.Marshal(pong)
 			if err := ctrl.SetWriteDeadline(time.Now().Add(heartbeatTimeout)); err != nil {
 				logging.Debug("reverse tunnel: set write deadline failed",

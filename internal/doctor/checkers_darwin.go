@@ -452,7 +452,7 @@ func (c *ConfigFileChecker) Check(ctx context.Context) CheckResult {
 	}
 
 	configPath := filepath.Join(homeDir, ".moltbunker", "config.yaml")
-	result.FixCommand = fmt.Sprintf("moltbunker config init")
+	result.FixCommand = "moltbunker config init"
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		result.Status = StatusWarning

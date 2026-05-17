@@ -142,7 +142,10 @@ func TestGenerateNonce(t *testing.T) {
 		t.Fatalf("Failed to generate nonce: %v", err)
 	}
 
-	if len(nonce) != 24 {
-		t.Errorf("Nonce should be 24 bytes, got %d", len(nonce))
+	// len() on a fixed-size array is a compile-time constant, so verify the
+	// generated nonce is not all zeros (i.e., the random source actually wrote bytes).
+	var zero [24]byte
+	if nonce == zero {
+		t.Error("Generated nonce is all zeros")
 	}
 }

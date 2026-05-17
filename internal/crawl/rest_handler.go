@@ -121,21 +121,7 @@ func (h *RESTHandler) createJob(w http.ResponseWriter, r *http.Request) {
 		owner = "anonymous"
 	}
 
-	cfg := CrawlConfig{
-		URLs:           req.URLs,
-		MaxDepth:       req.MaxDepth,
-		MaxPages:       req.MaxPages,
-		AllowedDomains: req.AllowedDomains,
-		Selectors:      req.Selectors,
-		Screenshot:     req.Screenshot,
-		JavaScript:     req.JavaScript,
-		UserAgent:      req.UserAgent,
-		Headers:        req.Headers,
-		TimeoutSec:     req.TimeoutSec,
-		RespectRobots:  req.RespectRobots,
-		UseTor:         req.UseTor,
-		StorageBucket:  req.StorageBucket,
-	}
+	cfg := CrawlConfig(req)
 
 	job, err := h.scheduler.CreateJob(r.Context(), owner, cfg)
 	if err != nil {

@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -228,7 +229,7 @@ func TestImageGC_MarkInUseUpdatesTimestamp(t *testing.T) {
 func TestImageGC_CollectGarbageNilManager(t *testing.T) {
 	// CollectGarbage with nil ImageManager should return an error.
 	gc := NewImageGC(nil, time.Hour, 0)
-	_, err := gc.CollectGarbage(nil)
+	_, err := gc.CollectGarbage(context.TODO())
 	if err == nil {
 		t.Error("expected error when ImageManager is nil")
 	}
@@ -237,7 +238,7 @@ func TestImageGC_CollectGarbageNilManager(t *testing.T) {
 func TestImageGC_GetImageUsageNilManager(t *testing.T) {
 	// GetImageUsage with nil ImageManager should return an error.
 	gc := NewImageGC(nil, time.Hour, 0)
-	_, err := gc.GetImageUsage(nil)
+	_, err := gc.GetImageUsage(context.TODO())
 	if err == nil {
 		t.Error("expected error when ImageManager is nil")
 	}
