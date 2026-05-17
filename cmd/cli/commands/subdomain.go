@@ -57,7 +57,7 @@ Examples:
 	}
 
 	cmd.Flags().StringP("deployment", "d", "", "Deployment ID to point to (required)")
-	cmd.MarkFlagRequired("deployment")
+	_ = cmd.MarkFlagRequired("deployment")
 
 	return cmd
 }
@@ -101,7 +101,7 @@ func newSubdomainTransferCmd() *cobra.Command {
 	}
 
 	cmd.Flags().String("to", "", "New owner wallet address (required)")
-	cmd.MarkFlagRequired("to")
+	_ = cmd.MarkFlagRequired("to")
 
 	return cmd
 }
@@ -115,7 +115,7 @@ func newSubdomainUpdateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringP("deployment", "d", "", "New deployment ID (required)")
-	cmd.MarkFlagRequired("deployment")
+	_ = cmd.MarkFlagRequired("deployment")
 
 	return cmd
 }
@@ -347,7 +347,7 @@ Must be called within the 48-hour reservation window.`,
 	}
 
 	cmd.Flags().StringP("deployment", "d", "", "Deployment ID to point to (required)")
-	cmd.MarkFlagRequired("deployment")
+	_ = cmd.MarkFlagRequired("deployment")
 
 	return cmd
 }

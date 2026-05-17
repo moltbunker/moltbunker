@@ -362,7 +362,7 @@ func (sm *StakingManager) GetProviderState(provider common.Address) *types.Provi
 	beneficiary := sm.GetBeneficiary(provider)
 
 	sm.mu.RLock()
-	reward, _ := sm.rewards[provider]
+	reward := sm.rewards[provider]
 	if reward == nil {
 		reward = big.NewInt(0)
 	}

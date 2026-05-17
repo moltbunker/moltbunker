@@ -77,7 +77,11 @@ func (s *Server) Start(ctx context.Context) error {
 	// Wait for context cancellation or startup error
 	select {
 	case err := <-errCh:
-		s.Stop()
+		if stopErr := s.Stop(); stopErr != nil {
+			logging.Warn("failed to stop proxy after startup error",
+				"err", stopErr.Error(),
+				logging.Component("proxy"))
+		}
 		return err
 	case <-ctx.Done():
 		return s.Stop()

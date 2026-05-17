@@ -231,7 +231,7 @@ func (m *MoltRuntime) Invoke(ctx context.Context, compiled *CompiledMolt, invoca
 	// Read memory usage (guarded: modules without memory return a nil-wrapped interface)
 	var memUsed uint32
 	func() {
-		defer func() { recover() }()
+		defer func() { _ = recover() }()
 		if mem := mod.Memory(); mem != nil {
 			memUsed = mem.Size()
 		}

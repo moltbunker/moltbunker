@@ -110,8 +110,12 @@ func TestRequesterKeyManager_WrongPassphrase(t *testing.T) {
 
 	// Create and save with one passphrase
 	rkm1 := NewRequesterKeyManager(keyStorePath)
-	rkm1.GenerateNewKeys()
-	rkm1.SaveKeys("correct-passphrase")
+	if err := rkm1.GenerateNewKeys(); err != nil {
+		t.Fatalf("GenerateNewKeys: %v", err)
+	}
+	if err := rkm1.SaveKeys("correct-passphrase"); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
+	}
 
 	// Try to load with wrong passphrase
 	rkm2 := NewRequesterKeyManager(keyStorePath)
@@ -226,8 +230,12 @@ func TestRequesterKeyManager_DeleteKeys(t *testing.T) {
 	keyStorePath := filepath.Join(tmpDir, "keys.json")
 
 	rkm := NewRequesterKeyManager(keyStorePath)
-	rkm.GenerateNewKeys()
-	rkm.SaveKeys("passphrase")
+	if err := rkm.GenerateNewKeys(); err != nil {
+		t.Fatalf("GenerateNewKeys: %v", err)
+	}
+	if err := rkm.SaveKeys("passphrase"); err != nil {
+		t.Fatalf("SaveKeys: %v", err)
+	}
 
 	if !rkm.KeysExist() {
 		t.Error("key store should exist before deletion")
@@ -253,7 +261,9 @@ func TestRequesterKeyManager_PublicKeyHex(t *testing.T) {
 	defer os.RemoveAll(tmpDir)
 
 	rkm := NewRequesterKeyManager(filepath.Join(tmpDir, "keys.json"))
-	rkm.GenerateNewKeys()
+	if err := rkm.GenerateNewKeys(); err != nil {
+		t.Fatalf("GenerateNewKeys: %v", err)
+	}
 
 	hex, err := rkm.PublicKeyHex()
 	if err != nil {

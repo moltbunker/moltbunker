@@ -1,7 +1,6 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 )
@@ -52,7 +51,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		uptime = m.Uptime
 		peerCount = m.PeerCount
 	} else {
-		uptime = fmt.Sprintf("%s", time.Since(startTime).Round(time.Second))
+		uptime = time.Since(startTime).Round(time.Second).String()
 	}
 
 	// Optionally check daemon bridge connectivity

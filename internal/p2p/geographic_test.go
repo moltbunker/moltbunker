@@ -117,7 +117,7 @@ func TestGeographicRouter_FindReplacementNode(t *testing.T) {
 	}
 
 	if replacement == nil {
-		t.Error("Should find a replacement node")
+		t.Fatal("Should find a replacement node")
 	}
 
 	if GetRegionFromCountry(replacement.Country) != "Americas" {

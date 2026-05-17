@@ -263,8 +263,10 @@ func TestErrDeploymentNotFound(t *testing.T) {
 func TestErrDeploymentNotFound_Interface(t *testing.T) {
 	var err error = ErrDeploymentNotFound{ContainerID: "dep-iface"}
 
-	if err == nil {
-		t.Error("Error should not be nil")
+	// ErrDeploymentNotFound is a value type, so the interface is guaranteed
+	// non-nil; verify the Error() message reflects the constructed fields.
+	if err.Error() == "" {
+		t.Error("Error message should not be empty")
 	}
 
 	// Should be able to check with type assertion

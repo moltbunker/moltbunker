@@ -22,7 +22,8 @@ func makeTerminalRaw() (restore func(), err error) {
 	}
 
 	return func() {
-		term.Restore(fd, oldState)
+		// Best-effort restore; nothing to do on failure during teardown.
+		_ = term.Restore(fd, oldState)
 	}, nil
 }
 

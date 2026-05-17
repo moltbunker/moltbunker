@@ -201,7 +201,13 @@ func (s *APIServer) Start(ctx context.Context) error {
 	if os.Getuid() == 0 {
 		if grp, err := user.LookupGroup("moltbunker"); err == nil {
 			if gid, err := strconv.Atoi(grp.Gid); err == nil {
-				os.Chown(s.socketPath, 0, gid)
+				if err := os.Chown(s.socketPath, 0, gid); err != nil {
+					logging.Warn("failed to chown unix socket to moltbunker group",
+						"socket", s.socketPath,
+						"gid", gid,
+						logging.Err(err),
+						logging.Component("api"))
+				}
 			}
 		}
 	}

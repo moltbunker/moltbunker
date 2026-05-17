@@ -118,15 +118,13 @@ func (c *ReverseClient) connectOnce(ctx context.Context, deploymentID string, co
 	}
 	defer conn.Close()
 
-	// Derive our NodeID from our TLS certificate
+	// Ingress SPKI pinning (TOFU) is already enforced by the TLS config,
+	// so we don't inspect peer certificates here. We do still need tlsState
+	// below for the TLS-unique channel binding.
 	tlsState := conn.ConnectionState()
-	if len(tlsState.PeerCertificates) > 0 {
-		// Pin ingress SPKI on first connect (TOFU)
-		// The TLS config already handles this
-	}
 
 	// Our NodeID from our local cert
-	if c.tlsConfig.Certificates != nil && len(c.tlsConfig.Certificates) > 0 {
+	if len(c.tlsConfig.Certificates) > 0 {
 		localCert := c.tlsConfig.Certificates[0]
 		if localCert.Leaf != nil {
 			spki := localCert.Leaf.RawSubjectPublicKeyInfo
@@ -172,7 +170,9 @@ func (c *ReverseClient) connectOnce(ctx context.Context, deploymentID string, co
 
 	// Generate registration request
 	var nonce [32]byte
-	rand.Read(nonce[:])
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return "", fmt.Errorf("generate registration nonce: %w", err)
+	}
 
 	c.mu.Lock()
 	reconnToken := c.reconnToken
@@ -276,7 +276,12 @@ func (c *ReverseClient) handleStream(ctx context.Context, stream net.Conn, conta
 	defer containerConn.Close()
 
 	// Proxy bidirectionally
-	ProxyBidirectional(ctx, stream, containerConn)
+	if err := ProxyBidirectional(ctx, stream, containerConn); err != nil {
+		logging.Debug("reverse tunnel: proxy ended",
+			"addr", localAddr,
+			logging.Err(err),
+			logging.Component("reverse-tunnel"))
+	}
 }
 
 // heartbeatResponder reads pings from the control stream and responds with pongs.
@@ -289,7 +294,12 @@ func (c *ReverseClient) heartbeatResponder(ctx context.Context, ctrl net.Conn) {
 		}
 
 		// Read next message (blocking)
-		ctrl.SetReadDeadline(time.Now().Add(2 * heartbeatInterval))
+		if err := ctrl.SetReadDeadline(time.Now().Add(2 * heartbeatInterval)); err != nil {
+			logging.Debug("reverse tunnel: set read deadline failed",
+				logging.Err(err),
+				logging.Component("reverse-tunnel"))
+			return
+		}
 		msgType, payload, err := readControlMsg(ctrl)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -311,9 +321,14 @@ func (c *ReverseClient) heartbeatResponder(ctx context.Context, ctrl net.Conn) {
 				continue
 			}
 			// Echo challenge back
-			pong := TunnelPong{Challenge: ping.Challenge}
+			pong := TunnelPong(ping)
 			pongPayload, _ := json.Marshal(pong)
-			ctrl.SetWriteDeadline(time.Now().Add(heartbeatTimeout))
+			if err := ctrl.SetWriteDeadline(time.Now().Add(heartbeatTimeout)); err != nil {
+				logging.Debug("reverse tunnel: set write deadline failed",
+					logging.Err(err),
+					logging.Component("reverse-tunnel"))
+				return
+			}
 			if err := writeControlMsg(ctrl, MsgTunnelPong, pongPayload); err != nil {
 				return
 			}
@@ -343,7 +358,12 @@ func (c *ReverseClient) Disconnect() error {
 
 	// Send deregister on control stream if available
 	if c.ctrlStream != nil {
-		writeControlMsg(c.ctrlStream, MsgTunnelDeregister, nil)
+		// Best-effort notify; we're tearing down regardless.
+		if err := writeControlMsg(c.ctrlStream, MsgTunnelDeregister, nil); err != nil {
+			logging.Debug("reverse tunnel: write deregister failed",
+				logging.Err(err),
+				logging.Component("reverse-tunnel"))
+		}
 		c.ctrlStream.Close()
 		c.ctrlStream = nil
 	}

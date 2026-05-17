@@ -6,11 +6,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -57,11 +55,6 @@ func generateTestCert(t *testing.T) tls.Certificate {
 	}
 }
 
-func nodeIDFromCert(cert tls.Certificate) string {
-	h := sha256.Sum256(cert.Leaf.RawSubjectPublicKeyInfo)
-	return hex.EncodeToString(h[:])
-}
-
 // TestReverseServerClient_EndToEnd tests the full reverse tunnel flow:
 // 1. Start a mock HTTP server (simulates a container)
 // 2. Start the reverse tunnel server (ingress-side)
@@ -86,7 +79,7 @@ func TestReverseServerClient_EndToEnd(t *testing.T) {
 			fmt.Fprintf(w, "hello from container on port %d", containerPort)
 		}),
 	}
-	go containerSrv.Serve(containerLis)
+	go func() { _ = containerSrv.Serve(containerLis) }()
 	defer containerSrv.Close()
 
 	// --- TLS certs ---
@@ -120,7 +113,7 @@ func TestReverseServerClient_EndToEnd(t *testing.T) {
 
 	reverseServer := NewReverseServer(serverLis, WithDomain("test.dev"))
 
-	go reverseServer.Serve(ctx)
+	go func() { _ = reverseServer.Serve(ctx) }()
 
 	serverAddr := serverLis.Addr().String()
 
@@ -218,7 +211,7 @@ func TestReverseServerClient_EndToEnd(t *testing.T) {
 	}
 
 	// Cleanup
-	revClient.Disconnect()
+	_ = revClient.Disconnect()
 }
 
 // staticPortResolver always returns the same port.

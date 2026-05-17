@@ -71,7 +71,9 @@ func TestImageCache_RemoveCachedImage(t *testing.T) {
 		t.Fatalf("Failed to create test image: %v", err)
 	}
 
-	ic.CacheImage(cid, imagePath)
+	if err := ic.CacheImage(cid, imagePath); err != nil {
+		t.Fatalf("CacheImage: %v", err)
+	}
 
 	err = ic.RemoveCachedImage(cid)
 	if err != nil {

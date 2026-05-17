@@ -255,12 +255,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if dataPath == "" {
 		dataPath = dataDir
 	}
-	os.MkdirAll(dataPath, 0755)
+	if err := os.MkdirAll(dataPath, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory %s: %w", dataPath, err)
+	}
 
 	// Resolve port
 	p2pPort := 9000
 	if p2pPortStr != "" {
-		fmt.Sscanf(p2pPortStr, "%d", &p2pPort)
+		// Best-effort parse; the default 9000 is used if the input is malformed.
+		_, _ = fmt.Sscanf(p2pPortStr, "%d", &p2pPort)
 	}
 
 	// Step 1: Wallet operation (side-effectful, can't be in the form)
@@ -307,7 +310,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Step 3: Generate node keys
 	actualKeyPath := filepath.Join(dataPath, "keys", "node.key")
 	if genKeys {
-		os.MkdirAll(filepath.Dir(actualKeyPath), 0700)
+		if err := os.MkdirAll(filepath.Dir(actualKeyPath), 0700); err != nil {
+			return fmt.Errorf("failed to create keys directory: %w", err)
+		}
 		// Remove empty files (NewKeyManager panics on them)
 		if info, err := os.Stat(actualKeyPath); err == nil && info.Size() == 0 {
 			os.Remove(actualKeyPath)

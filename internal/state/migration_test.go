@@ -66,7 +66,9 @@ func TestMigrateFromJSON_StateFile(t *testing.T) {
 func TestMigrateFromJSON_BanList(t *testing.T) {
 	dataDir := t.TempDir()
 	stateDir := filepath.Join(dataDir, "state")
-	os.MkdirAll(stateDir, 0700)
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	ctx := context.Background()
 
 	banPath := filepath.Join(stateDir, "banlist.json")
@@ -99,7 +101,9 @@ func TestMigrateFromJSON_BanList(t *testing.T) {
 func TestMigrateFromJSON_AddressBook(t *testing.T) {
 	dataDir := t.TempDir()
 	stateDir := filepath.Join(dataDir, "state")
-	os.MkdirAll(stateDir, 0700)
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	ctx := context.Background()
 
 	abJSON := `[
@@ -126,7 +130,9 @@ func TestMigrateFromJSON_AddressBook(t *testing.T) {
 func TestMigrateFromJSON_CertPins(t *testing.T) {
 	dataDir := t.TempDir()
 	stateDir := filepath.Join(dataDir, "state")
-	os.MkdirAll(stateDir, 0700)
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	ctx := context.Background()
 
 	cpJSON := `[
@@ -212,7 +218,9 @@ func TestMigrateFromJSON_AlreadyMigrated(t *testing.T) {
 	defer store.Close()
 
 	// Pre-set schema version to simulate already-migrated
-	store.SetSchemaVersion(ctx, CurrentSchemaVersion)
+	if err := store.SetSchemaVersion(ctx, CurrentSchemaVersion); err != nil {
+		t.Fatalf("SetSchemaVersion: %v", err)
+	}
 
 	if err := MigrateFromJSON(ctx, store, dataDir); err != nil {
 		t.Fatalf("MigrateFromJSON: %v", err)
@@ -233,20 +241,32 @@ func TestMigrateFromJSON_AlreadyMigrated(t *testing.T) {
 func TestMigrateFromJSON_BboltStore(t *testing.T) {
 	dataDir := t.TempDir()
 	stateDir := filepath.Join(dataDir, "state")
-	os.MkdirAll(stateDir, 0700)
+	if err := os.MkdirAll(stateDir, 0700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	ctx := context.Background()
 
 	// Create all legacy files
-	os.WriteFile(filepath.Join(dataDir, "state.json"),
-		[]byte(`{"deployments":{"d1":{"id":"d1","image":"nginx"}},"version":1}`), 0600)
-	os.WriteFile(filepath.Join(stateDir, "banlist.json"),
-		[]byte(`[{"peer_id":"ban1","reason":"spam"}]`), 0600)
-	os.WriteFile(filepath.Join(stateDir, "addressbook.json"),
-		[]byte(`[{"peer_id":"peer1","addrs":["/ip4/1.2.3.4/tcp/9000"]}]`), 0600)
-	os.WriteFile(filepath.Join(stateDir, "certpins.json"),
-		[]byte(`[{"node_id":"node1","hash":"abcd"}]`), 0600)
-	os.WriteFile(filepath.Join(dataDir, "api_keys.json"),
-		[]byte(`[{"id":"k1","name":"test"}]`), 0600)
+	if err := os.WriteFile(filepath.Join(dataDir, "state.json"),
+		[]byte(`{"deployments":{"d1":{"id":"d1","image":"nginx"}},"version":1}`), 0600); err != nil {
+		t.Fatalf("WriteFile state.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "banlist.json"),
+		[]byte(`[{"peer_id":"ban1","reason":"spam"}]`), 0600); err != nil {
+		t.Fatalf("WriteFile banlist.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "addressbook.json"),
+		[]byte(`[{"peer_id":"peer1","addrs":["/ip4/1.2.3.4/tcp/9000"]}]`), 0600); err != nil {
+		t.Fatalf("WriteFile addressbook.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(stateDir, "certpins.json"),
+		[]byte(`[{"node_id":"node1","hash":"abcd"}]`), 0600); err != nil {
+		t.Fatalf("WriteFile certpins.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "api_keys.json"),
+		[]byte(`[{"id":"k1","name":"test"}]`), 0600); err != nil {
+		t.Fatalf("WriteFile api_keys.json: %v", err)
+	}
 
 	// Use bbolt store
 	dbPath := filepath.Join(dataDir, "moltbunker.db")

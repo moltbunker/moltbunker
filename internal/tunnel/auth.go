@@ -17,9 +17,6 @@ import (
 const (
 	// maxRegistrationAge is the maximum age of a registration request.
 	maxRegistrationAge = 60 * time.Second
-
-	// reconnTokenMaxAge is the maximum age of a reconnection token.
-	reconnTokenMaxAge = 24 * time.Hour
 )
 
 // ValidateRegistration validates a TunnelRegisterRequest.
@@ -95,7 +92,8 @@ func ValidateReconnToken(secret []byte, token string, nodeID types.NodeID,
 		for i := len(token) - 1; i >= 0; i-- {
 			if token[i] == ':' {
 				hmacHex = token[:i]
-				fmt.Sscanf(token[i+1:], "%d", &issuedAt)
+				// Best-effort parse; the issuedAt == 0 guard below rejects failures.
+				_, _ = fmt.Sscanf(token[i+1:], "%d", &issuedAt)
 				break
 			}
 		}

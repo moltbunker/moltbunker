@@ -328,9 +328,10 @@ func runDeployWizard() error {
 	// Apply tier
 	if isCustomTier() {
 		var cpu, mem, disk int
-		fmt.Sscanf(customCPU, "%d", &cpu)
-		fmt.Sscanf(customMem, "%d", &mem)
-		fmt.Sscanf(customDisk, "%d", &disk)
+		// Best-effort parse; zero values are valid defaults if input is malformed.
+		_, _ = fmt.Sscanf(customCPU, "%d", &cpu)
+		_, _ = fmt.Sscanf(customMem, "%d", &mem)
+		_, _ = fmt.Sscanf(customDisk, "%d", &disk)
 		deployCPU = int64(cpu) * 50000 // vCPU to microseconds
 		deployMemory = int64(mem) * 1024 * 1024
 		deployDisk = int64(disk) * 1024 * 1024
@@ -351,7 +352,8 @@ func runDeployWizard() error {
 		}
 	}
 	if onionPort != "" {
-		fmt.Sscanf(onionPort, "%d", &deployOnionPort)
+		// Best-effort parse; zero value is treated as unset downstream.
+		_, _ = fmt.Sscanf(onionPort, "%d", &deployOnionPort)
 	}
 
 	// Apply security tier from wizard

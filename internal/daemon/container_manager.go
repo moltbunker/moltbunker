@@ -111,7 +111,9 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 			return nil, fmt.Errorf("failed to create encryption manager: %w", encErr)
 		}
 		// Load existing volumes
-		encryption.LoadExistingVolumes()
+		if err := encryption.LoadExistingVolumes(); err != nil {
+			return nil, fmt.Errorf("failed to load existing encrypted volumes: %w", err)
+		}
 	}
 
 	// Initialize redundancy components
@@ -211,7 +213,9 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 
 	// Load existing containers from containerd
 	if crt != nil {
-		crt.LoadExistingContainers(ctx)
+		if err := crt.LoadExistingContainers(ctx); err != nil {
+			return nil, fmt.Errorf("failed to load existing containers: %w", err)
+		}
 	}
 
 	// Load persisted state from disk
@@ -582,7 +586,12 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 	if err != nil {
 		// Cleanup encrypted volume on failure
 		if cm.encryption != nil && encryptedVolume != nil {
-			cm.encryption.DeleteEncryptedVolume(deploymentID)
+			if cleanupErr := cm.encryption.DeleteEncryptedVolume(deploymentID); cleanupErr != nil {
+				logging.Warn("failed to delete encrypted volume during cleanup",
+					"deployment_id", deploymentID,
+					logging.Err(cleanupErr),
+					logging.Component("container_manager"))
+			}
 		}
 		cm.cleanupExecKey(deployment)
 		cm.recordJobFailed(ctx, deploymentID)
@@ -592,9 +601,19 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 
 	// Start container
 	if err := cm.containerd.StartContainer(ctx, deploymentID); err != nil {
-		cm.containerd.DeleteContainer(ctx, deploymentID)
+		if cleanupErr := cm.containerd.DeleteContainer(ctx, deploymentID); cleanupErr != nil {
+			logging.Warn("failed to delete container during cleanup",
+				"deployment_id", deploymentID,
+				logging.Err(cleanupErr),
+				logging.Component("container_manager"))
+		}
 		if cm.encryption != nil && encryptedVolume != nil {
-			cm.encryption.DeleteEncryptedVolume(deploymentID)
+			if cleanupErr := cm.encryption.DeleteEncryptedVolume(deploymentID); cleanupErr != nil {
+				logging.Warn("failed to delete encrypted volume during cleanup",
+					"deployment_id", deploymentID,
+					logging.Err(cleanupErr),
+					logging.Component("container_manager"))
+			}
 		}
 		cm.cleanupExecKey(deployment)
 		cm.recordJobFailed(ctx, deploymentID)
@@ -637,10 +656,9 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 				logging.Err(err))
 		} else {
 			deployment.ExposedPorts = req.ExposePorts
+			// no-op: ingress domain currently hardcoded; future versions may
+			// derive it from cm.node.nodeInfo when config plumbing is added.
 			ingressDomain := "moltbunker.dev"
-			if cm.node != nil && cm.node.nodeInfo != nil {
-				// Could be overridden by config; use default for now
-			}
 			subdomain := deploymentID[len("dep-"):]
 			if len(subdomain) > 8 {
 				subdomain = subdomain[:8]
@@ -1015,12 +1033,22 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 
 	// Delete container
 	if cm.containerd != nil {
-		cm.containerd.DeleteContainer(ctx, containerID)
+		if err := cm.containerd.DeleteContainer(ctx, containerID); err != nil {
+			logging.Warn("failed to delete container during cleanup",
+				logging.ContainerID(containerID),
+				logging.Err(err),
+				logging.Component("container_manager"))
+		}
 	}
 
 	// Delete encrypted volume
 	if cm.encryption != nil && deployment.EncryptedVolume != "" {
-		cm.encryption.DeleteEncryptedVolume(containerID)
+		if err := cm.encryption.DeleteEncryptedVolume(containerID); err != nil {
+			logging.Warn("failed to delete encrypted volume during cleanup",
+				logging.ContainerID(containerID),
+				logging.Err(err),
+				logging.Component("container_manager"))
+		}
 	}
 
 	// Clean up subsystem state to prevent memory leaks
@@ -1491,7 +1519,11 @@ func (cm *ContainerManager) Close() error {
 
 	// Stop Tor
 	if cm.torService != nil {
-		cm.torService.Stop()
+		if err := cm.torService.Stop(); err != nil {
+			logging.Warn("failed to stop tor service during shutdown",
+				logging.Err(err),
+				logging.Component("container_manager"))
+		}
 	}
 
 	return nil
@@ -1800,6 +1832,8 @@ func (cm *ContainerManager) removeServiceExposure(containerID string) {
 
 // publishMoltServiceExposure writes a Molt deployment's service entry to gossip.
 // Molt deployments expose port 80 (HTTP handler) and are marked with RuntimeType "molt".
+//
+//nolint:unused
 func (cm *ContainerManager) publishMoltServiceExposure(deploymentID string) {
 	if cm.gossip == nil || cm.node == nil || cm.node.nodeInfo == nil {
 		return

@@ -268,7 +268,8 @@ func (h *RESTHandler) handleListObjects(w http.ResponseWriter, r *http.Request, 
 
 	maxKeys := 1000
 	if v := q.Get("max-keys"); v != "" {
-		fmt.Sscanf(v, "%d", &maxKeys)
+		// Best-effort parse; on error, keep the default.
+		_, _ = fmt.Sscanf(v, "%d", &maxKeys)
 	}
 
 	out, err := h.engine.ListObjects(ctx, &ListObjectsInput{
@@ -319,11 +320,19 @@ func (h *RESTHandler) handleUsage(w http.ResponseWriter, r *http.Request) {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		logging.Warn("failed to encode JSON response",
+			"err", err.Error(),
+			logging.Component("storage"))
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		logging.Warn("failed to encode error response",
+			"err", err.Error(),
+			logging.Component("storage"))
+	}
 }

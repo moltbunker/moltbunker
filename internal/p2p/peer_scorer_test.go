@@ -7,7 +7,7 @@ import (
 
 func TestPeerScorer_InitialScore(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	score := ps.GetScore(nodeID)
 	if score != 0.5 {
@@ -17,7 +17,7 @@ func TestPeerScorer_InitialScore(t *testing.T) {
 
 func TestPeerScorer_ValidMessageIncrease(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	ps.RecordEvent(nodeID, PeerEventValidMessage)
 	score := ps.GetScore(nodeID)
@@ -28,7 +28,7 @@ func TestPeerScorer_ValidMessageIncrease(t *testing.T) {
 
 func TestPeerScorer_InvalidMessageDecrease(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	ps.RecordEvent(nodeID, PeerEventInvalidMessage)
 	score := ps.GetScore(nodeID)
@@ -44,7 +44,7 @@ func TestPeerScorer_InvalidMessageDecrease(t *testing.T) {
 
 func TestPeerScorer_ScoreClamping(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	// Many valid messages should not exceed 1.0
 	for i := 0; i < 1000; i++ {
@@ -70,7 +70,7 @@ func TestPeerScorer_BanThreshold(t *testing.T) {
 	ps := NewPeerScorer(nil)
 	ps.SetBanList(banList)
 
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	// Repeatedly trigger invalid messages to drop below ban threshold (0.1)
 	// Start at 0.5, each -0.05 → need ~10 events to reach 0.0
@@ -86,7 +86,7 @@ func TestPeerScorer_BanThreshold(t *testing.T) {
 
 func TestPeerScorer_DecayTowardNeutral(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	// Drop score
 	for i := 0; i < 5; i++ {
@@ -109,7 +109,7 @@ func TestPeerScorer_DecayTowardNeutral(t *testing.T) {
 
 func TestPeerScorer_DecayAboveNeutral(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	// Boost score
 	for i := 0; i < 100; i++ {
@@ -132,7 +132,7 @@ func TestPeerScorer_DecayAboveNeutral(t *testing.T) {
 
 func TestPeerScorer_RemovePeer(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	ps.RecordEvent(nodeID, PeerEventValidMessage)
 	if ps.PeerCount() != 1 {
@@ -153,7 +153,7 @@ func TestPeerScorer_RemovePeer(t *testing.T) {
 
 func TestPeerScorer_AllEventTypes(t *testing.T) {
 	ps := NewPeerScorer(nil)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	events := []PeerEvent{
 		PeerEventValidMessage,
@@ -180,7 +180,7 @@ func TestPeerScorer_NowFunc(t *testing.T) {
 	ps := NewPeerScorer(nil)
 	ps.nowFunc = func() time.Time { return now }
 
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 	ps.RecordEvent(nodeID, PeerEventValidMessage)
 
 	peerScore := ps.GetPeerScore(nodeID)

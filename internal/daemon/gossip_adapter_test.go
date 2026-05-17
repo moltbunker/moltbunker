@@ -16,11 +16,6 @@ type mockPaymentService struct {
 	callCount   int
 }
 
-func (m *mockPaymentService) resolveSubdomain(ctx context.Context, name string) (*payment.SubdomainRegistration, error) {
-	m.callCount++
-	return m.resolveFunc(ctx, name)
-}
-
 func TestResolveOnChain_CachePositiveHit(t *testing.T) {
 	mock := &mockPaymentService{
 		resolveFunc: func(_ context.Context, name string) (*payment.SubdomainRegistration, error) {

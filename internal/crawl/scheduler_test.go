@@ -61,8 +61,12 @@ func TestScheduler_CreateJob_WalletLimit(t *testing.T) {
 	cfg.MaxJobsPerWallet = 2
 	s := NewScheduler(cfg)
 
-	s.CreateJob(context.Background(), "w1", CrawlConfig{URLs: []string{"https://a.com"}})
-	s.CreateJob(context.Background(), "w1", CrawlConfig{URLs: []string{"https://b.com"}})
+	if _, err := s.CreateJob(context.Background(), "w1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
+		t.Fatalf("CreateJob a: %v", err)
+	}
+	if _, err := s.CreateJob(context.Background(), "w1", CrawlConfig{URLs: []string{"https://b.com"}}); err != nil {
+		t.Fatalf("CreateJob b: %v", err)
+	}
 
 	_, err := s.CreateJob(context.Background(), "w1", CrawlConfig{URLs: []string{"https://c.com"}})
 	if err == nil {
@@ -125,7 +129,9 @@ func TestScheduler_StartJob_AlreadyRunning(t *testing.T) {
 	job, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.StartJob(job.ID)
+	if err := s.StartJob(job.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
 
 	if err := s.StartJob(job.ID); err == nil {
 		t.Error("expected error for already-running job")
@@ -161,8 +167,12 @@ func TestScheduler_CompleteJob(t *testing.T) {
 	job, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.StartJob(job.ID)
-	s.CompleteJob(job.ID)
+	if err := s.StartJob(job.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if err := s.CompleteJob(job.ID); err != nil {
+		t.Fatalf("CompleteJob: %v", err)
+	}
 
 	got, _ := s.GetJob(job.ID)
 	if got.Status != JobStatusCompleted {
@@ -175,8 +185,12 @@ func TestScheduler_FailJob(t *testing.T) {
 	job, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.StartJob(job.ID)
-	s.FailJob(job.ID, "timeout")
+	if err := s.StartJob(job.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if err := s.FailJob(job.ID, "timeout"); err != nil {
+		t.Fatalf("FailJob: %v", err)
+	}
 
 	got, _ := s.GetJob(job.ID)
 	if got.Status != JobStatusFailed {
@@ -208,8 +222,12 @@ func TestScheduler_CancelJob_AlreadyCompleted(t *testing.T) {
 	job, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.StartJob(job.ID)
-	s.CompleteJob(job.ID)
+	if err := s.StartJob(job.ID); err != nil {
+		t.Fatalf("StartJob: %v", err)
+	}
+	if err := s.CompleteJob(job.ID); err != nil {
+		t.Fatalf("CompleteJob: %v", err)
+	}
 
 	if err := s.CancelJob(job.ID); err == nil {
 		t.Error("expected error for completed job")
@@ -221,7 +239,9 @@ func TestScheduler_GetJob_DeepCopy(t *testing.T) {
 	job, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.AddResult(job.ID, CrawlResult{URL: "https://example.com", StatusCode: 200})
+	if err := s.AddResult(job.ID, CrawlResult{URL: "https://example.com", StatusCode: 200}); err != nil {
+		t.Fatalf("AddResult: %v", err)
+	}
 
 	got, _ := s.GetJob(job.ID)
 	got.Results = append(got.Results, CrawlResult{URL: "mutated"})
@@ -234,8 +254,12 @@ func TestScheduler_GetJob_DeepCopy(t *testing.T) {
 
 func TestScheduler_ListJobs(t *testing.T) {
 	s := NewScheduler(DefaultSchedulerConfig())
-	s.CreateJob(context.Background(), "w1", CrawlConfig{URLs: []string{"https://a.com"}})
-	s.CreateJob(context.Background(), "w2", CrawlConfig{URLs: []string{"https://b.com"}})
+	if _, err := s.CreateJob(context.Background(), "w1", CrawlConfig{URLs: []string{"https://a.com"}}); err != nil {
+		t.Fatalf("CreateJob w1: %v", err)
+	}
+	if _, err := s.CreateJob(context.Background(), "w2", CrawlConfig{URLs: []string{"https://b.com"}}); err != nil {
+		t.Fatalf("CreateJob w2: %v", err)
+	}
 
 	all := s.ListJobs("")
 	if len(all) != 2 {
@@ -253,7 +277,9 @@ func TestScheduler_ListJobs_NoResults(t *testing.T) {
 	job, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.AddResult(job.ID, CrawlResult{URL: "https://example.com"})
+	if err := s.AddResult(job.ID, CrawlResult{URL: "https://example.com"}); err != nil {
+		t.Fatalf("AddResult: %v", err)
+	}
 
 	jobs := s.ListJobs("w1")
 	if len(jobs) != 1 {
@@ -269,7 +295,9 @@ func TestScheduler_GetResults(t *testing.T) {
 	job, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.AddResult(job.ID, CrawlResult{URL: "https://example.com", StatusCode: 200})
+	if err := s.AddResult(job.ID, CrawlResult{URL: "https://example.com", StatusCode: 200}); err != nil {
+		t.Fatalf("AddResult: %v", err)
+	}
 
 	results, err := s.GetResults(job.ID)
 	if err != nil {
@@ -353,15 +381,25 @@ func TestScheduler_Stats(t *testing.T) {
 	job1, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://example.com"},
 	})
-	s.StartJob(job1.ID)
-	s.AddResult(job1.ID, CrawlResult{URL: "https://example.com", ByteSize: 500})
-	s.CompleteJob(job1.ID)
+	if err := s.StartJob(job1.ID); err != nil {
+		t.Fatalf("StartJob job1: %v", err)
+	}
+	if err := s.AddResult(job1.ID, CrawlResult{URL: "https://example.com", ByteSize: 500}); err != nil {
+		t.Fatalf("AddResult job1: %v", err)
+	}
+	if err := s.CompleteJob(job1.ID); err != nil {
+		t.Fatalf("CompleteJob job1: %v", err)
+	}
 
 	job2, _ := s.CreateJob(context.Background(), "w1", CrawlConfig{
 		URLs: []string{"https://other.com"},
 	})
-	s.StartJob(job2.ID)
-	s.FailJob(job2.ID, "error")
+	if err := s.StartJob(job2.ID); err != nil {
+		t.Fatalf("StartJob job2: %v", err)
+	}
+	if err := s.FailJob(job2.ID, "error"); err != nil {
+		t.Fatalf("FailJob job2: %v", err)
+	}
 
 	stats := s.Stats()
 	if stats.TotalJobs != 2 {

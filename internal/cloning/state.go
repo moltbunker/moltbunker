@@ -263,7 +263,9 @@ func (s *StateTransfer) SplitIntoChunks(pkg *StatePackage) (*ChunkedTransfer, []
 
 	// Generate package ID
 	idBytes := make([]byte, 8)
-	rand.Read(idBytes)
+	if _, err := rand.Read(idBytes); err != nil {
+		return nil, nil, fmt.Errorf("failed to generate package ID: %w", err)
+	}
 	packageID := fmt.Sprintf("%x", idBytes)
 
 	// Calculate overall checksum

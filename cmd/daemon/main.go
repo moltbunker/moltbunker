@@ -553,7 +553,9 @@ func main() {
 
 	// P1-5: Start certificate rotator for automatic TLS cert renewal
 	certDir := filepath.Join(cfg.Daemon.DataDir, "certs")
-	os.MkdirAll(certDir, 0700)
+	if err := os.MkdirAll(certDir, 0700); err != nil {
+		log.Fatalf("failed to create cert directory %s: %v", certDir, err)
+	}
 	certRotator := identity.NewCertRotator(
 		node.KeyManager(),
 		filepath.Join(certDir, "node.crt"),
@@ -702,7 +704,12 @@ func main() {
 			}
 			httpAPIServer.SetProxyHandler(proxy.NewRESTHandler(proxyServer))
 			// Store reference for shutdown (captured in shutdown goroutine closure)
-			defer proxyServer.Stop()
+			defer func() {
+				if err := proxyServer.Stop(); err != nil {
+					logging.Warn("failed to stop proxy server",
+						logging.Err(err), logging.Component("daemon"))
+				}
+			}()
 			logging.Info("proxy service enabled",
 				"socks5", cfg.Proxy.SOCKS5Addr,
 				"http", cfg.Proxy.HTTPAddr,

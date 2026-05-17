@@ -1009,15 +1009,6 @@ func (c *Config) GetTierConfig(tier types.StakingTier) (*types.StakingTierConfig
 
 // ── System resource detection ────────────────────────────────────────────────
 
-// detectCPU returns the number of logical CPUs available
-func detectCPU() int {
-	n := runtime.NumCPU()
-	if n < 1 {
-		return 1
-	}
-	return n
-}
-
 // detectMemoryGB and detectStorageGB are in platform-specific files:
 //   config_sysinfo_darwin.go  (macOS)
 //   config_sysinfo_linux.go   (Linux)

@@ -48,11 +48,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Install DBus session helper
+        # The 99designs/keyring package's KWallet backend init() opens a
+        # session bus at package load time; runners don't provide one by
+        # default. dbus-run-session creates a transient session for tests.
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11
+
       - name: Download dependencies
         run: go mod download
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: dbus-run-session -- go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
@@ -66,12 +72,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, test]
     strategy:
+      # moltbunker targets Linux and macOS. The daemon depends on Linux-only
+      # subsystems (containerd, namespaces, hypervisor integration) and Unix
+      # syscalls (Statfs); a Windows build is not currently supported.
       matrix:
-        goos: [linux, darwin, windows]
+        goos: [linux, darwin]
         goarch: [amd64, arm64]
-        exclude:
-          - goos: windows
-            goarch: arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -94,9 +100,7 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
-          ext=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then ext=".exe"; fi
-          go build -ldflags="-s -w" -o dist/moltbunker-${{ matrix.goos }}-${{ matrix.goarch }}${ext} ./cmd/cli
+          go build -ldflags="-s -w" -o dist/moltbunker-${{ matrix.goos }}-${{ matrix.goarch }} ./cmd/cli
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -107,6 +111,9 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
     steps:
       - uses: actions/checkout@v4
 
@@ -121,7 +128,7 @@ jobs:
           args: '-no-fail -fmt sarif -out results.sarif ./...'
 
       - name: Upload SARIF file
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: results.sarif
 

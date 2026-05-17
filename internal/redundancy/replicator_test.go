@@ -81,7 +81,9 @@ func TestReplicator_AddReplica(t *testing.T) {
 
 	containerID := "test-container"
 	regions := []string{"Americas", "Europe", "Asia-Pacific"}
-	r.CreateReplicaSet(containerID, regions)
+	if _, err := r.CreateReplicaSet(containerID, regions); err != nil {
+		t.Fatalf("CreateReplicaSet: %v", err)
+	}
 
 	var nodeID types.NodeID
 	copy(nodeID[:], []byte("node1"))
@@ -111,7 +113,9 @@ func TestReplicator_AddReplica_InvalidIndex(t *testing.T) {
 
 	containerID := "test-container"
 	regions := []string{"Americas", "Europe", "Asia-Pacific"}
-	r.CreateReplicaSet(containerID, regions)
+	if _, err := r.CreateReplicaSet(containerID, regions); err != nil {
+		t.Fatalf("CreateReplicaSet: %v", err)
+	}
 
 	var nodeID types.NodeID
 	container := createTestContainer("replica1", nodeID)
@@ -127,7 +131,9 @@ func TestReplicator_GetReplicaSet(t *testing.T) {
 
 	containerID := "test-container"
 	regions := []string{"Americas", "Europe", "Asia-Pacific"}
-	r.CreateReplicaSet(containerID, regions)
+	if _, err := r.CreateReplicaSet(containerID, regions); err != nil {
+		t.Fatalf("CreateReplicaSet: %v", err)
+	}
 
 	replicaSet, exists := r.GetReplicaSet(containerID)
 	if !exists {
@@ -153,11 +159,15 @@ func TestReplicator_RemoveReplica(t *testing.T) {
 
 	containerID := "test-container"
 	regions := []string{"Americas", "Europe", "Asia-Pacific"}
-	r.CreateReplicaSet(containerID, regions)
+	if _, err := r.CreateReplicaSet(containerID, regions); err != nil {
+		t.Fatalf("CreateReplicaSet: %v", err)
+	}
 
 	var nodeID types.NodeID
 	container := createTestContainer("replica1", nodeID)
-	r.AddReplica(containerID, 0, container)
+	if err := r.AddReplica(containerID, 0, container); err != nil {
+		t.Fatalf("AddReplica: %v", err)
+	}
 
 	err := r.RemoveReplica(containerID, 0)
 	if err != nil {

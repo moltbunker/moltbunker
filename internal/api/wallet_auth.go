@@ -162,7 +162,8 @@ func (m *WalletAuthManager) VerifyInlineAuth(walletAddr, signature, message stri
 		parts := strings.Split(message, ":")
 		if len(parts) >= 2 {
 			var timestamp int64
-			fmt.Sscanf(parts[1], "%d", &timestamp)
+			// Best-effort parse; failure leaves timestamp=0, which the bounds check below rejects.
+			_, _ = fmt.Sscanf(parts[1], "%d", &timestamp)
 
 			// Check if timestamp is within 5 minutes
 			now := time.Now().Unix()

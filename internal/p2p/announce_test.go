@@ -22,7 +22,7 @@ func generateTestKey(t *testing.T) (*ecdsa.PrivateKey, common.Address) {
 
 func TestCreateAndVerifyAnnounce(t *testing.T) {
 	key, addr := generateTestKey(t)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	payload, err := CreateAnnouncePayload(nodeID, addr, key)
 	if err != nil {
@@ -42,7 +42,7 @@ func TestCreateAndVerifyAnnounce(t *testing.T) {
 func TestVerifyAnnounce_WrongKey(t *testing.T) {
 	key1, _ := generateTestKey(t)
 	_, addr2 := generateTestKey(t)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	// Sign with key1 but claim addr2
 	payload, err := CreateAnnouncePayload(nodeID, addr2, key1)
@@ -59,7 +59,7 @@ func TestVerifyAnnounce_WrongKey(t *testing.T) {
 
 func TestVerifyAnnounce_ExpiredTimestamp(t *testing.T) {
 	key, addr := generateTestKey(t)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	payload, err := CreateAnnouncePayload(nodeID, addr, key)
 	if err != nil {
@@ -77,7 +77,7 @@ func TestVerifyAnnounce_ExpiredTimestamp(t *testing.T) {
 
 func TestVerifyAnnounce_InvalidSignature(t *testing.T) {
 	key, addr := generateTestKey(t)
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 
 	payload, err := CreateAnnouncePayload(nodeID, addr, key)
 	if err != nil {
@@ -116,7 +116,7 @@ func TestVerifyAnnounce_NilPayload(t *testing.T) {
 }
 
 func TestCreateAnnounce_NilKey(t *testing.T) {
-	nodeID := randomNodeID()
+	nodeID := randomNodeID(t)
 	_, err := CreateAnnouncePayload(nodeID, common.Address{}, nil)
 	if err == nil {
 		t.Fatal("expected nil key to be rejected")
@@ -125,7 +125,7 @@ func TestCreateAnnounce_NilKey(t *testing.T) {
 
 func TestVerifyAnnounce_NodeIDBinding(t *testing.T) {
 	key, addr := generateTestKey(t)
-	nodeID1 := randomNodeID()
+	nodeID1 := randomNodeID(t)
 
 	payload, err := CreateAnnouncePayload(nodeID1, addr, key)
 	if err != nil {
@@ -134,7 +134,7 @@ func TestVerifyAnnounce_NodeIDBinding(t *testing.T) {
 
 	// Signature is valid for nodeID1. If we tamper with the NodeID field,
 	// the message content changes but the signature won't match.
-	nodeID2 := randomNodeID()
+	nodeID2 := randomNodeID(t)
 	payload.NodeID = nodeID2.String()
 
 	_, err = VerifyAnnouncePayload(payload)

@@ -180,9 +180,17 @@ func (c *WebSocketClient) readPump() {
 	}()
 
 	c.conn.SetReadLimit(512 * 1024) // 512KB
-	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+	if err := c.conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+		logging.Warn("failed to set initial read deadline on WebSocket",
+			"error", err.Error(),
+			logging.Component("websocket"))
+	}
 	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		if err := c.conn.SetReadDeadline(time.Now().Add(60 * time.Second)); err != nil {
+			logging.Warn("failed to extend read deadline on pong",
+				"error", err.Error(),
+				logging.Component("websocket"))
+		}
 		return nil
 	})
 
@@ -219,10 +227,18 @@ func (c *WebSocketClient) writePump() {
 	for {
 		select {
 		case message, ok := <-c.send:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				logging.Warn("failed to set write deadline on WebSocket",
+					"error", err.Error(),
+					logging.Component("websocket"))
+			}
 			if !ok {
 				// Hub closed the channel
-				c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				if err := c.conn.WriteMessage(websocket.CloseMessage, []byte{}); err != nil {
+					logging.Debug("failed to write close frame on WebSocket",
+						"error", err.Error(),
+						logging.Component("websocket"))
+				}
 				return
 			}
 
@@ -231,7 +247,11 @@ func (c *WebSocketClient) writePump() {
 			}
 
 		case <-ticker.C:
-			c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+			if err := c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				logging.Warn("failed to set write deadline for ping",
+					"error", err.Error(),
+					logging.Component("websocket"))
+			}
 			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return
 			}
@@ -279,11 +299,16 @@ func (c *WebSocketClient) handleSubscribe(msg *WebSocketMessage) {
 
 	// Also handle if channels is in the main data
 	if jsonData, err := json.Marshal(msg.Data); err == nil {
-		json.Unmarshal(jsonData, &req)
-		for _, channel := range req.Channels {
-			c.mu.Lock()
-			c.subscribed[channel] = true
-			c.mu.Unlock()
+		if unmarshalErr := json.Unmarshal(jsonData, &req); unmarshalErr != nil {
+			logging.Debug("failed to parse WebSocket subscribe channels",
+				"error", unmarshalErr.Error(),
+				logging.Component("websocket"))
+		} else {
+			for _, channel := range req.Channels {
+				c.mu.Lock()
+				c.subscribed[channel] = true
+				c.mu.Unlock()
+			}
 		}
 	}
 

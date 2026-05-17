@@ -2,7 +2,6 @@ package molt
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -566,7 +565,7 @@ func TestMoltHTTPHandler_POST(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if string(rec.Body.Bytes()) != body {
+	if rec.Body.String() != body {
 		t.Fatalf("body = %q, want %q", rec.Body.String(), body)
 	}
 }
@@ -623,14 +622,4 @@ func TestMoltHTTPHandler_DifferentMethods(t *testing.T) {
 			t.Errorf("%s: status = %d, want 200", method, rec.Code)
 		}
 	}
-}
-
-// --- Helpers ---
-
-func mustJSON(v interface{}) []byte {
-	data, err := json.Marshal(v)
-	if err != nil {
-		panic(err)
-	}
-	return data
 }

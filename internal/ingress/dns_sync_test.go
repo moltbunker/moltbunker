@@ -37,7 +37,7 @@ func cfMux(existingRecords map[string][]cfDNSRecord, createdCount *int, deletedI
 			result, _ := json.Marshal(records)
 			resp := cfAPIResponse{Success: true, Result: result}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
@@ -49,7 +49,7 @@ func cfMux(existingRecords map[string][]cfDNSRecord, createdCount *int, deletedI
 			result, _ := json.Marshal(cfDNSRecord{ID: "new-record-id"})
 			resp := cfAPIResponse{Success: true, Result: result}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
@@ -62,7 +62,7 @@ func cfMux(existingRecords map[string][]cfDNSRecord, createdCount *int, deletedI
 			result, _ := json.Marshal(map[string]string{"id": "deleted"})
 			resp := cfAPIResponse{Success: true, Result: result}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(resp)
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 
@@ -161,7 +161,7 @@ func TestDNSSync_APIError(t *testing.T) {
 			Success: false,
 			Errors:  []cfAPIError{{Code: 1003, Message: "Invalid zone"}},
 		}
-		json.NewEncoder(w).Encode(resp)
+		_ = json.NewEncoder(w).Encode(resp)
 	})
 	d, ts := newTestDNSSync(handler)
 	defer ts.Close()

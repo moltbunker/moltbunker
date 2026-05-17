@@ -95,7 +95,13 @@ func (m *ReverseTunnelManager) Unexpose(deploymentID string) {
 		// Key format: "deploymentID:port" — check prefix
 		if len(key) > len(deploymentID) && key[:len(deploymentID)] == deploymentID && key[len(deploymentID)] == ':' {
 			entry.cancel()
-			entry.client.Disconnect()
+			if err := entry.client.Disconnect(); err != nil {
+				logging.Warn("failed to disconnect reverse tunnel client",
+					"deployment_id", deploymentID,
+					"key", key,
+					logging.Err(err),
+					logging.Component("reverse-tunnel"))
+			}
 			toRemove = append(toRemove, key)
 		}
 	}
@@ -135,9 +141,14 @@ func (m *ReverseTunnelManager) Stop() {
 	m.cancel()
 
 	m.mu.Lock()
-	for _, entry := range m.active {
+	for key, entry := range m.active {
 		entry.cancel()
-		entry.client.Disconnect()
+		if err := entry.client.Disconnect(); err != nil {
+			logging.Warn("failed to disconnect reverse tunnel client during shutdown",
+				"key", key,
+				logging.Err(err),
+				logging.Component("reverse-tunnel"))
+		}
 	}
 	m.active = make(map[string]*reverseTunnelEntry)
 	m.mu.Unlock()

@@ -66,7 +66,12 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	defer conn.Close()
 
 	// Set read deadline for the initial handshake to prevent slow-loris attacks.
-	conn.SetReadDeadline(time.Now().Add(handshakeTimeout))
+	if err := conn.SetReadDeadline(time.Now().Add(handshakeTimeout)); err != nil {
+		logging.Debug("tunnel: set handshake deadline failed",
+			logging.Err(err),
+			logging.Component("tunnel"))
+		return
+	}
 
 	// Read TUNNEL_OPEN request
 	msgType, payload, err := readControlMsg(conn)
@@ -75,13 +80,21 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		return
 	}
 	if msgType != MsgTunnelOpen {
-		writeControlMsg(conn, MsgTunnelError, []byte("expected TUNNEL_OPEN"))
+		if writeErr := writeControlMsg(conn, MsgTunnelError, []byte("expected TUNNEL_OPEN")); writeErr != nil {
+			logging.Debug("tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("tunnel"))
+		}
 		return
 	}
 
 	var req TunnelOpenRequest
 	if err := json.Unmarshal(payload, &req); err != nil {
-		writeControlMsg(conn, MsgTunnelError, []byte("invalid TUNNEL_OPEN payload"))
+		if writeErr := writeControlMsg(conn, MsgTunnelError, []byte("invalid TUNNEL_OPEN payload")); writeErr != nil {
+			logging.Debug("tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("tunnel"))
+		}
 		return
 	}
 
@@ -95,7 +108,11 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	localAddr, err := s.resolver.ResolveDeploymentPort(req.DeploymentID, req.Port)
 	if err != nil {
 		errMsg := fmt.Sprintf("resolve port: %v", err)
-		writeControlMsg(conn, MsgTunnelError, []byte(errMsg))
+		if writeErr := writeControlMsg(conn, MsgTunnelError, []byte(errMsg)); writeErr != nil {
+			logging.Debug("tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("tunnel"))
+		}
 		return
 	}
 
@@ -103,7 +120,11 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	containerConn, err := net.Dial("tcp", localAddr)
 	if err != nil {
 		errMsg := fmt.Sprintf("connect to container: %v", err)
-		writeControlMsg(conn, MsgTunnelError, []byte(errMsg))
+		if writeErr := writeControlMsg(conn, MsgTunnelError, []byte(errMsg)); writeErr != nil {
+			logging.Debug("tunnel: write protocol error failed",
+				logging.Err(writeErr),
+				logging.Component("tunnel"))
+		}
 		return
 	}
 	defer containerConn.Close()
@@ -130,7 +151,12 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 	}()
 
 	// Clear read deadline before bidirectional proxy — both sides control pacing.
-	conn.SetReadDeadline(time.Time{})
+	if err := conn.SetReadDeadline(time.Time{}); err != nil {
+		logging.Debug("tunnel: clear read deadline failed",
+			logging.Err(err),
+			logging.Component("tunnel"))
+		return
+	}
 
 	// Proxy bidirectionally
 	_ = ProxyBidirectional(ctx, conn, containerConn)

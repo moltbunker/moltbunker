@@ -262,12 +262,16 @@ func BenchmarkEncryptData(b *testing.B) {
 	dem := NewDeploymentEncryptionManager("")
 	requesterPubKey, _, _ := GenerateX25519KeyPair()
 
-	dem.SetupDeploymentEncryption("bench-deployment", requesterPubKey)
+	if _, err := dem.SetupDeploymentEncryption("bench-deployment", requesterPubKey); err != nil {
+		b.Fatalf("SetupDeploymentEncryption: %v", err)
+	}
 	data := make([]byte, 1024) // 1KB of data
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		dem.EncryptData("bench-deployment", data)
+		if _, err := dem.EncryptData("bench-deployment", data); err != nil {
+			b.Fatalf("EncryptData: %v", err)
+		}
 	}
 }
 
@@ -275,7 +279,9 @@ func BenchmarkDecryptOutput(b *testing.B) {
 	dem := NewDeploymentEncryptionManager("")
 	requesterPubKey, requesterPrivKey, _ := GenerateX25519KeyPair()
 
-	dem.SetupDeploymentEncryption("bench-deployment", requesterPubKey)
+	if _, err := dem.SetupDeploymentEncryption("bench-deployment", requesterPubKey); err != nil {
+		b.Fatalf("SetupDeploymentEncryption: %v", err)
+	}
 	data := make([]byte, 1024) // 1KB of data
 	ciphertext, _ := dem.EncryptData("bench-deployment", data)
 	metadata, _ := dem.GetEncryptionMetadata("bench-deployment")
@@ -283,6 +289,8 @@ func BenchmarkDecryptOutput(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		decryptor.DecryptOutput(metadata, ciphertext)
+		if _, err := decryptor.DecryptOutput(metadata, ciphertext); err != nil {
+			b.Fatalf("DecryptOutput: %v", err)
+		}
 	}
 }

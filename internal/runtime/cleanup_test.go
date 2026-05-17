@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"sync"
@@ -89,7 +90,7 @@ func TestCleanupManager_DoubleCleanup(t *testing.T) {
 	cm.mu.Unlock()
 
 	// Second call should be a no-op and return nil.
-	err := cm.CleanupContainer(nil, containerID)
+	err := cm.CleanupContainer(context.TODO(), containerID)
 	if err != nil {
 		t.Errorf("second cleanup should be no-op, got: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestCleanupManager_CleanupRemovesCgroup(t *testing.T) {
 
 	// CleanupContainer with nil client -- the container won't be found in the
 	// client, so it skips the stop/delete steps and goes straight to cgroup.
-	err := cm.CleanupContainer(nil, containerID)
+	err := cm.CleanupContainer(context.TODO(), containerID)
 	// err may be non-nil if client is nil, but cgroup should still be cleaned.
 	_ = err
 
@@ -136,7 +137,7 @@ func TestCleanupManager_CleanupRemovesMountDir(t *testing.T) {
 	}
 
 	cm := NewCleanupManager(nil, nil, tmpDir)
-	err := cm.CleanupContainer(nil, containerID)
+	err := cm.CleanupContainer(context.TODO(), containerID)
 	_ = err
 
 	if _, statErr := os.Stat(mountDir); !os.IsNotExist(statErr) {
@@ -159,7 +160,7 @@ func TestCleanupManager_CleanupRemovesPIDFile(t *testing.T) {
 	}
 
 	cm := NewCleanupManager(nil, nil, tmpDir)
-	err := cm.CleanupContainer(nil, containerID)
+	err := cm.CleanupContainer(context.TODO(), containerID)
 	_ = err
 
 	if _, statErr := os.Stat(pidFile); !os.IsNotExist(statErr) {
@@ -184,7 +185,9 @@ func TestCleanupManager_ConcurrentCleanup(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		id := "concurrent-" + string(rune('a'+i))
 		mountDir := filepath.Join(tmpDir, "mounts", id)
-		os.MkdirAll(mountDir, 0755)
+		if err := os.MkdirAll(mountDir, 0755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", mountDir, err)
+		}
 	}
 
 	var wg sync.WaitGroup
@@ -194,8 +197,8 @@ func TestCleanupManager_ConcurrentCleanup(t *testing.T) {
 		go func(containerID string) {
 			defer wg.Done()
 			// Call cleanup multiple times concurrently.
-			cm.CleanupContainer(nil, containerID)
-			cm.CleanupContainer(nil, containerID) // double call
+			_ = cm.CleanupContainer(context.TODO(), containerID)
+			_ = cm.CleanupContainer(context.TODO(), containerID) // double call
 		}(id)
 	}
 	wg.Wait()
@@ -221,14 +224,22 @@ func TestCleanupManager_CleanupStoppedContainer(t *testing.T) {
 	containerID := "stopped-container"
 
 	// Set up resources that would exist for a stopped container.
-	cgroups.CreateCgroup(containerID)
-	os.MkdirAll(filepath.Join(tmpDir, "mounts", containerID), 0755)
+	if err := cgroups.CreateCgroup(containerID); err != nil {
+		t.Fatalf("CreateCgroup: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(tmpDir, "mounts", containerID), 0755); err != nil {
+		t.Fatalf("MkdirAll mounts: %v", err)
+	}
 	pidDir := filepath.Join(tmpDir, "pids")
-	os.MkdirAll(pidDir, 0755)
-	os.WriteFile(filepath.Join(pidDir, containerID+".pid"), []byte("99999"), 0644)
+	if err := os.MkdirAll(pidDir, 0755); err != nil {
+		t.Fatalf("MkdirAll pids: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pidDir, containerID+".pid"), []byte("99999"), 0644); err != nil {
+		t.Fatalf("WriteFile pid: %v", err)
+	}
 
 	cm := NewCleanupManager(nil, cgroups, tmpDir)
-	err := cm.CleanupContainer(nil, containerID)
+	err := cm.CleanupContainer(context.TODO(), containerID)
 	_ = err // may error on nil client but that's OK
 
 	// All resources should be cleaned.
@@ -255,7 +266,7 @@ func TestCleanupManager_CleanupMarksState(t *testing.T) {
 	cm := NewCleanupManager(nil, nil, tmpDir)
 
 	containerID := "empty-cleanup"
-	cm.CleanupContainer(nil, containerID)
+	_ = cm.CleanupContainer(context.TODO(), containerID)
 
 	if !cm.IsCleanedUp(containerID) {
 		t.Error("container should be marked as cleaned up")

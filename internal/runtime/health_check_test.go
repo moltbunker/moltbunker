@@ -125,7 +125,7 @@ func TestHTTPProbe_Success(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("ok"))
+			_, _ = w.Write([]byte("ok"))
 			return
 		}
 		w.WriteHeader(http.StatusNotFound)
@@ -562,7 +562,7 @@ func TestExecProbe_ReceivesCorrectArgs(t *testing.T) {
 		FailureThreshold: 3,
 	})
 
-	hc.CheckHealth(context.Background(), "exec-args")
+	_, _ = hc.CheckHealth(context.Background(), "exec-args")
 
 	if receivedContainerID != "exec-args" {
 		t.Errorf("expected container ID 'exec-args', got %q", receivedContainerID)
@@ -598,7 +598,7 @@ func TestThreshold_SuccessTransition(t *testing.T) {
 	ctx := context.Background()
 
 	// First check: success, but threshold not met
-	hc.CheckHealth(ctx, "threshold-success")
+	_, _ = hc.CheckHealth(ctx, "threshold-success")
 	status := hc.GetProbeStatus("threshold-success")
 	if status.State != ProbeStateUnknown {
 		t.Errorf("after 1 success: expected unknown, got %s", status.State)
@@ -608,14 +608,14 @@ func TestThreshold_SuccessTransition(t *testing.T) {
 	}
 
 	// Second check
-	hc.CheckHealth(ctx, "threshold-success")
+	_, _ = hc.CheckHealth(ctx, "threshold-success")
 	status = hc.GetProbeStatus("threshold-success")
 	if status.State != ProbeStateUnknown {
 		t.Errorf("after 2 successes: expected unknown, got %s", status.State)
 	}
 
 	// Third check: threshold met
-	hc.CheckHealth(ctx, "threshold-success")
+	_, _ = hc.CheckHealth(ctx, "threshold-success")
 	status = hc.GetProbeStatus("threshold-success")
 	if status.State != ProbeStateHealthy {
 		t.Errorf("after 3 successes: expected healthy, got %s", status.State)
@@ -642,21 +642,21 @@ func TestThreshold_FailureTransition(t *testing.T) {
 	ctx := context.Background()
 
 	// First failure
-	hc.CheckHealth(ctx, "threshold-fail")
+	_, _ = hc.CheckHealth(ctx, "threshold-fail")
 	status := hc.GetProbeStatus("threshold-fail")
 	if status.State != ProbeStateUnknown {
 		t.Errorf("after 1 failure: expected unknown, got %s", status.State)
 	}
 
 	// Second failure
-	hc.CheckHealth(ctx, "threshold-fail")
+	_, _ = hc.CheckHealth(ctx, "threshold-fail")
 	status = hc.GetProbeStatus("threshold-fail")
 	if status.State != ProbeStateUnknown {
 		t.Errorf("after 2 failures: expected unknown, got %s", status.State)
 	}
 
 	// Third failure: threshold met
-	hc.CheckHealth(ctx, "threshold-fail")
+	_, _ = hc.CheckHealth(ctx, "threshold-fail")
 	status = hc.GetProbeStatus("threshold-fail")
 	if status.State != ProbeStateUnhealthy {
 		t.Errorf("after 3 failures: expected unhealthy, got %s", status.State)
@@ -688,15 +688,15 @@ func TestThreshold_HealthyToUnhealthy(t *testing.T) {
 	ctx := context.Background()
 
 	// Two successes -> healthy
-	hc.CheckHealth(ctx, "transition")
-	hc.CheckHealth(ctx, "transition")
+	_, _ = hc.CheckHealth(ctx, "transition")
+	_, _ = hc.CheckHealth(ctx, "transition")
 	status := hc.GetProbeStatus("transition")
 	if status.State != ProbeStateHealthy {
 		t.Fatalf("expected healthy after 2 successes, got %s", status.State)
 	}
 
 	// One failure, still healthy
-	hc.CheckHealth(ctx, "transition")
+	_, _ = hc.CheckHealth(ctx, "transition")
 	status = hc.GetProbeStatus("transition")
 	if status.State != ProbeStateHealthy {
 		t.Errorf("expected healthy after 1 failure (threshold=2), got %s", status.State)
@@ -706,7 +706,7 @@ func TestThreshold_HealthyToUnhealthy(t *testing.T) {
 	}
 
 	// Second failure -> unhealthy
-	hc.CheckHealth(ctx, "transition")
+	_, _ = hc.CheckHealth(ctx, "transition")
 	status = hc.GetProbeStatus("transition")
 	if status.State != ProbeStateUnhealthy {
 		t.Errorf("expected unhealthy after 2 failures, got %s", status.State)
@@ -735,22 +735,22 @@ func TestThreshold_UnhealthyToHealthy(t *testing.T) {
 	ctx := context.Background()
 
 	// Two failures -> unhealthy
-	hc.CheckHealth(ctx, "recovery")
-	hc.CheckHealth(ctx, "recovery")
+	_, _ = hc.CheckHealth(ctx, "recovery")
+	_, _ = hc.CheckHealth(ctx, "recovery")
 	status := hc.GetProbeStatus("recovery")
 	if status.State != ProbeStateUnhealthy {
 		t.Fatalf("expected unhealthy after 2 failures, got %s", status.State)
 	}
 
 	// One success, still unhealthy
-	hc.CheckHealth(ctx, "recovery")
+	_, _ = hc.CheckHealth(ctx, "recovery")
 	status = hc.GetProbeStatus("recovery")
 	if status.State != ProbeStateUnhealthy {
 		t.Errorf("expected unhealthy after 1 success (threshold=2), got %s", status.State)
 	}
 
 	// Second success -> healthy
-	hc.CheckHealth(ctx, "recovery")
+	_, _ = hc.CheckHealth(ctx, "recovery")
 	status = hc.GetProbeStatus("recovery")
 	if status.State != ProbeStateHealthy {
 		t.Errorf("expected healthy after 2 successes, got %s", status.State)
@@ -779,14 +779,14 @@ func TestThreshold_FailureResetsSuccessCounter(t *testing.T) {
 	ctx := context.Background()
 
 	// Success
-	hc.CheckHealth(ctx, "reset-counter")
+	_, _ = hc.CheckHealth(ctx, "reset-counter")
 	status := hc.GetProbeStatus("reset-counter")
 	if status.ConsecutivePass != 1 {
 		t.Errorf("expected 1 consecutive pass, got %d", status.ConsecutivePass)
 	}
 
 	// Failure resets success counter
-	hc.CheckHealth(ctx, "reset-counter")
+	_, _ = hc.CheckHealth(ctx, "reset-counter")
 	status = hc.GetProbeStatus("reset-counter")
 	if status.ConsecutivePass != 0 {
 		t.Errorf("expected 0 consecutive passes after failure, got %d", status.ConsecutivePass)
@@ -796,7 +796,7 @@ func TestThreshold_FailureResetsSuccessCounter(t *testing.T) {
 	}
 
 	// Success again (counter starts fresh)
-	hc.CheckHealth(ctx, "reset-counter")
+	_, _ = hc.CheckHealth(ctx, "reset-counter")
 	status = hc.GetProbeStatus("reset-counter")
 	if status.ConsecutivePass != 1 {
 		t.Errorf("expected 1 consecutive pass after recovery, got %d", status.ConsecutivePass)
@@ -832,7 +832,7 @@ func TestTotalCounters(t *testing.T) {
 	ctx := context.Background()
 
 	for i := 0; i < 6; i++ {
-		hc.CheckHealth(ctx, "counters")
+		_, _ = hc.CheckHealth(ctx, "counters")
 	}
 
 	status := hc.GetProbeStatus("counters")
@@ -1175,7 +1175,7 @@ func TestConcurrentCheckHealth(t *testing.T) {
 		go func(containerID string) {
 			defer wg.Done()
 			for j := 0; j < 10; j++ {
-				hc.CheckHealth(context.Background(), containerID)
+				_, _ = hc.CheckHealth(context.Background(), containerID)
 			}
 		}(id)
 	}
@@ -1300,7 +1300,7 @@ func TestLastErrorTracking(t *testing.T) {
 		FailureThreshold: 1,
 	})
 
-	hc.CheckHealth(context.Background(), "error-track")
+	_, _ = hc.CheckHealth(context.Background(), "error-track")
 
 	status := hc.GetProbeStatus("error-track")
 	if status.LastError == "" {
@@ -1333,14 +1333,14 @@ func TestLastErrorClearedOnSuccess(t *testing.T) {
 	ctx := context.Background()
 
 	// First call fails
-	hc.CheckHealth(ctx, "error-clear")
+	_, _ = hc.CheckHealth(ctx, "error-clear")
 	status := hc.GetProbeStatus("error-clear")
 	if status.LastError == "" {
 		t.Error("expected last error after failure")
 	}
 
 	// Second call succeeds
-	hc.CheckHealth(ctx, "error-clear")
+	_, _ = hc.CheckHealth(ctx, "error-clear")
 	status = hc.GetProbeStatus("error-clear")
 	if status.LastError != "" {
 		t.Errorf("expected empty last error after success, got %q", status.LastError)
@@ -1378,7 +1378,7 @@ func TestCheckHealth_ContextCancelled(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		hc.CheckHealth(ctx, "ctx-cancel")
+		_, _ = hc.CheckHealth(ctx, "ctx-cancel")
 		close(done)
 	}()
 
@@ -1405,7 +1405,7 @@ func parseHostPort(t *testing.T, addr string) (string, int) {
 		t.Fatalf("failed to parse address %q: %v", addr, err)
 	}
 	port := 0
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 	if port == 0 {
 		t.Fatalf("failed to parse port from %q", addr)
 	}

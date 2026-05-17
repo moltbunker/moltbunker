@@ -88,7 +88,7 @@ func TestBandwidthMeter(t *testing.T) {
 
 	// Write from server, read through metered client
 	go func() {
-		server.Write([]byte("hello"))
+		_, _ = server.Write([]byte("hello"))
 		server.Close()
 	}()
 
@@ -111,10 +111,10 @@ func TestMeteredConn_Write(t *testing.T) {
 
 	// Read from server in background
 	go func() {
-		io.Copy(io.Discard, server)
+		_, _ = io.Copy(io.Discard, server)
 	}()
 
-	metered.Write([]byte("test data"))
+	_, _ = metered.Write([]byte("test data"))
 	metered.Close()
 
 	if meter.BytesWritten() != 9 {
@@ -211,7 +211,7 @@ func (d *mockDialer) DialContext(_ context.Context, _, address string) (net.Conn
 	}
 	server, client := net.Pipe()
 	go func() {
-		io.Copy(io.Discard, server)
+		_, _ = io.Copy(io.Discard, server)
 		server.Close()
 	}()
 	return client, nil
@@ -240,11 +240,11 @@ func TestSOCKS5_Greeting_NoAuth(t *testing.T) {
 	}()
 
 	// Send SOCKS5 greeting with no-auth method
-	clientConn.Write([]byte{socks5Version, 1, authNone})
+	_, _ = clientConn.Write([]byte{socks5Version, 1, authNone})
 
 	// Read server's method selection
 	resp := make([]byte, 2)
-	io.ReadFull(clientConn, resp)
+	_, _ = io.ReadFull(clientConn, resp)
 	if resp[0] != socks5Version || resp[1] != authNone {
 		t.Errorf("method selection = %v, want [5, 0]", resp)
 	}
@@ -272,11 +272,11 @@ func TestSOCKS5_Greeting_UserPassAuth(t *testing.T) {
 	}()
 
 	// Send greeting with username/password method
-	clientConn.Write([]byte{socks5Version, 1, authUsernamePasswd})
+	_, _ = clientConn.Write([]byte{socks5Version, 1, authUsernamePasswd})
 
 	// Read method selection
 	resp := make([]byte, 2)
-	io.ReadFull(clientConn, resp)
+	_, _ = io.ReadFull(clientConn, resp)
 	if resp[1] != authUsernamePasswd {
 		t.Fatalf("expected username/password method, got %d", resp[1])
 	}
@@ -288,11 +288,11 @@ func TestSOCKS5_Greeting_UserPassAuth(t *testing.T) {
 	authReq = append(authReq, []byte(user)...)
 	authReq = append(authReq, byte(len(pass)))
 	authReq = append(authReq, []byte(pass)...)
-	clientConn.Write(authReq)
+	_, _ = clientConn.Write(authReq)
 
 	// Read auth response
 	authResp := make([]byte, 2)
-	io.ReadFull(clientConn, authResp)
+	_, _ = io.ReadFull(clientConn, authResp)
 	if authResp[1] != 0x00 {
 		t.Error("auth should succeed")
 	}
@@ -331,7 +331,7 @@ func TestSOCKS5_ConnectRequest_Domain(t *testing.T) {
 	port := make([]byte, 2)
 	binary.BigEndian.PutUint16(port, 443)
 	req = append(req, port...)
-	clientConn.Write(req)
+	_, _ = clientConn.Write(req)
 
 	target := <-done
 	if target != "example.com:443" {
@@ -365,7 +365,7 @@ func TestSOCKS5_ConnectRequest_IPv4(t *testing.T) {
 	port := make([]byte, 2)
 	binary.BigEndian.PutUint16(port, 80)
 	req = append(req, port...)
-	clientConn.Write(req)
+	_, _ = clientConn.Write(req)
 
 	target := <-done
 	if target != "93.184.216.34:80" {
@@ -394,7 +394,7 @@ func TestSOCKS5_FullConnection(t *testing.T) {
 		defer conn.Close()
 		buf := make([]byte, 100)
 		n, _ := conn.Read(buf)
-		conn.Write([]byte("echo:" + string(buf[:n])))
+		_, _ = conn.Write([]byte("echo:" + string(buf[:n])))
 	}()
 
 	// Start SOCKS5 server
@@ -426,12 +426,12 @@ func TestSOCKS5_FullConnection(t *testing.T) {
 		t.Fatalf("dial socks5: %v", err)
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	// Send greeting
-	conn.Write([]byte{socks5Version, 1, authNone})
+	_, _ = conn.Write([]byte{socks5Version, 1, authNone})
 	resp := make([]byte, 2)
-	io.ReadFull(conn, resp)
+	_, _ = io.ReadFull(conn, resp)
 	if resp[0] != socks5Version || resp[1] != authNone {
 		t.Fatalf("greeting response = %v", resp)
 	}
@@ -440,24 +440,24 @@ func TestSOCKS5_FullConnection(t *testing.T) {
 	host, portStr, _ := net.SplitHostPort(targetAddr)
 	ip := net.ParseIP(host).To4()
 	var portNum uint16
-	fmt.Sscanf(portStr, "%d", &portNum)
+	_, _ = fmt.Sscanf(portStr, "%d", &portNum)
 
 	req := []byte{socks5Version, cmdConnect, 0x00, addrIPv4}
 	req = append(req, ip...)
 	port := make([]byte, 2)
 	binary.BigEndian.PutUint16(port, portNum)
 	req = append(req, port...)
-	conn.Write(req)
+	_, _ = conn.Write(req)
 
 	// Read connect reply (at least 10 bytes for IPv4)
 	reply := make([]byte, 10)
-	io.ReadFull(conn, reply)
+	_, _ = io.ReadFull(conn, reply)
 	if reply[1] != repSuccess {
 		t.Fatalf("connect reply = %d, want success", reply[1])
 	}
 
 	// Send data through the tunnel
-	conn.Write([]byte("hello"))
+	_, _ = conn.Write([]byte("hello"))
 
 	// Read echoed response
 	buf := make([]byte, 100)
@@ -488,7 +488,7 @@ func TestHTTPProxy_CONNECT(t *testing.T) {
 		defer conn.Close()
 		buf := make([]byte, 100)
 		n, _ := conn.Read(buf)
-		conn.Write([]byte("tunnel:" + string(buf[:n])))
+		_, _ = conn.Write([]byte("tunnel:" + string(buf[:n])))
 	}()
 
 	// Create HTTP proxy
@@ -505,12 +505,12 @@ func TestHTTPProxy_CONNECT(t *testing.T) {
 		t.Fatalf("dial proxy: %v", err)
 	}
 	defer proxyConn.Close()
-	proxyConn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = proxyConn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	// Send CONNECT request
 	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n\r\n",
 		targetLn.Addr().String(), targetLn.Addr().String())
-	proxyConn.Write([]byte(connectReq))
+	_, _ = proxyConn.Write([]byte(connectReq))
 
 	// Read response
 	buf := make([]byte, 1024)
@@ -524,7 +524,7 @@ func TestHTTPProxy_CONNECT(t *testing.T) {
 	}
 
 	// Send data through tunnel
-	proxyConn.Write([]byte("data"))
+	_, _ = proxyConn.Write([]byte("data"))
 	n, err = proxyConn.Read(buf)
 	if err != nil {
 		t.Fatalf("read tunnel data: %v", err)
@@ -539,7 +539,7 @@ func TestHTTPProxy_Forward(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Test", "proxied")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("forwarded response"))
+		_, _ = w.Write([]byte("forwarded response"))
 	}))
 	defer target.Close()
 
@@ -557,11 +557,11 @@ func TestHTTPProxy_Forward(t *testing.T) {
 		t.Fatalf("dial proxy: %v", err)
 	}
 	defer proxyConn.Close()
-	proxyConn.SetDeadline(time.Now().Add(5 * time.Second))
+	_ = proxyConn.SetDeadline(time.Now().Add(5 * time.Second))
 
 	forwardReq := fmt.Sprintf("GET %s/test HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n",
 		target.URL, strings.TrimPrefix(target.URL, "http://"))
-	proxyConn.Write([]byte(forwardReq))
+	_, _ = proxyConn.Write([]byte(forwardReq))
 
 	buf := make([]byte, 4096)
 	n, _ := proxyConn.Read(buf)
@@ -595,7 +595,9 @@ func TestRESTHandler_Status(t *testing.T) {
 	}
 
 	var status map[string]any
-	json.NewDecoder(w.Body).Decode(&status)
+	if err := json.NewDecoder(w.Body).Decode(&status); err != nil {
+		t.Fatalf("decode status: %v", err)
+	}
 	if status["max_sessions"] != float64(1000) {
 		t.Errorf("max_sessions = %v, want 1000", status["max_sessions"])
 	}
@@ -638,7 +640,9 @@ func TestRESTHandler_Sessions(t *testing.T) {
 		Sessions []Session `json:"sessions"`
 		Count    int       `json:"count"`
 	}
-	json.NewDecoder(w.Body).Decode(&listResp)
+	if err := json.NewDecoder(w.Body).Decode(&listResp); err != nil {
+		t.Fatalf("decode list response: %v", err)
+	}
 	if listResp.Count != 1 {
 		t.Errorf("count = %d, want 1 (only own sessions)", listResp.Count)
 	}
@@ -706,7 +710,9 @@ func TestRESTHandler_Usage(t *testing.T) {
 	}
 
 	var report UsageReport
-	json.NewDecoder(w.Body).Decode(&report)
+	if err := json.NewDecoder(w.Body).Decode(&report); err != nil {
+		t.Fatalf("decode usage report: %v", err)
+	}
 	if report.TotalIn != 1000 {
 		t.Errorf("total_in = %d, want 1000", report.TotalIn)
 	}

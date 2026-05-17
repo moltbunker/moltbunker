@@ -106,7 +106,10 @@ func (r *AgentRuntime) Deploy(ctx context.Context, spec AgentSpec) (*AgentDeploy
 	spec.MCPTools = append(BuiltinMCPTools(), spec.MCPTools...)
 
 	// Generate memory bucket if not set
-	id := generateAgentID()
+	id, err := generateAgentID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate agent ID: %w", err)
+	}
 	if spec.MemoryBucket == "" {
 		spec.MemoryBucket = fmt.Sprintf("%s/%s/memory", r.config.MemoryBucketPrefix, id)
 	}
@@ -301,8 +304,10 @@ type RuntimeStats struct {
 	TotalInvocations int64 `json:"total_invocations"`
 }
 
-func generateAgentID() string {
+func generateAgentID() (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return "agent-" + hex.EncodeToString(b)[:12]
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate agent ID: %w", err)
+	}
+	return "agent-" + hex.EncodeToString(b)[:12], nil
 }

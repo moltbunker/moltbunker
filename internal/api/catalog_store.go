@@ -396,14 +396,6 @@ func (s *CatalogStore) hasTierLocked(id string) bool {
 
 // ── Validation ───────────────────────────────────────────────────────────────
 
-var catalogIDPattern = adminNodeIDPattern // reuse: 8-64 hex chars is too strict; override below
-
-func init() {
-	// Allow alphanumeric + hyphens for catalog IDs (e.g., "code-server", "sd-webui")
-	// Minimum 1 char, maximum 64 chars
-	catalogIDPattern = nil // unused, we validate inline
-}
-
 func validateID(id string) error {
 	if len(id) == 0 || len(id) > 64 {
 		return fmt.Errorf("id must be 1-64 characters")

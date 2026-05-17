@@ -395,7 +395,8 @@ func (d *DHT) peerIDToNode(peerID peer.ID) *types.Node {
 			if len(parts) > 1 {
 				portParts := strings.Split(parts[1], "/")
 				if len(portParts) > 0 {
-					fmt.Sscanf(portParts[0], "%d", &port)
+					// If parsing fails, port keeps its zero value, which is fine.
+					_, _ = fmt.Sscanf(portParts[0], "%d", &port)
 				}
 			}
 			break

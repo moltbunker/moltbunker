@@ -2,7 +2,6 @@ package api
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/moltbunker/moltbunker/internal/logging"
@@ -13,7 +12,6 @@ type DaemonBridge struct {
 	socketPath string
 	pool       chan *client.DaemonClient
 	poolSize   int
-	mu         sync.RWMutex
 }
 
 // NewDaemonBridge creates a new daemon bridge

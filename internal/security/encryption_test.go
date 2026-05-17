@@ -7,7 +7,9 @@ import (
 
 func TestEncryptDecryptChaCha20Poly1305(t *testing.T) {
 	key := make([]byte, 32) // ChaCha20Poly1305 requires 32-byte key
-	rand.Read(key)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	plaintext := []byte("test message for encryption")
 
@@ -32,7 +34,9 @@ func TestEncryptDecryptChaCha20Poly1305(t *testing.T) {
 
 func TestEncryptDecryptAES256GCM(t *testing.T) {
 	key := make([]byte, 32) // AES-256 requires 32-byte key
-	rand.Read(key)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	plaintext := []byte("test message for AES encryption")
 
@@ -57,10 +61,14 @@ func TestEncryptDecryptAES256GCM(t *testing.T) {
 
 func TestEncryptDecryptChaCha20Poly1305_WrongKey(t *testing.T) {
 	key1 := make([]byte, 32)
-	rand.Read(key1)
+	if _, err := rand.Read(key1); err != nil {
+		t.Fatalf("rand.Read key1: %v", err)
+	}
 
 	key2 := make([]byte, 32)
-	rand.Read(key2)
+	if _, err := rand.Read(key2); err != nil {
+		t.Fatalf("rand.Read key2: %v", err)
+	}
 
 	plaintext := []byte("test message")
 
@@ -77,10 +85,14 @@ func TestEncryptDecryptChaCha20Poly1305_WrongKey(t *testing.T) {
 
 func TestEncryptDecryptAES256GCM_WrongKey(t *testing.T) {
 	key1 := make([]byte, 32)
-	rand.Read(key1)
+	if _, err := rand.Read(key1); err != nil {
+		t.Fatalf("rand.Read key1: %v", err)
+	}
 
 	key2 := make([]byte, 32)
-	rand.Read(key2)
+	if _, err := rand.Read(key2); err != nil {
+		t.Fatalf("rand.Read key2: %v", err)
+	}
 
 	plaintext := []byte("test message")
 
@@ -118,7 +130,9 @@ func TestGenerateKey(t *testing.T) {
 
 func TestEncryptDecryptChaCha20Poly1305_EmptyMessage(t *testing.T) {
 	key := make([]byte, 32)
-	rand.Read(key)
+	if _, err := rand.Read(key); err != nil {
+		t.Fatalf("rand.Read: %v", err)
+	}
 
 	plaintext := []byte{}
 

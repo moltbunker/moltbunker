@@ -57,7 +57,9 @@ func TestTunnelRegistry_Unregister(t *testing.T) {
 	reg := NewTunnelRegistry()
 
 	sess := &TunnelSession{NodeID: testNodeID(1), Subdomain: "gone"}
-	reg.Register("gone", sess)
+	if err := reg.Register("gone", sess); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 	reg.Unregister("gone")
 
 	_, ok := reg.Lookup("gone")
@@ -76,7 +78,9 @@ func TestTunnelRegistry_CountForNodeID(t *testing.T) {
 
 	for i := 0; i < 3; i++ {
 		sub := string(rune('a'+i)) + "1234567"
-		reg.Register(sub, &TunnelSession{NodeID: nid, Subdomain: sub})
+		if err := reg.Register(sub, &TunnelSession{NodeID: nid, Subdomain: sub}); err != nil {
+			t.Fatalf("Register[%d]: %v", i, err)
+		}
 	}
 
 	if got := reg.CountForNodeID(nid); got != 3 {
@@ -88,8 +92,12 @@ func TestTunnelRegistry_UnregisterAll(t *testing.T) {
 	reg := NewTunnelRegistry()
 	nid := testNodeID(7)
 
-	reg.Register("sub1", &TunnelSession{NodeID: nid, Subdomain: "sub1"})
-	reg.Register("sub2", &TunnelSession{NodeID: nid, Subdomain: "sub2"})
+	if err := reg.Register("sub1", &TunnelSession{NodeID: nid, Subdomain: "sub1"}); err != nil {
+		t.Fatalf("Register sub1: %v", err)
+	}
+	if err := reg.Register("sub2", &TunnelSession{NodeID: nid, Subdomain: "sub2"}); err != nil {
+		t.Fatalf("Register sub2: %v", err)
+	}
 
 	removed := reg.UnregisterAll(nid)
 	if len(removed) != 2 {
@@ -130,7 +138,7 @@ func TestTunnelRegistry_ConcurrentAccess(t *testing.T) {
 			defer wg.Done()
 			nid := testNodeID(byte(idx))
 			sub, _ := reg.AssignRandomSubdomain()
-			reg.Register(sub, &TunnelSession{NodeID: nid, Subdomain: sub})
+			_ = reg.Register(sub, &TunnelSession{NodeID: nid, Subdomain: sub})
 			reg.Lookup(sub)
 			reg.CountForNodeID(nid)
 			reg.Unregister(sub)

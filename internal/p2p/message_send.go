@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"time"
+
+	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
 // sendLengthPrefixed sends data with a 4-byte length prefix
@@ -15,7 +17,11 @@ func (r *Router) sendLengthPrefixed(conn *tls.Conn, data []byte) error {
 	}
 
 	// Set write deadline
-	conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
+	if err := conn.SetWriteDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		logging.Warn("failed to set write deadline",
+			logging.Err(err),
+			logging.Component("p2p"))
+	}
 
 	// Write length prefix (4 bytes, big endian)
 	lengthBuf := make([]byte, 4)

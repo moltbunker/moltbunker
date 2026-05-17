@@ -99,7 +99,10 @@ func (s *Scheduler) CreateJob(ctx context.Context, owner string, cfg CrawlConfig
 		cfg.UserAgent = "MoltbunkerCrawler/1.0"
 	}
 
-	id := generateJobID()
+	id, err := generateJobID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate job ID: %w", err)
+	}
 	job := &CrawlJob{
 		ID:        id,
 		Owner:     owner,
@@ -321,8 +324,10 @@ type SchedulerStats struct {
 	TotalBytes        int64 `json:"total_bytes"`
 }
 
-func generateJobID() string {
+func generateJobID() (string, error) {
 	b := make([]byte, 16)
-	rand.Read(b)
-	return "crawl-" + hex.EncodeToString(b)[:12]
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("failed to generate job ID: %w", err)
+	}
+	return "crawl-" + hex.EncodeToString(b)[:12], nil
 }

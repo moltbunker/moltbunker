@@ -320,8 +320,12 @@ func TestMockRegistry_ListOwnedNames(t *testing.T) {
 	copy(depID1[:], []byte("dep-list-1"))
 	copy(depID2[:], []byte("dep-list-2"))
 
-	rc.Register(ctx, "list-one", depID1)
-	rc.Register(ctx, "list-two", depID2)
+	if _, err := rc.Register(ctx, "list-one", depID1); err != nil {
+		t.Fatalf("Register list-one: %v", err)
+	}
+	if _, err := rc.Register(ctx, "list-two", depID2); err != nil {
+		t.Fatalf("Register list-two: %v", err)
+	}
 
 	names, err := rc.ListOwnedNames(ctx, owner)
 	if err != nil {

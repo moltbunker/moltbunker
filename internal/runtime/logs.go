@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/util"
 )
 
@@ -117,7 +118,11 @@ func (lm *LogManager) CloseLog(containerID string) error {
 
 // DeleteLog deletes a container's log files
 func (lm *LogManager) DeleteLog(containerID string) error {
-	lm.CloseLog(containerID)
+	if err := lm.CloseLog(containerID); err != nil {
+		logging.Warn("failed to close log before delete",
+			logging.ContainerID(containerID),
+			logging.Err(err))
+	}
 
 	containerDir := filepath.Join(lm.logsDir, containerID)
 	return os.RemoveAll(containerDir)
@@ -329,11 +334,21 @@ func (lm *LogManager) followLogs(ctx context.Context, w io.Writer, stdoutPath, s
 	stderrFile, _ := os.Open(stderrPath)
 
 	if stdoutFile != nil {
-		stdoutFile.Seek(0, io.SeekEnd)
+		if _, err := stdoutFile.Seek(0, io.SeekEnd); err != nil {
+			logging.Warn("log seek to end failed",
+				"path", stdoutPath,
+				"err", err.Error(),
+				logging.Component("runtime"))
+		}
 		defer stdoutFile.Close()
 	}
 	if stderrFile != nil {
-		stderrFile.Seek(0, io.SeekEnd)
+		if _, err := stderrFile.Seek(0, io.SeekEnd); err != nil {
+			logging.Warn("log seek to end failed",
+				"path", stderrPath,
+				"err", err.Error(),
+				logging.Component("runtime"))
+		}
 		defer stderrFile.Close()
 	}
 
@@ -393,11 +408,21 @@ func (lm *LogManager) followLogsPoll(ctx context.Context, w io.Writer, stdoutPat
 	stderrFile, _ := os.Open(stderrPath)
 
 	if stdoutFile != nil {
-		stdoutFile.Seek(0, io.SeekEnd)
+		if _, err := stdoutFile.Seek(0, io.SeekEnd); err != nil {
+			logging.Warn("log seek to end failed",
+				"path", stdoutPath,
+				"err", err.Error(),
+				logging.Component("runtime"))
+		}
 		defer stdoutFile.Close()
 	}
 	if stderrFile != nil {
-		stderrFile.Seek(0, io.SeekEnd)
+		if _, err := stderrFile.Seek(0, io.SeekEnd); err != nil {
+			logging.Warn("log seek to end failed",
+				"path", stderrPath,
+				"err", err.Error(),
+				logging.Component("runtime"))
+		}
 		defer stderrFile.Close()
 	}
 

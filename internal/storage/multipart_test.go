@@ -81,9 +81,16 @@ func TestMultipart_ListParts(t *testing.T) {
 	mgr := NewMultipartManager(t.TempDir())
 	ctx := context.Background()
 
-	upload, _ := mgr.InitUpload(ctx, "bucket", "key", "w1", "")
-	mgr.UploadPart(ctx, upload.UploadID, 3, bytes.NewReader([]byte("c")))
-	mgr.UploadPart(ctx, upload.UploadID, 1, bytes.NewReader([]byte("a")))
+	upload, err := mgr.InitUpload(ctx, "bucket", "key", "w1", "")
+	if err != nil {
+		t.Fatalf("InitUpload: %v", err)
+	}
+	if _, err := mgr.UploadPart(ctx, upload.UploadID, 3, bytes.NewReader([]byte("c"))); err != nil {
+		t.Fatalf("UploadPart 3: %v", err)
+	}
+	if _, err := mgr.UploadPart(ctx, upload.UploadID, 1, bytes.NewReader([]byte("a"))); err != nil {
+		t.Fatalf("UploadPart 1: %v", err)
+	}
 
 	parts, err := mgr.ListParts(upload.UploadID)
 	if err != nil {
@@ -105,15 +112,20 @@ func TestMultipart_AbortUpload(t *testing.T) {
 	mgr := NewMultipartManager(t.TempDir())
 	ctx := context.Background()
 
-	upload, _ := mgr.InitUpload(ctx, "bucket", "key", "w1", "")
-	mgr.UploadPart(ctx, upload.UploadID, 1, bytes.NewReader([]byte("data")))
+	upload, err := mgr.InitUpload(ctx, "bucket", "key", "w1", "")
+	if err != nil {
+		t.Fatalf("InitUpload: %v", err)
+	}
+	if _, err := mgr.UploadPart(ctx, upload.UploadID, 1, bytes.NewReader([]byte("data"))); err != nil {
+		t.Fatalf("UploadPart: %v", err)
+	}
 
 	if err := mgr.AbortUpload(ctx, upload.UploadID); err != nil {
 		t.Fatalf("AbortUpload: %v", err)
 	}
 
 	// Should be gone
-	_, err := mgr.ListParts(upload.UploadID)
+	_, err = mgr.ListParts(upload.UploadID)
 	if err == nil {
 		t.Error("listing parts after abort should fail")
 	}
@@ -123,9 +135,15 @@ func TestMultipart_ListUploads(t *testing.T) {
 	mgr := NewMultipartManager(t.TempDir())
 	ctx := context.Background()
 
-	mgr.InitUpload(ctx, "bucket-a", "key1", "w1", "")
-	mgr.InitUpload(ctx, "bucket-a", "key2", "w1", "")
-	mgr.InitUpload(ctx, "bucket-b", "key3", "w1", "")
+	if _, err := mgr.InitUpload(ctx, "bucket-a", "key1", "w1", ""); err != nil {
+		t.Fatalf("InitUpload bucket-a/key1: %v", err)
+	}
+	if _, err := mgr.InitUpload(ctx, "bucket-a", "key2", "w1", ""); err != nil {
+		t.Fatalf("InitUpload bucket-a/key2: %v", err)
+	}
+	if _, err := mgr.InitUpload(ctx, "bucket-b", "key3", "w1", ""); err != nil {
+		t.Fatalf("InitUpload bucket-b/key3: %v", err)
+	}
 
 	uploads := mgr.ListUploads("bucket-a")
 	if len(uploads) != 2 {
@@ -142,10 +160,15 @@ func TestMultipart_ETagMismatch(t *testing.T) {
 	mgr := NewMultipartManager(t.TempDir())
 	ctx := context.Background()
 
-	upload, _ := mgr.InitUpload(ctx, "bucket", "key", "w1", "")
-	mgr.UploadPart(ctx, upload.UploadID, 1, bytes.NewReader([]byte("data")))
+	upload, err := mgr.InitUpload(ctx, "bucket", "key", "w1", "")
+	if err != nil {
+		t.Fatalf("InitUpload: %v", err)
+	}
+	if _, err := mgr.UploadPart(ctx, upload.UploadID, 1, bytes.NewReader([]byte("data"))); err != nil {
+		t.Fatalf("UploadPart: %v", err)
+	}
 
-	_, _, _, err := mgr.CompleteUpload(ctx, upload.UploadID, []CompletedPart{
+	_, _, _, err = mgr.CompleteUpload(ctx, upload.UploadID, []CompletedPart{
 		{PartNumber: 1, ETag: "wrong-etag"},
 	})
 	if err == nil {

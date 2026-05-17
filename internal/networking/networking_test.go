@@ -1,6 +1,7 @@
 package networking
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -67,7 +68,9 @@ func TestPortAllocator_IsAllocated(t *testing.T) {
 		t.Error("50000 should not be allocated yet")
 	}
 
-	pa.Allocate()
+	if _, err := pa.Allocate(); err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
 	if !pa.IsAllocated(50000) {
 		t.Error("50000 should be allocated")
 	}
@@ -80,8 +83,12 @@ func TestPortAllocator_Count(t *testing.T) {
 		t.Errorf("count = %d, want 0", pa.Count())
 	}
 
-	pa.Allocate()
-	pa.Allocate()
+	if _, err := pa.Allocate(); err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
+	if _, err := pa.Allocate(); err != nil {
+		t.Fatalf("Allocate: %v", err)
+	}
 	if pa.Count() != 2 {
 		t.Errorf("count = %d, want 2", pa.Count())
 	}
@@ -215,6 +222,9 @@ func TestNetworkManager_PortAllocation(t *testing.T) {
 // --- Fallback network tests (non-Linux) ---
 
 func TestFallbackNetwork_ContainerIP(t *testing.T) {
+	if runtime.GOOS == "linux" {
+		t.Skip("Linux uses linuxContainerNetwork; container IP is empty until Setup")
+	}
 	net := newContainerNetwork("test", []ExposedPort{
 		{ContainerPort: 80, HostPort: 8080},
 	})

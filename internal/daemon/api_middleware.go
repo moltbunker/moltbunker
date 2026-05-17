@@ -8,6 +8,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/util"
 )
 
@@ -59,14 +60,22 @@ func (s *APIServer) handleConnection(ctx context.Context, conn net.Conn) {
 		default:
 			// Check global rate limit first (shared across all connections)
 			if !s.globalLimiter.allow() {
-				s.sendError(encoder, 0, ErrRateLimited.Error())
+				if err := s.sendError(encoder, 0, ErrRateLimited.Error()); err != nil {
+					logging.Warn("failed to send rate limit error response",
+						logging.Err(err),
+						logging.Component("api"))
+				}
 				// Close connection when rate limited to prevent infinite loop
 				return
 			}
 
 			// Check per-connection rate limit as additional protection
 			if !limiter.allow() {
-				s.sendError(encoder, 0, ErrRateLimited.Error())
+				if err := s.sendError(encoder, 0, ErrRateLimited.Error()); err != nil {
+					logging.Warn("failed to send rate limit error response",
+						logging.Err(err),
+						logging.Component("api"))
+				}
 				// Close connection when rate limited to prevent infinite loop
 				return
 			}
@@ -78,10 +87,18 @@ func (s *APIServer) handleConnection(ctx context.Context, conn net.Conn) {
 				}
 				// Check if it's a size limit error
 				if err.Error() == "unexpected EOF" {
-					s.sendError(encoder, 0, ErrRequestTooLarge.Error())
+					if sendErr := s.sendError(encoder, 0, ErrRequestTooLarge.Error()); sendErr != nil {
+						logging.Warn("failed to send request-too-large error response",
+							logging.Err(sendErr),
+							logging.Component("api"))
+					}
 					return
 				}
-				s.sendError(encoder, 0, "invalid request")
+				if sendErr := s.sendError(encoder, 0, "invalid request"); sendErr != nil {
+					logging.Warn("failed to send invalid-request error response",
+						logging.Err(sendErr),
+						logging.Component("api"))
+				}
 				return
 			}
 

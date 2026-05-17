@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"bytes"
+	"context"
 	"encoding/hex"
 	"io"
 	"os"
@@ -1205,7 +1206,7 @@ func TestLogManager_ReadLogs_NoLogs(t *testing.T) {
 		t.Fatalf("NewLogManager failed: %v", err)
 	}
 
-	reader, err := lm.ReadLogs(nil, "nonexistent", false, 0)
+	reader, err := lm.ReadLogs(context.TODO(), "nonexistent", false, 0)
 	if err != nil {
 		t.Fatalf("ReadLogs failed: %v", err)
 	}

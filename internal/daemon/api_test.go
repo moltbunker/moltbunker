@@ -118,7 +118,9 @@ func newTestAPIServer(t *testing.T) *TestAPIServer {
 
 	tmpDir := t.TempDir()
 	dataDir := filepath.Join(tmpDir, "data")
-	os.MkdirAll(dataDir, 0755)
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
 
 	// Use /tmp directly with a short name to avoid macOS socket path length limits (104 chars)
 	socketPath := fmt.Sprintf("/tmp/mb-%d.sock", time.Now().UnixNano())
@@ -160,7 +162,10 @@ func (ts *TestAPIServer) startTestServer(t *testing.T) {
 
 	// Ensure directory exists
 	dir := filepath.Dir(ts.socketPath)
-	os.MkdirAll(dir, 0700)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		ts.mu.Unlock()
+		t.Fatalf("MkdirAll: %v", err)
+	}
 	os.Remove(ts.socketPath)
 
 	listener, err := net.Listen("unix", ts.socketPath)
@@ -382,7 +387,7 @@ func sendRequest(t *testing.T, socketPath string, req *APIRequest) *APIResponse 
 func TestAPIServer_StatusEndpoint(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	// Give server time to start
 	time.Sleep(50 * time.Millisecond)
@@ -435,7 +440,7 @@ func TestAPIServer_StatusEndpoint(t *testing.T) {
 func TestAPIServer_DeployValidRequest(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -491,7 +496,7 @@ func TestAPIServer_DeployValidRequest(t *testing.T) {
 func TestAPIServer_DeployInvalidImageName(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -534,7 +539,7 @@ func TestAPIServer_DeployInvalidImageName(t *testing.T) {
 func TestAPIServer_DeployNegativeResourceLimits(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -595,7 +600,7 @@ func TestAPIServer_DeployNegativeResourceLimits(t *testing.T) {
 func TestAPIServer_RateLimiting(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -674,7 +679,7 @@ func TestAPIServer_RateLimiting(t *testing.T) {
 func TestAPIServer_HealthEndpoint(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -713,7 +718,7 @@ func TestAPIServer_HealthEndpoint(t *testing.T) {
 func TestAPIServer_HealthEndpointWithContainers(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -770,7 +775,7 @@ func TestAPIServer_HealthEndpointWithContainers(t *testing.T) {
 func TestAPIServer_UnknownMethod(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -795,7 +800,7 @@ func TestAPIServer_UnknownMethod(t *testing.T) {
 func TestAPIServer_MultipleRequests(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -839,7 +844,7 @@ func TestAPIServer_MultipleRequests(t *testing.T) {
 func TestAPIServer_ConcurrentConnections(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -877,7 +882,7 @@ func TestAPIServer_ConcurrentConnections(t *testing.T) {
 func TestAPIServer_InvalidJSON(t *testing.T) {
 	ts := newTestAPIServer(t)
 	ts.startTestServer(t)
-	defer ts.Stop()
+	defer func() { _ = ts.Stop() }()
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -888,11 +893,13 @@ func TestAPIServer_InvalidJSON(t *testing.T) {
 	defer conn.Close()
 
 	// Send invalid JSON
-	conn.Write([]byte("this is not valid json\n"))
+	if _, err := conn.Write([]byte("this is not valid json\n")); err != nil {
+		t.Fatalf("conn.Write: %v", err)
+	}
 
 	// Connection should be closed or return error
 	buf := make([]byte, 1024)
-	conn.SetReadDeadline(time.Now().Add(time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 	n, err := conn.Read(buf)
 	if err == nil && n > 0 {
 		// If we got a response, it might be an error response

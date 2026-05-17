@@ -177,6 +177,8 @@ func NewRedactingLogger(inner slog.Handler) *slog.Logger {
 
 // redactValue is a helper that redacts a value by its formatted string representation.
 // It is used for non-string slog values.
+//
+//nolint:unused
 func redactValue(v slog.Value) slog.Value {
 	str := fmt.Sprintf("%v", v.Any())
 	redacted := redactString(str)

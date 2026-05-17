@@ -66,7 +66,9 @@ func TestStoragePutGetRoundtrip(t *testing.T) {
 	defer output.Body.Close()
 
 	buf := new(bytes.Buffer)
-	buf.ReadFrom(output.Body)
+	if _, err := buf.ReadFrom(output.Body); err != nil {
+		t.Fatalf("ReadFrom: %v", err)
+	}
 	if buf.String() != "hello world" {
 		t.Fatalf("body = %q, want %q", buf.String(), "hello world")
 	}
