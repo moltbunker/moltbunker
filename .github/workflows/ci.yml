@@ -48,11 +48,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-go-
 
+      - name: Install DBus session helper
+        # The 99designs/keyring package's KWallet backend init() opens a
+        # session bus at package load time; runners don't provide one by
+        # default. dbus-run-session creates a transient session for tests.
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11
+
       - name: Download dependencies
         run: go mod download
 
       - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
+        run: dbus-run-session -- go test -v -race -coverprofile=coverage.out ./...
 
       - name: Upload coverage
         uses: codecov/codecov-action@v4
