@@ -248,8 +248,8 @@ func (hc *HealthChecker) Start(ctx context.Context) {
 	defer func() {
 		hc.mu.Lock()
 		hc.running = false
-		hc.mu.Unlock()
 		close(hc.doneCh)
+		hc.mu.Unlock()
 		logging.Info("health checker stopped")
 	}()
 

@@ -3,6 +3,7 @@ package snapshot
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/moltbunker/moltbunker/internal/logging"
@@ -53,8 +54,11 @@ type checkpointSchedule struct {
 	provider       StateProvider
 	lastCheckpoint time.Time
 	nextCheckpoint time.Time
-	ticker         *time.Ticker
-	stopCh         chan struct{}
+	// ticker is read by checkpointLoop in a select case while SetInterval
+	// may replace it under the parent Checkpointer's lock. Atomic pointer
+	// lets the read and the swap proceed without racing.
+	ticker atomic.Pointer[time.Ticker]
+	stopCh chan struct{}
 }
 
 // NewCheckpointer creates a new checkpointer
@@ -113,8 +117,8 @@ func (c *Checkpointer) Stop() {
 
 	// Stop all schedules
 	for _, sched := range c.schedules {
-		if sched.ticker != nil {
-			sched.ticker.Stop()
+		if t := sched.ticker.Load(); t != nil {
+			t.Stop()
 		}
 		close(sched.stopCh)
 	}
@@ -147,9 +151,9 @@ func (c *Checkpointer) RegisterContainer(provider StateProvider) error {
 		provider:       provider,
 		lastCheckpoint: time.Time{},
 		nextCheckpoint: time.Now().Add(interval),
-		ticker:         time.NewTicker(interval),
 		stopCh:         make(chan struct{}),
 	}
+	sched.ticker.Store(time.NewTicker(interval))
 	c.schedules[containerID] = sched
 
 	// Start checkpoint goroutine
@@ -173,8 +177,8 @@ func (c *Checkpointer) UnregisterContainer(containerID string) {
 	delete(c.containers, containerID)
 
 	if sched, exists := c.schedules[containerID]; exists {
-		if sched.ticker != nil {
-			sched.ticker.Stop()
+		if t := sched.ticker.Load(); t != nil {
+			t.Stop()
 		}
 		close(sched.stopCh)
 		delete(c.schedules, containerID)
@@ -198,12 +202,14 @@ func (c *Checkpointer) UnregisterContainer(containerID string) {
 // checkpointLoop runs periodic checkpoints for a container
 func (c *Checkpointer) checkpointLoop(sched *checkpointSchedule) {
 	for {
+		// Reload the ticker each iteration so SetInterval can swap it in.
+		t := sched.ticker.Load()
 		select {
 		case <-sched.stopCh:
 			return
 		case <-c.stopCh:
 			return
-		case <-sched.ticker.C:
+		case <-t.C:
 			c.createCheckpoint(sched)
 		}
 	}
@@ -325,11 +331,11 @@ func (c *Checkpointer) SetInterval(containerID string, seconds int) {
 	defer c.mu.Unlock()
 
 	if sched, exists := c.schedules[containerID]; exists {
-		if sched.ticker != nil {
-			sched.ticker.Stop()
+		if old := sched.ticker.Load(); old != nil {
+			old.Stop()
 		}
 		interval := time.Duration(seconds) * time.Second
-		sched.ticker = time.NewTicker(interval)
+		sched.ticker.Store(time.NewTicker(interval))
 		sched.nextCheckpoint = time.Now().Add(interval)
 
 		logging.Info("checkpoint interval changed",
