@@ -14,5 +14,9 @@ func TestMain(m *testing.M) {
 		// syscall.syscall6 (kqueue), so readEvents isn't the top frame.
 		goleak.IgnoreTopFunction("github.com/ethereum/go-ethereum/accounts/keystore.(*watcher).loop"),
 		goleak.IgnoreAnyFunction("github.com/fsnotify/fsnotify.(*Watcher).readEvents"),
+		// 99designs/keyring's KWallet backend opens a DBus connection at
+		// package init (kwallet.go); the resulting inWorker goroutine runs
+		// for the lifetime of the process and has no exposed shutdown.
+		goleak.IgnoreAnyFunction("github.com/godbus/dbus.(*Conn).inWorker"),
 	)
 }
