@@ -537,16 +537,6 @@ func (ec *EscrowContract) GetEscrow(ctx context.Context, jobID [32]byte) (*Escro
 
 	// go-ethereum's abi binding unpacks tuple return values
 	// Try to parse the struct fields from the result
-	type reservationResult struct {
-		Requester      common.Address
-		TotalAmount    *big.Int
-		ReleasedAmount *big.Int
-		Duration       *big.Int
-		StartTime      *big.Int
-		Status         uint8
-		Providers      [3]common.Address
-	}
-
 	if res, ok := result[0].(struct {
 		Requester      common.Address
 		TotalAmount    *big.Int

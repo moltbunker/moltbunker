@@ -40,9 +40,6 @@ const (
 
 	// maxMissedHeartbeats is how many consecutive missed pongs trigger teardown.
 	maxMissedHeartbeats = 3
-
-	// idleReapTimeout is how long a tunnel can be idle before being reaped.
-	idleReapTimeout = 10 * time.Minute
 )
 
 // ReverseServerOption configures a ReverseServer.

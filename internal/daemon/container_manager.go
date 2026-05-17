@@ -1832,6 +1832,8 @@ func (cm *ContainerManager) removeServiceExposure(containerID string) {
 
 // publishMoltServiceExposure writes a Molt deployment's service entry to gossip.
 // Molt deployments expose port 80 (HTTP handler) and are marked with RuntimeType "molt".
+//
+//nolint:unused
 func (cm *ContainerManager) publishMoltServiceExposure(deploymentID string) {
 	if cm.gossip == nil || cm.node == nil || cm.node.nodeInfo == nil {
 		return

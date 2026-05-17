@@ -17,9 +17,6 @@ import (
 const (
 	// maxRegistrationAge is the maximum age of a registration request.
 	maxRegistrationAge = 60 * time.Second
-
-	// reconnTokenMaxAge is the maximum age of a reconnection token.
-	reconnTokenMaxAge = 24 * time.Hour
 )
 
 // ValidateRegistration validates a TunnelRegisterRequest.

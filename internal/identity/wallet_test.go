@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"crypto/ecdsa"
 	"os"
 	"path/filepath"
 	"testing"
@@ -308,9 +307,3 @@ func toHex(b []byte) string {
 	return string(result)
 }
 
-// ecdsaKeysEqual compares two ECDSA private keys.
-func ecdsaKeysEqual(a, b *ecdsa.PrivateKey) bool {
-	return a.D.Cmp(b.D) == 0 &&
-		a.PublicKey.X.Cmp(b.PublicKey.X) == 0 &&
-		a.PublicKey.Y.Cmp(b.PublicKey.Y) == 0
-}

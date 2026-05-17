@@ -586,6 +586,8 @@ func (s *Server) withCORS(handler http.HandlerFunc) http.HandlerFunc {
 }
 
 // withMiddleware wraps a handler with common middleware
+//
+//nolint:unused
 func (s *Server) withMiddleware(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// CORS

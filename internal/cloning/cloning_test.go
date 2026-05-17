@@ -10,49 +10,6 @@ import (
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
-// --- Mock implementations for testing ---
-
-type mockNodeSelector struct {
-	nodes []*types.Node
-	err   error
-}
-
-func (m *mockNodeSelector) FindNodes(ctx context.Context, region string, excludeNodes []types.NodeID) ([]*types.Node, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.nodes, nil
-}
-
-func (m *mockNodeSelector) GetNodeByID(ctx context.Context, nodeID types.NodeID) (*types.Node, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	for _, n := range m.nodes {
-		if n.ID == nodeID {
-			return n, nil
-		}
-	}
-	return nil, fmt.Errorf("node not found")
-}
-
-type mockDeployer struct {
-	deployErr error
-	verifyErr error
-}
-
-func (m *mockDeployer) DeployClone(ctx context.Context, clone *Clone, stateData []byte) error {
-	if m.deployErr != nil {
-		return m.deployErr
-	}
-	clone.TargetID = "target-" + clone.ID
-	return nil
-}
-
-func (m *mockDeployer) VerifyDeployment(ctx context.Context, clone *Clone) error {
-	return m.verifyErr
-}
-
 func makeNodeID(seed byte) types.NodeID {
 	var id types.NodeID
 	for i := range id {

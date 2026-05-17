@@ -6,11 +6,9 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
-	"encoding/hex"
 	"fmt"
 	"math/big"
 	"net"
@@ -55,11 +53,6 @@ func generateTestCert(t *testing.T) tls.Certificate {
 		PrivateKey:  key,
 		Leaf:        cert,
 	}
-}
-
-func nodeIDFromCert(cert tls.Certificate) string {
-	h := sha256.Sum256(cert.Leaf.RawSubjectPublicKeyInfo)
-	return hex.EncodeToString(h[:])
 }
 
 // TestReverseServerClient_EndToEnd tests the full reverse tunnel flow:
