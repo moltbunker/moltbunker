@@ -154,23 +154,28 @@ func (m *WalletAuthManager) VerifySignature(message, signature, claimedAddress s
 }
 
 // VerifyInlineAuth verifies inline wallet authentication headers
-// This is for stateless requests where the client signs each request
+// This is for stateless requests where the client signs each request.
+// The message format is strictly "moltbunker-auth:{timestamp}".
 func (m *WalletAuthManager) VerifyInlineAuth(walletAddr, signature, message string) (string, error) {
-	// For inline auth, verify the message timestamp is recent
-	// The message format is: "moltbunker-auth:{timestamp}"
-	if strings.HasPrefix(message, "moltbunker-auth:") {
-		parts := strings.Split(message, ":")
-		if len(parts) >= 2 {
-			var timestamp int64
-			// Best-effort parse; failure leaves timestamp=0, which the bounds check below rejects.
-			_, _ = fmt.Sscanf(parts[1], "%d", &timestamp)
+	// Require the dedicated inline-auth prefix so signatures over messages
+	// produced for other contexts cannot satisfy this endpoint.
+	if !strings.HasPrefix(message, "moltbunker-auth:") {
+		return "", fmt.Errorf("invalid auth message format")
+	}
 
-			// Check if timestamp is within 5 minutes
-			now := time.Now().Unix()
-			if now-timestamp > 300 || timestamp-now > 60 {
-				return "", fmt.Errorf("auth message timestamp expired or invalid")
-			}
-		}
+	parts := strings.Split(message, ":")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid auth message format")
+	}
+
+	var timestamp int64
+	// Best-effort parse; failure leaves timestamp=0, which the bounds check below rejects.
+	_, _ = fmt.Sscanf(parts[1], "%d", &timestamp)
+
+	// Check if timestamp is within 5 minutes
+	now := time.Now().Unix()
+	if now-timestamp > 300 || timestamp-now > 60 {
+		return "", fmt.Errorf("auth message timestamp expired or invalid")
 	}
 
 	return m.VerifySignature(message, signature, walletAddr)

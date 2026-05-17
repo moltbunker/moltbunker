@@ -428,8 +428,19 @@ func (r *Router) HandleMessage(ctx context.Context, msg *types.Message, from *ty
 		return fmt.Errorf("outdated protocol version: %d (minimum supported: %d)", msg.Version, types.MinSupportedVersion)
 	}
 
-	// 5. Verify message signature if we have a key manager and the message has a signature
-	if r.keyManager != nil && len(msg.Signature) > 0 {
+	// 5. Verify message signature. When a key manager is available, every
+	// inbound message must carry a non-empty signature that verifies — an
+	// empty signature is no longer treated as "skip verification".
+	if r.keyManager != nil {
+		if len(msg.Signature) == 0 {
+			logging.Warn("rejecting message with missing signature",
+				"message_type", string(msg.Type),
+				logging.Component("router"))
+			if r.peerScorer != nil && from != nil {
+				r.peerScorer.RecordEvent(from.ID, PeerEventInvalidMessage)
+			}
+			return fmt.Errorf("missing message signature")
+		}
 		signableBytes := msg.SignableBytes()
 		if signableBytes == nil {
 			return fmt.Errorf("failed to compute signable bytes for verification")

@@ -73,6 +73,12 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	// Wrap the structured logger with the redacting handler before any
+	// subsystem starts emitting attributes. Anything that looks like a
+	// private key, wallet keystore JSON, API key, or session token is
+	// scrubbed before reaching the underlying handler.
+	logging.EnableRedaction()
+
 	// Override with command-line flags
 	if *port != 0 {
 		cfg.Daemon.Port = *port
