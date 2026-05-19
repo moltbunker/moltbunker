@@ -100,6 +100,22 @@ type SecureContainerConfig struct {
 	Command         []string
 	Args            []string
 	BindMounts      []BindMount // Host paths bind-mounted into the container
+
+	// R3 — image signature verification.
+	// If TrustPolicy.RequireSignature is true, ImageSignature must verify
+	// against one of TrustPolicy.TrustedPublishers before the container is
+	// created. Leave both zero-valued to opt out (current default).
+	ImageSignature *ImageSignature
+	TrustPolicy    TrustPolicy
+
+	// R4 — image vulnerability scanning.
+	// If Scanner is non-nil it is invoked after the image is fetched and
+	// before the container spec is built. Findings are evaluated against
+	// ScanPolicy; a policy violation aborts container creation.
+	// Use NewNoopScanner() to satisfy the interface when scanning is
+	// disabled by daemon config.
+	Scanner    ImageScanner
+	ScanPolicy ScanPolicy
 }
 
 // CreateContainer creates a new container
@@ -221,12 +237,42 @@ func (cc *ContainerdClient) CreateContainerWithSpec(ctx context.Context, id stri
 func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config SecureContainerConfig) (*ManagedContainer, error) {
 	ctx = cc.WithNamespace(ctx)
 
-	// Get or pull image
+	// Get or pull image — with R3 signature verification when a policy is set.
 	image, err := cc.GetImage(ctx, config.ImageRef)
 	if err != nil {
-		image, err = cc.PullImage(ctx, config.ImageRef)
+		if config.TrustPolicy.RequireSignature || config.ImageSignature != nil {
+			image, err = cc.PullImageVerified(ctx, config.ImageRef, config.ImageSignature, config.TrustPolicy, nil)
+		} else {
+			image, err = cc.PullImage(ctx, config.ImageRef)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to get image: %w", err)
+		}
+	} else if config.TrustPolicy.RequireSignature || config.ImageSignature != nil {
+		// Image already in local content store; still enforce the policy on
+		// its digest. We do NOT delete on failure here because other callers
+		// may legitimately have this image without a signature.
+		digest := ImageDigest(image.Target().Digest.String())
+		verifier := NewEdImageVerifier()
+		if verifyErr := verifier.Verify(digest, config.ImageSignature, config.TrustPolicy); verifyErr != nil {
+			return nil, fmt.Errorf("image %s (digest %s) failed signature verification: %w", config.ImageRef, digest, verifyErr)
+		}
+	}
+
+	// R4 — vulnerability scan gate. Runs after the image is local but before
+	// any container resource is allocated.
+	if config.Scanner != nil {
+		report, scanErr := config.Scanner.Scan(ctx, config.ImageRef)
+		if scanErr != nil {
+			return nil, fmt.Errorf("image %s scan failed: %w", config.ImageRef, scanErr)
+		}
+		if config.ScanPolicy.RequireScan && (report == nil || len(report.Vulnerabilities) == 0 && config.Scanner.ID() == "noop") {
+			return nil, fmt.Errorf("image %s: %w", config.ImageRef, ErrScanRequired)
+		}
+		if report != nil {
+			if _, policyErr := config.ScanPolicy.Apply(report.Vulnerabilities); policyErr != nil {
+				return nil, fmt.Errorf("image %s: %w", config.ImageRef, policyErr)
+			}
 		}
 	}
 
