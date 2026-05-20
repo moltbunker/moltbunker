@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/namespaces"
 
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
@@ -31,6 +33,27 @@ type ContainerdClient struct {
 	mu          sync.RWMutex
 	logManager  *LogManager
 	logsDir     string
+
+	// R20 — per-tenant security profile persistence. When non-nil, the
+	// runtime persists each container's profile on create and reads it back
+	// on LoadExistingContainers so daemon restart cannot downgrade tenant
+	// policy to the default. Nil means "feature off"; LoadExistingContainers
+	// falls back to types.DeploymentSecurityProfile().
+	profileStore *ProfileStore
+}
+
+// SetProfileStore attaches a ProfileStore to the client. After this call,
+// CreateSecureContainer writes the container's profile to disk, and
+// LoadExistingContainers reads the stored profile when reattaching to a
+// container (falling back to the default profile when no sidecar exists).
+//
+// The daemon zone constructs the ProfileStore with the data_dir path and
+// passes it here during startup. Setting nil disables persistence (default
+// behavior).
+func (cc *ContainerdClient) SetProfileStore(s *ProfileStore) {
+	cc.mu.Lock()
+	cc.profileStore = s
+	cc.mu.Unlock()
 }
 
 // ManagedContainer represents a container managed by the runtime
@@ -173,13 +196,29 @@ func (cc *ContainerdClient) LoadExistingContainers(ctx context.Context) error {
 			continue
 		}
 
+		// R20 — try to reload the per-container security profile from disk.
+		// Fall back to default if there is no stored profile or if the read
+		// fails (logs a warning but does not block the daemon from starting).
+		profile := types.DeploymentSecurityProfile()
+		if cc.profileStore != nil {
+			stored, readErr := cc.profileStore.Read(container.ID())
+			switch {
+			case readErr == nil && stored != nil:
+				profile = stored
+			case readErr != nil && !errors.Is(readErr, ErrProfileNotFound):
+				logging.Warn("profile store: failed to read profile; falling back to default",
+					logging.ContainerID(container.ID()),
+					logging.Err(readErr))
+			}
+		}
+
 		managed := &ManagedContainer{
 			ID:               container.ID(),
 			Image:            info.Image,
 			Container:        container,
 			Status:           types.ContainerStatusStopped,
 			CreatedAt:        info.CreatedAt,
-			SecurityEnforcer: NewSecurityEnforcer(types.DeploymentSecurityProfile()),
+			SecurityEnforcer: NewSecurityEnforcer(profile),
 		}
 
 		// Check if task is running
