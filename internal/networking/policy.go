@@ -23,6 +23,7 @@ package networking
 import (
 	"errors"
 	"fmt"
+	"net"
 	"sync"
 )
 
@@ -198,10 +199,16 @@ func (p NetworkPolicy) Validate(selfDeploymentID string) error {
 		if c == "" {
 			return fmt.Errorf("%w: empty egress allow CIDR", ErrInvalidPolicy)
 		}
+		if _, _, err := net.ParseCIDR(c); err != nil {
+			return fmt.Errorf("%w: malformed egress allow CIDR %q: %v", ErrInvalidPolicy, c, err)
+		}
 	}
 	for _, c := range p.EgressDeny {
 		if c == "" {
 			return fmt.Errorf("%w: empty egress deny CIDR", ErrInvalidPolicy)
+		}
+		if _, _, err := net.ParseCIDR(c); err != nil {
+			return fmt.Errorf("%w: malformed egress deny CIDR %q: %v", ErrInvalidPolicy, c, err)
 		}
 	}
 	return nil
@@ -210,3 +217,152 @@ func (p NetworkPolicy) Validate(selfDeploymentID string) error {
 // ErrInvalidPolicy is returned by NetworkPolicy.Validate when the policy is
 // malformed.
 var ErrInvalidPolicy = errors.New("invalid network policy")
+
+// R14 — egress evaluation.
+//
+// EvaluateEgress applies a policy to a single outbound destination IP and
+// returns whether the destination is permitted. This is the pure-function
+// counterpart of what the nftables rule set does in-kernel — keeping it as
+// Go logic means we can unit-test the precedence semantics in isolation, and
+// it lets the daemon perform pre-deploy "would this destination be reachable?"
+// checks without actually wiring nft rules.
+
+// EgressDecision is the outcome of evaluating an outbound destination against
+// a NetworkPolicy's egress rules.
+type EgressDecision int
+
+const (
+	// EgressAllowed means the destination is permitted.
+	EgressAllowed EgressDecision = iota
+	// EgressBlocked means the destination is denied.
+	EgressBlocked
+)
+
+// String returns "ALLOW" or "BLOCK" for log lines.
+func (d EgressDecision) String() string {
+	if d == EgressAllowed {
+		return "ALLOW"
+	}
+	return "BLOCK"
+}
+
+// EvaluateEgress applies the policy to a single outbound destination IP. The
+// precedence rules are:
+//
+//  1. Explicit deny — if any EgressDeny CIDR contains ip, return EgressBlocked.
+//  2. Explicit allow — if any EgressAllow CIDR contains ip, return EgressAllowed.
+//  3. Default — fall back to EgressMode.
+//
+// "Deny beats allow, explicit beats default." A nil or unparseable ip returns
+// EgressBlocked (fail-closed for bad input).
+//
+// The CIDRs in the policy must have been validated via Validate() first;
+// EvaluateEgress assumes well-formed CIDRs and silently skips malformed ones.
+func (p NetworkPolicy) EvaluateEgress(ip net.IP) EgressDecision {
+	if ip == nil {
+		return EgressBlocked
+	}
+
+	for _, c := range p.EgressDeny {
+		if _, network, err := net.ParseCIDR(c); err == nil && network.Contains(ip) {
+			return EgressBlocked
+		}
+	}
+	for _, c := range p.EgressAllow {
+		if _, network, err := net.ParseCIDR(c); err == nil && network.Contains(ip) {
+			return EgressAllowed
+		}
+	}
+	if p.EgressMode == EgressDefaultDeny {
+		return EgressBlocked
+	}
+	return EgressAllowed
+}
+
+// EvaluateEgressString is a convenience wrapper that parses ipStr (an IPv4 or
+// IPv6 address, not a CIDR) before delegating to EvaluateEgress. Returns
+// EgressBlocked if ipStr is unparseable.
+func (p NetworkPolicy) EvaluateEgressString(ipStr string) EgressDecision {
+	return p.EvaluateEgress(net.ParseIP(ipStr))
+}
+
+// ComputeEgressRules translates a NetworkPolicy into the nftables rule lines
+// that would be installed for one container. Returned in the order they
+// should be applied — earlier rules match first, so explicit deny entries
+// come BEFORE allow entries, which come before the default fallback.
+//
+// The output is the exact text intended for `nft -f -`; tests can assert on
+// it without running real nft. When the enforcer is wired for production
+// (deferred until R11 — Linux runtime CI is in place), it pipes these lines
+// to the nft binary.
+//
+// Empty deploymentID or containerIP returns nil.
+func ComputeEgressRules(deploymentID, containerIP string, policy NetworkPolicy) []string {
+	if deploymentID == "" || containerIP == "" {
+		return nil
+	}
+
+	chain := "mb_" + deploymentID + "_out"
+	var rules []string
+
+	// 1. Explicit deny CIDRs (highest precedence)
+	for _, c := range policy.EgressDeny {
+		rules = append(rules, fmt.Sprintf(
+			"add rule inet moltbunker_policy %s ip saddr %s ip daddr %s drop",
+			chain, containerIP, c,
+		))
+	}
+
+	// 2. Explicit allow CIDRs
+	for _, c := range policy.EgressAllow {
+		rules = append(rules, fmt.Sprintf(
+			"add rule inet moltbunker_policy %s ip saddr %s ip daddr %s accept",
+			chain, containerIP, c,
+		))
+	}
+
+	// 3. Default fallback
+	switch policy.EgressMode {
+	case EgressDefaultDeny:
+		rules = append(rules, fmt.Sprintf(
+			"add rule inet moltbunker_policy %s ip saddr %s drop",
+			chain, containerIP,
+		))
+	case EgressDefaultAllow:
+		rules = append(rules, fmt.Sprintf(
+			"add rule inet moltbunker_policy %s ip saddr %s accept",
+			chain, containerIP,
+		))
+	}
+
+	return rules
+}
+
+// DefaultRestrictiveEgressPolicy returns a baseline EgressDefaultDeny policy
+// with carve-outs for common safe destinations (loopback, DNS via Cloudflare
+// 1.1.1.1 and Google 8.8.8.8). Tenants who want full lockdown should start
+// here and remove allow entries; tenants who want broad access should NOT
+// start here.
+//
+// This is intentionally a starting-point, not a one-size-fits-all default —
+// the actual default in DefaultNetworkPolicy() remains EgressDefaultAllow
+// for backwards compatibility.
+func DefaultRestrictiveEgressPolicy() NetworkPolicy {
+	return NetworkPolicy{
+		EgressMode: EgressDefaultDeny,
+		EgressAllow: []string{
+			"1.1.1.1/32", // Cloudflare DNS
+			"8.8.8.8/32", // Google DNS
+		},
+		// Block cloud-instance metadata + RFC1918 by default to prevent
+		// SSRF / lateral-from-cloud-host pivots even if a user later adds a
+		// broad allow.
+		EgressDeny: []string{
+			"169.254.169.254/32", // AWS / GCP / Azure IMDS
+			"169.254.0.0/16",     // link-local
+			"10.0.0.0/8",         // RFC1918
+			"172.16.0.0/12",      // RFC1918
+			"192.168.0.0/16",     // RFC1918
+		},
+	}
+}

@@ -20,8 +20,9 @@ import (
 type NftPolicyEnforcer struct {
 	store *PolicyStore
 
-	mu      sync.Mutex
-	applied map[string]bool // deploymentID → has rules installed
+	mu       sync.Mutex
+	applied  map[string]bool     // deploymentID → has rules installed
+	lastRule map[string][]string // deploymentID → last computed nft rule set (for audit/debug)
 }
 
 // NewNftPolicyEnforcer returns a Linux-native enforcer backed by `store`.
@@ -30,8 +31,9 @@ func NewNftPolicyEnforcer(store *PolicyStore) *NftPolicyEnforcer {
 		store = NewPolicyStore()
 	}
 	return &NftPolicyEnforcer{
-		store:   store,
-		applied: make(map[string]bool),
+		store:    store,
+		applied:  make(map[string]bool),
+		lastRule: make(map[string][]string),
 	}
 }
 
@@ -72,8 +74,13 @@ func (e *NftPolicyEnforcer) Apply(deploymentID, containerIP string, policy Netwo
 	//       if EgressDefaultAllow: only drop EgressDeny CIDRs.
 	_ = allowedIPs
 
+	// R14 — compute the egress rule set this policy would install. We keep it
+	// around for auditing/debugging even when realExec is off.
+	egressRules := ComputeEgressRules(deploymentID, containerIP, policy)
+
 	e.mu.Lock()
 	e.applied[deploymentID] = true
+	e.lastRule[deploymentID] = egressRules
 	e.mu.Unlock()
 	return nil
 }
@@ -83,10 +90,25 @@ func (e *NftPolicyEnforcer) Remove(deploymentID string) error {
 	e.store.Remove(deploymentID)
 	e.mu.Lock()
 	delete(e.applied, deploymentID)
+	delete(e.lastRule, deploymentID)
 	e.mu.Unlock()
 
 	// nft delete chain inet moltbunker_policy mb_<deploymentID>_in
 	// nft delete chain inet moltbunker_policy mb_<deploymentID>_out
+	return nil
+}
+
+// LastRules returns the nft rule lines computed for a deployment at its most
+// recent Apply call. Returns nil if Apply was never called for this ID.
+// Useful for audit logging and ops debugging.
+func (e *NftPolicyEnforcer) LastRules(deploymentID string) []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if rules, ok := e.lastRule[deploymentID]; ok {
+		out := make([]string, len(rules))
+		copy(out, rules)
+		return out
+	}
 	return nil
 }
 

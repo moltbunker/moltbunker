@@ -355,6 +355,17 @@ func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config Se
 		_ = err
 	}
 
+	// R20 — persist the security profile so daemon restart can restore it
+	// instead of silently downgrading to the default. Non-fatal: a write
+	// failure logs a warning but does not abort container creation.
+	if cc.profileStore != nil && config.SecurityProfile != nil {
+		if writeErr := cc.profileStore.Write(config.ID, config.SecurityProfile); writeErr != nil {
+			logging.Warn("profile store: failed to persist profile",
+				logging.ContainerID(config.ID),
+				logging.Err(writeErr))
+		}
+	}
+
 	return managed, nil
 }
 
@@ -569,6 +580,16 @@ func (cc *ContainerdClient) DeleteContainer(ctx context.Context, id string) erro
 	// Delete container
 	if err := managed.Container.Delete(ctx, containerd.WithSnapshotCleanup); err != nil {
 		return fmt.Errorf("failed to delete container: %w", err)
+	}
+
+	// R20 — drop the persisted profile sidecar so it doesn't leak on a
+	// future container reusing the same ID. Best-effort.
+	if cc.profileStore != nil {
+		if delErr := cc.profileStore.Delete(id); delErr != nil {
+			logging.Warn("profile store: failed to delete profile",
+				logging.ContainerID(id),
+				logging.Err(delErr))
+		}
 	}
 
 	return nil
