@@ -261,6 +261,7 @@ func (s *APIServer) Start(ctx context.Context) error {
 		AcceptServices:   s.config == nil || s.config.Node.Provider.AcceptServices,
 		AcceptJobs:       s.config == nil || s.config.Node.Provider.AcceptJobs,
 		AcceptFunctions:  s.config == nil || s.config.Node.Provider.AcceptFunctions,
+		EnableImageScan:  s.config != nil && s.config.Security.ImageScanEnabled,
 	}
 	containerManager, err := NewContainerManager(ctx, cmConfig, s.node)
 	if err != nil {

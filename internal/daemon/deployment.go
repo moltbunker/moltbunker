@@ -45,6 +45,15 @@ type Deployment struct {
 	VolumeExpiresAt  time.Time             `json:"volume_expires_at,omitempty"`  // When volume will be auto-deleted
 	RuntimeType      types.RuntimeType     `json:"runtime_type,omitempty"`       // "container" (default) or "molt" for WASM workloads
 	MoltSpec         *types.MoltSpec       `json:"molt_spec,omitempty"`          // Molt spec for WASM deployments (nil for containers)
+
+	// R3/R4/R13/R14 — optional per-deployment security policy. These gossip with
+	// the deployment so replica nodes apply the same gates as the originator.
+	// All nil/false => identical to legacy behavior (no verify, no scan, allow-all).
+	RequireSignature  bool                `json:"require_signature,omitempty"`  // R3: enforce image signature on replicas
+	TrustedPublishers []string            `json:"trusted_publishers,omitempty"` // R3: hex Ed25519 pubkeys allowed to sign
+	ImageSignature    *ImageSignatureSpec `json:"image_signature,omitempty"`    // R3: signature for the image digest
+	IgnoreCVEs        []string            `json:"ignore_cves,omitempty"`        // R4: per-deployment CVE allowlist
+	NetworkPolicy     *NetworkPolicySpec  `json:"network_policy,omitempty"`     // R13/R14: per-deployment egress policy
 }
 
 // pendingDeployment tracks replica acknowledgments for a deployment
@@ -111,4 +120,10 @@ type ContainerManagerConfig struct {
 	AcceptServices  bool // Accept long-running service deployments
 	AcceptJobs      bool // Accept batch job deployments
 	AcceptFunctions bool // Accept serverless function (Molt) deployments
+
+	// R4 — image vulnerability scanning. When EnableImageScan is true AND the
+	// trivy binary is present on PATH, a real Trivy scanner is constructed at
+	// startup; otherwise a NoopScanner is used so deploys never fail on a host
+	// without trivy. Default (false) => NoopScanner, identical to legacy.
+	EnableImageScan bool
 }

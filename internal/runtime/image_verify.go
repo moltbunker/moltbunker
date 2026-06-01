@@ -157,8 +157,14 @@ func SignImageDigest(digest ImageDigest, priv ed25519.PrivateKey) *ImageSignatur
 	}
 }
 
-// TODO(R3-sourcing): The caller (provider daemon) needs to RESOLVE
-// ImageSignature from somewhere before passing it to Verify. Candidates:
+// R3-sourcing: As of SEC-09 the daemon zone sources ImageSignature + the trust
+// list directly from the deploy request (DeployRequest.ImageSignature /
+// .TrustedPublishers / .RequireSignature, plumbed through SecureContainerConfig
+// in internal/daemon/container_manager.go and replication.go). The
+// caller-supplied path is the simplest source and is now wired end-to-end.
+//
+// TODO(R3-sourcing): registry-/chain-side resolution is still a follow-up so the
+// daemon can RESOLVE a signature when the request omits one. Candidates:
 //
 //   1. OCI annotation on the image manifest (org.moltbunker.signature).
 //      Pros: travels with the image, no extra distribution. Cons: producer
@@ -170,5 +176,5 @@ func SignImageDigest(digest ImageDigest, priv ed25519.PrivateKey) *ImageSignatur
 //   4. Image label/env baked into image at build. Pros: simplest. Cons: the
 //      thing being signed can sign itself, weakens guarantees.
 //
-// The chosen source belongs in a separate `image_sig_source.go` (or in the
+// Any such resolver belongs in a separate `image_sig_source.go` (or in the
 // daemon zone if it needs deployment context). This file stays source-agnostic.
