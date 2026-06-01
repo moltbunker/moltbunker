@@ -297,11 +297,20 @@ func (cm *ContainerManager) deployReplica(ctx context.Context, deployment *Deplo
 	logging.Info("pulling image and creating replica container",
 		logging.ContainerID(deployment.ID),
 		"image", deployment.Image)
+	// R3 (image signature) and R4 (CVE scan) gates apply on replicas too, so a
+	// replica enforces the same policy the originator chose. The policy gossips
+	// on the Deployment struct. Opt-out by default: empty fields => no verify,
+	// and cm.imageScanner is a NoopScanner unless scanning was enabled with
+	// trivy present — identical to legacy behavior.
 	secConfig := runtime.SecureContainerConfig{
 		ID:              deployment.ID,
 		ImageRef:        deployment.Image,
 		Resources:       deployment.Resources,
 		SecurityProfile: types.DeploymentSecurityProfile(),
+		ImageSignature:  toImageSignature(deployment.ImageSignature),
+		TrustPolicy:     toTrustPolicy(deployment.RequireSignature, deployment.TrustedPublishers),
+		Scanner:         cm.imageScanner,
+		ScanPolicy:      resolveScanPolicy(deployment.IgnoreCVEs),
 	}
 	managed, err := cm.containerd.CreateSecureContainer(ctx, secConfig)
 	if err != nil {

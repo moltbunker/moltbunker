@@ -397,6 +397,11 @@ type SecurityConfig struct {
 	TLSCipherSuites  []string `yaml:"tls_cipher_suites"`  // Allowed cipher suites
 	CertPinning      bool     `yaml:"cert_pinning"`       // Enable certificate pinning
 	MutualTLS        bool     `yaml:"mutual_tls"`         // Require client certificates
+
+	// R4 — image vulnerability scanning. When true AND the trivy binary is on
+	// PATH, deploys are scanned (block HIGH/CRITICAL). Default false: a no-op
+	// scanner is used so a host without trivy never fails a deploy.
+	ImageScanEnabled bool `yaml:"image_scan_enabled"`
 }
 
 // RedundancyConfig contains redundancy settings

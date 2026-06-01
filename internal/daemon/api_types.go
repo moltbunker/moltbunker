@@ -109,6 +109,43 @@ type DeployRequest struct {
 
 	// Service exposure (optional)
 	ExposePorts []ExposedPort `json:"expose_ports,omitempty"` // Ports to expose publicly
+
+	// R3 — image signature verification (optional, opt-out by default).
+	// All fields zero/empty => no verification (identical to legacy behavior).
+	// RequireSignature only takes effect when at least one TrustedPublisher is
+	// provided, otherwise it would deny-all (see DeployRequest.toTrustPolicy).
+	RequireSignature  bool               `json:"require_signature,omitempty"`  // Enforce a valid signature before create
+	TrustedPublishers []string           `json:"trusted_publishers,omitempty"` // Hex-encoded Ed25519 pubkeys allowed to sign
+	ImageSignature    *ImageSignatureSpec `json:"image_signature,omitempty"`   // Caller-supplied signature for the image digest
+
+	// R4 — image vulnerability scan policy (optional). When unset, the daemon's
+	// default scan policy applies (block HIGH/CRITICAL, never RequireScan).
+	IgnoreCVEs []string `json:"ignore_cves,omitempty"` // Per-deployment CVE allowlist (e.g. "CVE-2024-1234")
+
+	// R13/R14 — per-deployment network / egress policy (optional). A nil
+	// NetworkPolicy means allow-all (current behavior). The real nft
+	// enforcement is Linux-only and stubbed today; the policy is recorded and
+	// flows toward the enforcer regardless of platform.
+	NetworkPolicy *NetworkPolicySpec `json:"network_policy,omitempty"`
+}
+
+// ImageSignatureSpec is the wire form of an Ed25519 image signature carried on
+// a deploy request (R3). It maps 1:1 to runtime.ImageSignature.
+type ImageSignatureSpec struct {
+	Digest      string `json:"digest"`       // Image digest, typically "sha256:<hex>"
+	PublisherID string `json:"publisher_id"` // Hex-encoded 32-byte Ed25519 public key
+	Signature   []byte `json:"signature"`    // Ed25519 signature over the digest
+}
+
+// NetworkPolicySpec is the wire form of a per-deployment network/egress policy
+// (R13/R14). It maps to networking.NetworkPolicy. A nil spec or fully-empty
+// spec means allow-all (EgressDefaultAllow, no carve-outs) — identical to the
+// legacy behavior.
+type NetworkPolicySpec struct {
+	AllowedPeers []string `json:"allowed_peers,omitempty"` // Other deployment IDs reachable intra-host
+	EgressDeny   bool     `json:"egress_deny,omitempty"`   // true => default-deny egress (EgressDefaultDeny)
+	EgressAllow  []string `json:"egress_allow,omitempty"`  // CIDRs always allowed
+	EgressBlock  []string `json:"egress_block,omitempty"`  // CIDRs always blocked (deny beats allow)
 }
 
 // ExposedPort describes a port to expose publicly via ingress.

@@ -71,6 +71,17 @@ type ContainerManager struct {
 	cleanupMgr       *runtime.CleanupManager // P1-1: orphan container cleanup
 	healthChecker    *runtime.HealthChecker  // P1-2: container-level health probes
 
+	// R4: image vulnerability scanner. Never nil after NewContainerManager —
+	// a NoopScanner when scanning is disabled / trivy is absent, so the scan
+	// gate never blocks a deploy on a host without trivy.
+	imageScanner runtime.ImageScanner
+
+	// R13/R14: per-deployment network/egress policy. policyStore is the source
+	// of truth; policyEnforcer applies rules at container setup (real nft exec
+	// is a Linux-only stub today — off-Linux it only records intent).
+	policyStore    *networking.PolicyStore
+	policyEnforcer networking.PolicyEnforcer
+
 	// Molt (WASM serverless) manager
 	moltManager *MoltManager
 
@@ -99,6 +110,10 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 	var crt runtime.ContainerRuntime
 	if cc, err := runtime.NewContainerdClient(config.ContainerdSocket, "moltbunker", logsDir, rtCaps.RuntimeName, config.KataConfig); err == nil {
 		crt = cc
+		// R20: attach the per-tenant security-profile store BEFORE
+		// LoadExistingContainers (below) runs, so reattached containers recover
+		// their stored profile instead of silently downgrading to the default.
+		attachProfileStore(cc, config.DataDir)
 	}
 	// If containerd is not available, crt stays nil and we run in P2P-only mode
 
@@ -140,6 +155,17 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 	// Initialize gossip protocol for state synchronization
 	gossipProto := p2p.NewGossipProtocol(node.Router())
 
+	// R4: construct the image scanner once. Real Trivy only when explicitly
+	// enabled AND the binary is on PATH; otherwise a NoopScanner so a host
+	// without trivy never fails a deploy. The scanner is always non-nil.
+	imageScanner := buildImageScanner(config.EnableImageScan)
+
+	// R13/R14: construct the network-policy store + enforcer once. The enforcer
+	// is a no-op recorder off Linux and a (currently stubbed) nft applier on
+	// Linux; either way nil/empty policies mean allow-all.
+	policyStore := networking.NewPolicyStore()
+	policyEnforcer := networking.NewNftPolicyEnforcer(policyStore)
+
 	cm := &ContainerManager{
 		containerd:         crt,
 		encryption:         encryption,
@@ -165,6 +191,9 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		acceptServices:     config.AcceptServices,
 		acceptJobs:         config.AcceptJobs,
 		acceptFunctions:    config.AcceptFunctions,
+		imageScanner:       imageScanner,
+		policyStore:        policyStore,
+		policyEnforcer:     policyEnforcer,
 	}
 
 	// Initialize Molt (WASM serverless) runtime if enabled
@@ -419,6 +448,14 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 		Owner:           req.Owner,
 		MinProviderTier: types.ProviderTier(req.MinProviderTier),
 		Spot:            req.Spot,
+		// R3/R4/R13/R14: carry the per-deployment security policy onto the
+		// gossiped Deployment so replica nodes enforce the same gates. All
+		// fields are opt-out: empty/nil => legacy behavior.
+		RequireSignature:  req.RequireSignature,
+		TrustedPublishers: req.TrustedPublishers,
+		ImageSignature:    req.ImageSignature,
+		IgnoreCVEs:        req.IgnoreCVEs,
+		NetworkPolicy:     req.NetworkPolicy,
 	}
 
 	// Determine regions from actual network topology
@@ -559,12 +596,22 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 		}
 	}
 
-	// Create container with security hardening
+	// Create container with security hardening.
+	//
+	// R3 (image signature) and R4 (CVE scan) gates are populated from the deploy
+	// request. They are opt-out by default: toTrustPolicy/toImageSignature yield
+	// no-op values when the request carries nothing, and cm.imageScanner is a
+	// NoopScanner unless scanning was enabled with trivy present. So a request
+	// with none of the new fields produces identical behavior to before.
 	secConfig := runtime.SecureContainerConfig{
 		ID:              deploymentID,
 		ImageRef:        req.Image,
 		Resources:       req.Resources,
 		SecurityProfile: types.DeploymentSecurityProfile(),
+		ImageSignature:  toImageSignature(req.ImageSignature),
+		TrustPolicy:     toTrustPolicy(req.RequireSignature, req.TrustedPublishers),
+		Scanner:         cm.imageScanner,
+		ScanPolicy:      resolveScanPolicy(req.IgnoreCVEs),
 	}
 
 	// Inject exec-agent if encrypted exec key is provided (E2E encrypted exec)
@@ -656,6 +703,11 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 				logging.Err(err))
 		} else {
 			deployment.ExposedPorts = req.ExposePorts
+			// R13/R14: apply per-deployment network/egress policy once the
+			// container IP is known. nil/empty policy => allow-all (no-op).
+			// Real nft enforcement is a Linux-only stub; off-Linux this only
+			// records intent.
+			cm.applyNetworkPolicy(deploymentID, containerNet.ContainerIP(), req.NetworkPolicy)
 			// no-op: ingress domain currently hardcoded; future versions may
 			// derive it from cm.node.nodeInfo when config plumbing is added.
 			ingressDomain := "moltbunker.dev"
@@ -847,6 +899,8 @@ func (cm *ContainerManager) Stop(ctx context.Context, containerID string) error 
 				logging.ContainerID(containerID), logging.Err(err))
 		}
 	}
+	// R13/R14: drop any per-deployment network policy rules.
+	cm.removeNetworkPolicy(containerID)
 	cm.removeServiceExposure(containerID)
 
 	// Close any active exec sessions for this container
@@ -1029,6 +1083,8 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 				logging.Err(err))
 		}
 	}
+	// R13/R14: drop any per-deployment network policy rules.
+	cm.removeNetworkPolicy(containerID)
 	cm.removeServiceExposure(containerID)
 
 	// Delete container
@@ -1111,6 +1167,9 @@ func (cm *ContainerManager) IsContainerdConnected() bool {
 	logsDir := filepath.Join(cm.dataDir, "logs")
 	if cc, err := runtime.NewContainerdClient(cm.containerdSocket, "moltbunker", logsDir, cm.runtimeName, cm.kataConfig); err == nil {
 		cm.containerd = cc
+		// R20: re-attach the profile store so persistence survives a reconnect,
+		// not just a process restart.
+		attachProfileStore(cc, cm.dataDir)
 		logging.Info("containerd reconnected successfully",
 			logging.Component("container_manager"))
 		return true
