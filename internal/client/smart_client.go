@@ -176,6 +176,15 @@ func (sc *SmartClient) GetContainerDetail(containerID string) (*ContainerDetail,
 
 // --- Daemon-only operations ---
 
+// GetExecPubKey retrieves the local daemon's stable X25519 public key for
+// sealing E2E exec keys (daemon-only).
+func (sc *SmartClient) GetExecPubKey() ([]byte, error) {
+	if err := sc.RequireDaemon(); err != nil {
+		return nil, err
+	}
+	return sc.daemon.GetExecPubKey()
+}
+
 // GetPeers retrieves the list of connected peers (daemon-only).
 func (sc *SmartClient) GetPeers() ([]PeerInfo, error) {
 	if err := sc.RequireDaemon(); err != nil {

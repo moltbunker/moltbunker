@@ -1,6 +1,7 @@
 # =============================================================================
 # Moltbunker Multi-Stage Dockerfile
-# Builds: moltbunkerd (daemon), moltbunker (CLI), moltbunker-api (HTTP API)
+# Builds: moltbunkerd (daemon), moltbunker (CLI), moltbunker-api (HTTP API),
+#         exec-agent (in-container E2E encrypted exec relay, linux-only)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
@@ -21,7 +22,7 @@ RUN go mod download && go mod verify
 # Copy source code
 COPY . .
 
-# Build all three binaries with static linking and stripped symbols
+# Build all four binaries with static linking and stripped symbols
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
     -o /out/moltbunkerd ./cmd/daemon
@@ -33,6 +34,11 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 RUN CGO_ENABLED=0 GOOS=linux go build \
     -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
     -o /out/moltbunker-api ./cmd/api
+
+# exec-agent defines no version vars; build with -s -w only (matches Makefile/.goreleaser).
+RUN CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w" \
+    -o /out/exec-agent ./cmd/exec-agent
 
 # -----------------------------------------------------------------------------
 # Stage 2: Runtime
@@ -49,6 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /out/moltbunkerd /usr/local/bin/moltbunkerd
 COPY --from=builder /out/moltbunker /usr/local/bin/moltbunker
 COPY --from=builder /out/moltbunker-api /usr/local/bin/moltbunker-api
+COPY --from=builder /out/exec-agent /usr/local/bin/exec-agent
 
 # Copy default configuration
 COPY configs/daemon.yaml /etc/moltbunker/daemon.yaml

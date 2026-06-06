@@ -270,6 +270,8 @@ func (s *APIServer) handleRequest(ctx context.Context, req *APIRequest) *APIResp
 	// Exec helpers
 	case "container_detail":
 		response = s.handleContainerDetail(ctx, req)
+	case "exec_pubkey":
+		response = s.handleExecPubKey(ctx, req)
 	default:
 		response = &APIResponse{
 			Error: fmt.Sprintf("unknown method: %s", req.Method),

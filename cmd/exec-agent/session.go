@@ -23,6 +23,15 @@ const (
 	gcmNonceSize = 12
 	// gcmTagSize is the AES-GCM authentication tag size.
 	gcmTagSize = 16
+	// nonceDirBit is the high bit of nonce[0], used to domain-separate the two
+	// directions of a session so the agent and the client (CLI/browser) can
+	// never produce the same (key, nonce) pair for the same counter value.
+	// The agent encrypts with this bit CLEAR (direction 0); the client encrypts
+	// with it SET (direction 1). Decrypt reads the nonce off the wire unchanged,
+	// so the bit rides inside the prepended nonce and needs no special handling.
+	// This MUST stay byte-for-byte in sync with cmd/cli/commands/exec_session.go
+	// and with the browser (web/src) when its exec path is wired up.
+	nonceDirBit = byte(0x80)
 )
 
 // Session holds the per-session encryption state for E2E terminal I/O.
@@ -32,9 +41,11 @@ type Session struct {
 	sessionKey []byte
 	aead       cipher.AEAD
 
-	// Monotonic nonce counters prevent nonce reuse.
+	// Monotonic nonce counters prevent nonce reuse within a direction.
 	// Separate counters for encrypt (outgoing) and decrypt (incoming)
-	// because each side maintains its own send counter.
+	// because each side maintains its own send counter. Cross-direction
+	// (key, nonce) uniqueness is guaranteed by the direction bit stamped into
+	// nonce[0] (see Encrypt / nonceDirBit), not by the random nonce tail.
 	encryptCounter atomic.Uint64
 	//nolint:unused
 	decryptCounter atomic.Uint64
@@ -87,6 +98,11 @@ func (s *Session) Encrypt(plaintext []byte) ([]byte, error) {
 	// First 8 bytes: monotonic counter (big-endian)
 	counter := s.encryptCounter.Add(1)
 	binary.BigEndian.PutUint64(nonce[:8], counter)
+	// Direction tag: agent encrypts with the high bit CLEAR (direction 0).
+	// The counter starts at 1 and never approaches 2^63, so the top bit of
+	// nonce[0] is always free for this flag. The CLI/client sets it (direction
+	// 1) so the two directions can never collide on a (key, nonce) pair.
+	nonce[0] &^= nonceDirBit
 	// Last 4 bytes: random for additional uniqueness
 	if _, err := rand.Read(nonce[8:]); err != nil {
 		return nil, fmt.Errorf("generate nonce random: %w", err)

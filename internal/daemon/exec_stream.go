@@ -15,11 +15,19 @@ import (
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
-// Exec-agent frame type constants (must match cmd/exec-agent/protocol.go)
+// Exec-agent frame type constants (must match cmd/exec-agent/protocol.go).
+// The relay is a blind byte-pipe of the agent frame protocol: control frames
+// (KEY_INIT/KEY_ACK/RESIZE/PING/PONG/CLOSE/ERROR) must keep their real type byte
+// in both directions so the in-container exec-agent E2E handshake works.
 const (
-	execAgentFrameData   byte = 0x01
-	execAgentFrameResize byte = 0x02
-	execAgentFrameClose  byte = 0x05
+	execAgentFrameData    byte = 0x01
+	execAgentFrameResize  byte = 0x02
+	execAgentFramePing    byte = 0x03
+	execAgentFramePong    byte = 0x04
+	execAgentFrameClose   byte = 0x05
+	execAgentFrameError   byte = 0x06
+	execAgentFrameKeyInit byte = 0x07
+	execAgentFrameKeyAck  byte = 0x08
 )
 
 // ExecStream bridges a remote exec request to a local container PTY session.
@@ -30,7 +38,9 @@ type ExecStream struct {
 	containerID string
 	fromNode    types.NodeID
 	session     *runtime.InteractiveSession
-	router      interface{ SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error }
+	router      interface {
+		SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error
+	}
 	localNodeID types.NodeID
 
 	execAgentMode bool // true when bridging to exec-agent (E2E encrypted exec)
@@ -49,7 +59,9 @@ func newExecStream(
 	fromNode types.NodeID,
 	localNodeID types.NodeID,
 	session *runtime.InteractiveSession,
-	router interface{ SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error },
+	router interface {
+		SendMessage(ctx context.Context, to types.NodeID, msg *types.Message) error
+	},
 	execAgentMode bool,
 ) *ExecStream {
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -143,13 +155,17 @@ func (es *ExecStream) readLoopFramed(ctx context.Context) {
 
 		switch frameType {
 		case execAgentFrameData:
-			// Forward encrypted data to requester as-is (opaque ciphertext)
+			// Forward encrypted terminal data to requester as-is (opaque ciphertext).
+			// The DATA type byte is stripped here; the requester re-prepends
+			// WSFrameData on the WebSocket side.
 			es.sendData(ctx, payload)
 		case execAgentFrameClose:
 			return
 		default:
-			// Forward other frame types (KEY_ACK, ERROR, PONG) as data
-			// The browser distinguishes them by the frame type byte
+			// Forward all other agent control frames (KEY_ACK 0x08, ERROR 0x06,
+			// PONG 0x04, etc.) WITH their type byte preserved so the requester
+			// (and ultimately the browser/CLI) can distinguish them. This is the
+			// agent->client mirror of the type-preserving WriteData relay.
 			frame := make([]byte, len(frameBuf))
 			copy(frame, frameBuf)
 			es.sendData(ctx, frame)
@@ -184,9 +200,27 @@ func (es *ExecStream) sendData(ctx context.Context, data []byte) {
 }
 
 // WriteData writes incoming data to the container's stdin.
-// In exec-agent mode, wraps data in a length-prefixed frame.
+//
+// In exec-agent mode the relay must be a TRANSPARENT byte-pipe of the agent
+// frame protocol: the requester (API/CLI) sends typed control frames
+// (KEY_INIT 0x07, KEY_ACK 0x08, RESIZE, PING/PONG, CLOSE, ERROR) with their
+// type byte included, and sends plain terminal DATA with the type byte already
+// stripped. We therefore inspect data[0]: if it names a recognized control
+// frame, we relay that type+payload verbatim so KEY_INIT arrives at the agent
+// as a real 0x07 frame (not silently rewrapped as DATA 0x01, which broke the
+// E2E key handshake). Otherwise the bytes are plain terminal input and are
+// wrapped as a DATA frame.
 func (es *ExecStream) WriteData(data []byte) error {
 	if es.execAgentMode {
+		if len(data) > 0 {
+			switch data[0] {
+			case execAgentFrameKeyInit, execAgentFrameKeyAck, execAgentFrameResize,
+				execAgentFramePing, execAgentFramePong, execAgentFrameClose, execAgentFrameError:
+				// Typed control frame from the requester — preserve the type byte.
+				return es.writeAgentFrame(data[0], data[1:])
+			}
+		}
+		// Plain terminal input (type byte already stripped by the API layer).
 		return es.writeAgentFrame(execAgentFrameData, data)
 	}
 	_, err := es.session.Stdin.Write(data)
@@ -269,7 +303,7 @@ type ExecStreamManager struct {
 // NewExecStreamManager creates a new exec stream manager
 func NewExecStreamManager() *ExecStreamManager {
 	return &ExecStreamManager{
-		streams:               make(map[string]*ExecStream),
+		streams:                make(map[string]*ExecStream),
 		maxStreamsPerContainer: 3,
 		maxTotalStreams:        20,
 	}
@@ -429,6 +463,16 @@ func (cm *ContainerManager) ExecLocal(ctx context.Context, containerID string, w
 	}
 	if !cm.containerd.CanExec(containerID) {
 		return nil, fmt.Errorf("exec disabled for container")
+	}
+	if deployment.ExecAgentEnabled {
+		// E2E encrypted exec: launch the agent in raw (non-PTY) mode. The agent
+		// manages its own PTY and resize internally and all terminal I/O is
+		// encrypted end-to-end. Mirrors handleExecOpen (exec_handlers.go:83-92)
+		// so the local (single-node) path honors the agent just like the remote
+		// P2P path does.
+		return cm.containerd.ExecRaw(ctx, containerID, []string{
+			"/usr/local/bin/exec-agent", "--stdio",
+		})
 	}
 	return cm.containerd.ExecInteractive(ctx, containerID, cols, rows)
 }

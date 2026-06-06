@@ -37,6 +37,11 @@ type Deployment struct {
 	ExecAgentEnabled bool                  `json:"exec_agent_enabled,omitempty"` // True if exec-agent binary is injected (E2E encrypted exec)
 	ExecKeyPath      string               `json:"exec_key_path,omitempty"`      // Host path to exec_key file (for cleanup)
 	DeployNonce      string               `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key re-derivation
+	// ECIES envelope for the exec_key (carried so the deployment can reach
+	// replicas; each provider unwraps with its own stable X25519 private key).
+	EncryptedExecKey         []byte `json:"encrypted_exec_key,omitempty"`          // ECIES envelope ciphertext
+	ExecKeyNonce             []byte `json:"exec_key_nonce,omitempty"`              // GCM nonce (also prefixed in ciphertext)
+	RequesterEphemeralPubKey []byte `json:"requester_ephemeral_pub_key,omitempty"` // Sender's ephemeral X25519 public key
 	ExposedPorts     []ExposedPort         `json:"exposed_ports,omitempty"`      // Ports exposed publicly via ingress
 	PublicURLs       []string              `json:"public_urls,omitempty"`        // Generated public URLs
 	MinProviderTier  types.ProviderTier    `json:"min_provider_tier,omitempty"`  // Minimum provider tier required
