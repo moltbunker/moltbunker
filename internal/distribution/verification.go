@@ -17,6 +17,7 @@ func NewVerifier() *Verifier {
 
 // VerifyImage verifies image integrity against expected CID
 func (v *Verifier) VerifyImage(imagePath string, expectedCID string) error {
+	// #nosec G304 -- imagePath is an internally managed image file path (cache/deployment dir), not request input
 	file, err := os.Open(imagePath)
 	if err != nil {
 		return fmt.Errorf("failed to open image: %w", err)
@@ -40,6 +41,7 @@ func (v *Verifier) VerifyImage(imagePath string, expectedCID string) error {
 
 // CalculateCID calculates content hash for an image
 func (v *Verifier) CalculateCID(imagePath string) (string, error) {
+	// #nosec G304 -- imagePath is an internally managed image file path (cache/deployment dir), not request input
 	file, err := os.Open(imagePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to open image: %w", err)

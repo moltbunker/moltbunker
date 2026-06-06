@@ -61,14 +61,16 @@ func (lm *LogManager) CreateLog(containerID string) (*ContainerLog, error) {
 	stdoutPath := filepath.Join(containerDir, "stdout.log")
 	stderrPath := filepath.Join(containerDir, "stderr.log")
 
-	stdoutFile, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// #nosec G304 -- stdoutPath is logsDir/<containerID>/stdout.log; containerID is internally controlled, not request input
+	stdoutFile, err := os.OpenFile(stdoutPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stdout log: %w", err)
 	}
 
-	stderrFile, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// #nosec G304 -- stderrPath is logsDir/<containerID>/stderr.log; containerID is internally controlled, not request input
+	stderrFile, err := os.OpenFile(stderrPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
-		stdoutFile.Close()
+		_ = stdoutFile.Close()
 		return nil, fmt.Errorf("failed to create stderr log: %w", err)
 	}
 
@@ -106,10 +108,10 @@ func (lm *LogManager) CloseLog(containerID string) error {
 	defer log.mu.Unlock()
 
 	if log.StdoutFile != nil {
-		log.StdoutFile.Close()
+		_ = log.StdoutFile.Close()
 	}
 	if log.StderrFile != nil {
-		log.StderrFile.Close()
+		_ = log.StderrFile.Close()
 	}
 
 	delete(lm.logFiles, containerID)
@@ -232,6 +234,7 @@ func (lm *LogManager) readExistingLogs(w io.Writer, stdoutPath, stderrPath strin
 
 // readLogFile reads a log file with optional tail
 func (lm *LogManager) readLogFile(w io.Writer, path string, tail int, prefix string) error {
+	// #nosec G304 -- path is a log file under logsDir/<containerID>/, internally constructed, not request input
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -330,7 +333,9 @@ func (lm *LogManager) followLogs(ctx context.Context, w io.Writer, stdoutPath, s
 	defer watcher.Close()
 
 	// Open files for following
+	// #nosec G304 -- log path under logsDir/<containerID>/, internally constructed, not request input
 	stdoutFile, _ := os.Open(stdoutPath)
+	// #nosec G304 -- log path under logsDir/<containerID>/, internally constructed, not request input
 	stderrFile, _ := os.Open(stderrPath)
 
 	if stdoutFile != nil {
@@ -404,7 +409,9 @@ func (lm *LogManager) followLogs(ctx context.Context, w io.Writer, stdoutPath, s
 // followLogsPoll is the fallback polling implementation
 func (lm *LogManager) followLogsPoll(ctx context.Context, w io.Writer, stdoutPath, stderrPath string) {
 	// Open files for following
+	// #nosec G304 -- log path under logsDir/<containerID>/, internally constructed, not request input
 	stdoutFile, _ := os.Open(stdoutPath)
+	// #nosec G304 -- log path under logsDir/<containerID>/, internally constructed, not request input
 	stderrFile, _ := os.Open(stderrPath)
 
 	if stdoutFile != nil {

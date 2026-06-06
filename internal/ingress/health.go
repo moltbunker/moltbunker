@@ -134,7 +134,7 @@ func (hc *HealthChecker) checkService(ctx context.Context, entry *ServiceEntry) 
 			logging.Component("ingress"))
 		return
 	}
-	tun.Close()
+	_ = tun.Close()
 
 	status.Healthy = true
 	status.LastError = ""

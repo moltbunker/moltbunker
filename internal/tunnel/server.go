@@ -147,7 +147,7 @@ func (s *Server) handleConnection(ctx context.Context, conn net.Conn) {
 		s.mu.Lock()
 		delete(s.activeTunnel, req.StreamID)
 		s.mu.Unlock()
-		tun.Close()
+		_ = tun.Close()
 	}()
 
 	// Clear read deadline before bidirectional proxy — both sides control pacing.

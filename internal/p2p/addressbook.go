@@ -209,7 +209,7 @@ func (ab *AddressBook) Save(path string) error {
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		// Clean up temp file on rename failure
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename address book file: %w", err)
 	}
 
@@ -224,6 +224,7 @@ func (ab *AddressBook) Save(path string) error {
 // Load reads the address book from a JSON file. If the file does not exist,
 // the address book is left empty (no error returned).
 func (ab *AddressBook) Load(path string) error {
+	// #nosec G304 -- path is the daemon's configured address-book file (DataDir-derived), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

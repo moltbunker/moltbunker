@@ -12,6 +12,7 @@ import (
 func detectMemoryGB() int {
 	mem, err := unix.SysctlUint64("hw.memsize")
 	if err == nil && mem > 0 {
+		// #nosec G115 -- memory size in GB is a small value, fits in int on all supported platforms
 		gb := int(mem / (1024 * 1024 * 1024))
 		if gb > 0 {
 			return gb
@@ -24,6 +25,7 @@ func detectMemoryGB() int {
 func detectStorageGB() int {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err == nil {
+		// #nosec G115 -- disk size in GB is a small value, fits in int on all supported platforms
 		gb := int(uint64(stat.Blocks) * uint64(stat.Bsize) / (1024 * 1024 * 1024))
 		if gb > 0 {
 			return gb

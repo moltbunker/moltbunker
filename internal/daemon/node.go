@@ -465,7 +465,7 @@ func (n *Node) handleConnections(ctx context.Context, listener net.Listener) {
 					logging.Warn("subnet peer limit reached, rejecting connection",
 						"remote_addr", conn.RemoteAddr().String(),
 						logging.Component("node"))
-					conn.Close()
+					_ = conn.Close()
 					continue
 				}
 			}
@@ -489,7 +489,7 @@ func (n *Node) handleConnections(ctx context.Context, listener net.Listener) {
 					"max_connections", n.maxConcurrentConns,
 					"remote_addr", conn.RemoteAddr().String(),
 					logging.Component("node"))
-				conn.Close()
+				_ = conn.Close()
 			}
 		}
 	}
@@ -604,7 +604,7 @@ func (n *Node) handleConnection(ctx context.Context, conn net.Conn) {
 					logging.Warn("peer did not announce within grace period, disconnecting",
 						logging.NodeID(peerNodeID.String()[:16]),
 						logging.Component("node"))
-					conn.Close()
+					_ = conn.Close()
 				}
 			case <-connCtx.Done():
 				// Connection closed or parent context cancelled
@@ -1011,7 +1011,10 @@ func (n *Node) TLSServerConfig() *tls.Config {
 			tls.TLS_CHACHA20_POLY1305_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 		},
-		ClientAuth: tls.RequireAnyClientCert,
+		// Disable session resumption so resumed handshakes cannot skip the
+		// VerifyPeerCertificate peer-list/ban check below.
+		SessionTicketsDisabled: true,
+		ClientAuth:             tls.RequireAnyClientCert,
 		VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
 				return fmt.Errorf("client certificate required")
@@ -1073,9 +1076,11 @@ func (n *Node) TLSServerConfig() *tls.Config {
 func (n *Node) TLSClientConfig() *tls.Config {
 	baseCfg := n.certManager.TLSConfig()
 	return &tls.Config{
-		Certificates:       baseCfg.Certificates,
-		MinVersion:         tls.VersionTLS13,
-		MaxVersion:         tls.VersionTLS13,
+		Certificates: baseCfg.Certificates,
+		MinVersion:   tls.VersionTLS13,
+		MaxVersion:   tls.VersionTLS13,
+		// #nosec G402 -- cert pinning via VerifyPeerCertificate (SPKI) in TLSTunnelDialer.DialProvider; CA chain validation intentionally bypassed
 		InsecureSkipVerify: true, // Overridden per-connection by TLSTunnelDialer.DialProvider with SPKI check
+		ClientSessionCache: nil,  // no session resumption (per-connection SPKI check must always run)
 	}
 }

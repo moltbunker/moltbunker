@@ -171,7 +171,7 @@ func (s *ReverseServer) Serve(ctx context.Context) error {
 			logging.Debug("reverse tunnel rejected: per-IP limit",
 				"ip", remoteIP,
 				logging.Component("reverse-tunnel"))
-			conn.Close()
+			_ = conn.Close()
 			continue
 		}
 
@@ -181,7 +181,7 @@ func (s *ReverseServer) Serve(ctx context.Context) error {
 		default:
 			logging.Warn("reverse tunnel rejected: global connection limit reached",
 				logging.Component("reverse-tunnel"))
-			conn.Close()
+			_ = conn.Close()
 			s.releaseIPSlot(remoteIP)
 			continue
 		}

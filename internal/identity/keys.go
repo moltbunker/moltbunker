@@ -235,6 +235,7 @@ func (km *KeyManager) SaveEncryptedKey(path string, passphrase []byte) error {
 // LoadEncryptedKey reads an encrypted key file, decrypts it with the passphrase,
 // and restores the private key, public key, and node ID.
 func (km *KeyManager) LoadEncryptedKey(path string, passphrase []byte) error {
+	// #nosec G304 -- path is a daemon/config-supplied key file path (DataDir-derived), not request input
 	fileData, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("load encrypted key: %w", err)
@@ -303,6 +304,7 @@ func (km *KeyManager) LoadEncryptedKey(path string, passphrase []byte) error {
 // IsEncryptedKeyFile checks whether the file at the given path is an encrypted key file
 // by reading the first 4 bytes and comparing to the magic header.
 func IsEncryptedKeyFile(path string) (bool, error) {
+	// #nosec G304 -- path is a daemon/config-supplied key file path (DataDir-derived), not request input
 	f, err := os.Open(path)
 	if err != nil {
 		return false, err

@@ -50,8 +50,12 @@ func (cc *ContainerdClient) SetDiskQuota(ctx context.Context, containerID string
 	if err != nil {
 		return err
 	}
+	if projectID < 0 {
+		return fmt.Errorf("invalid snapshot project ID %d", projectID)
+	}
 
 	// Set XFS project ID + inheritance flag via ioctl
+	// #nosec G115 -- projectID is a non-negative containerd snapshot number (guarded above), fits in uint32
 	if err := setXFSProjectID(upperDir, uint32(projectID)); err != nil {
 		logging.Warn("failed to set XFS project ID (non-XFS filesystem?)",
 			"container_id", containerID,
@@ -67,6 +71,7 @@ func (cc *ContainerdClient) SetDiskQuota(ctx context.Context, containerID string
 		limitMB = 1
 	}
 
+	// #nosec G204 -- exec.CommandContext (no shell); command name is the constant "xfs_quota", args are internally formatted from a numeric limit and snapshot project ID
 	cmd := exec.CommandContext(ctx, "xfs_quota", "-xc",
 		fmt.Sprintf("limit -p bhard=%dm %d", limitMB, projectID),
 		snapshotterRootPath)
@@ -90,6 +95,7 @@ func (cc *ContainerdClient) RemoveDiskQuota(ctx context.Context, containerID str
 		return // snapshot already gone
 	}
 
+	// #nosec G204 -- exec.CommandContext (no shell); command name is the constant "xfs_quota", args are internally formatted from the snapshot project ID
 	cmd := exec.CommandContext(ctx, "xfs_quota", "-xc",
 		fmt.Sprintf("limit -p bhard=0 %d", projectID),
 		snapshotterRootPath)
@@ -131,13 +137,15 @@ func (cc *ContainerdClient) snapshotUpperDir(ctx context.Context, containerID st
 // setXFSProjectID sets the project ID on a directory with PROJINHERIT via ioctl.
 // All new files/subdirectories created under this directory will inherit the project ID.
 func setXFSProjectID(dir string, projectID uint32) error {
+	// #nosec G304 -- dir is the overlay upperdir reported by the containerd snapshotter, not external/request input
 	f, err := os.Open(dir)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var attr fsxattr
+	// #nosec G103 -- unsafe.Pointer required to pass the fsxattr struct to the kernel (FS_IOC_FSGETXATTR)
 	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, f.Fd(), fsIOCGetXAttr, uintptr(unsafe.Pointer(&attr))); errno != 0 {
 		return fmt.Errorf("FS_IOC_FSGETXATTR: %w", errno)
 	}
@@ -145,6 +153,7 @@ func setXFSProjectID(dir string, projectID uint32) error {
 	attr.Projid = projectID
 	attr.Xflags |= fsXFlagProjInherit
 
+	// #nosec G103 -- unsafe.Pointer required to pass the fsxattr struct to the kernel (FS_IOC_FSSETXATTR)
 	if _, _, errno := unix.Syscall(unix.SYS_IOCTL, f.Fd(), fsIOCSetXAttr, uintptr(unsafe.Pointer(&attr))); errno != 0 {
 		return fmt.Errorf("FS_IOC_FSSETXATTR: %w", errno)
 	}

@@ -132,6 +132,7 @@ type ServerConfig struct {
 
 // DefaultServerConfig returns the default server configuration
 func DefaultServerConfig() *ServerConfig {
+	// #nosec G101 -- not a credential: config-struct literal (addr/port/header-name/timeout fields), no secrets
 	return &ServerConfig{
 		HTTPAddr:         ":8080",
 		HTTPSAddr:        ":8443",

@@ -270,15 +270,15 @@ func WithUlimits(ulimits types.UlimitConfig) oci.SpecOpts {
 		// MemLock of 0 means no locked memory
 		s.Process.Rlimits = append(s.Process.Rlimits, specs.POSIXRlimit{
 			Type: "RLIMIT_MEMLOCK",
-			Hard: uint64(ulimits.MemLock),
-			Soft: uint64(ulimits.MemLock),
+			Hard: uint64(ulimits.MemLock), // #nosec G115 -- ulimit config value, non-negative by contract (0 = none)
+			Soft: uint64(ulimits.MemLock), // #nosec G115 -- ulimit config value, non-negative by contract (0 = none)
 		})
 
 		// Core of 0 means no core dumps
 		s.Process.Rlimits = append(s.Process.Rlimits, specs.POSIXRlimit{
 			Type: "RLIMIT_CORE",
-			Hard: uint64(ulimits.Core),
-			Soft: uint64(ulimits.Core),
+			Hard: uint64(ulimits.Core), // #nosec G115 -- ulimit config value, non-negative by contract (0 = no core dumps)
+			Soft: uint64(ulimits.Core), // #nosec G115 -- ulimit config value, non-negative by contract (0 = no core dumps)
 		})
 
 		if ulimits.Stack > 0 {

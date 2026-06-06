@@ -769,6 +769,7 @@ func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 	path = expandPath(path)
 
+	// #nosec G304 -- path is the operator-supplied config file path (CLI flag / default), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -801,7 +802,7 @@ func Load(path string) (*Config, error) {
 func (c *Config) Save(path string) error {
 	path = expandPath(path)
 
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
@@ -988,7 +989,8 @@ func (c *Config) EnsureDirectories() error {
 		if dir == "" {
 			continue
 		}
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		// 0700: these dirs hold keys, keystore, state, and volumes (private)
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}

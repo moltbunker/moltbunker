@@ -53,14 +53,14 @@ func (c *Client) OpenTunnel(providerAddr string, deploymentID string, port int, 
 	}
 	payload, _ := json.Marshal(req)
 	if err := writeControlMsg(conn, MsgTunnelOpen, payload); err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("send TUNNEL_OPEN: %w", err)
 	}
 
 	// Wait for TUNNEL_READY
 	msgType, respPayload, err := readControlMsg(conn)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("read TUNNEL_READY: %w", err)
 	}
 
@@ -68,7 +68,7 @@ func (c *Client) OpenTunnel(providerAddr string, deploymentID string, port int, 
 	case MsgTunnelReady:
 		var resp TunnelReadyResponse
 		if err := json.Unmarshal(respPayload, &resp); err != nil {
-			conn.Close()
+			_ = conn.Close()
 			return nil, fmt.Errorf("parse TUNNEL_READY: %w", err)
 		}
 		logging.Info("tunnel opened",
@@ -80,11 +80,11 @@ func (c *Client) OpenTunnel(providerAddr string, deploymentID string, port int, 
 		return newTunnel(resp.StreamID, conn), nil
 
 	case MsgTunnelError:
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("provider rejected tunnel: %s", string(respPayload))
 
 	default:
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("unexpected response type: 0x%02x", msgType)
 	}
 }

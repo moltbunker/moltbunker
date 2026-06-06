@@ -255,7 +255,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if dataPath == "" {
 		dataPath = dataDir
 	}
-	if err := os.MkdirAll(dataPath, 0755); err != nil {
+	if err := os.MkdirAll(dataPath, 0700); err != nil {
 		return fmt.Errorf("failed to create data directory %s: %w", dataPath, err)
 	}
 
@@ -299,7 +299,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		if role != "requester" {
 			configContent += fmt.Sprintf("\ndaemon:\n  port: %d\n", p2pPort)
 		}
-		if err := os.WriteFile(actualConfigPath, []byte(configContent), 0644); err != nil {
+		if err := os.WriteFile(actualConfigPath, []byte(configContent), 0600); err != nil {
 			return fmt.Errorf("failed to write config: %w", err)
 		}
 		Success(fmt.Sprintf("Config written to %s", actualConfigPath))
@@ -315,7 +315,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		// Remove empty files (NewKeyManager panics on them)
 		if info, err := os.Stat(actualKeyPath); err == nil && info.Size() == 0 {
-			os.Remove(actualKeyPath)
+			_ = os.Remove(actualKeyPath)
 		}
 		_, err := identity.NewKeyManager(actualKeyPath)
 		if err != nil {

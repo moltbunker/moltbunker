@@ -364,12 +364,12 @@ func (c *ReverseClient) Disconnect() error {
 				logging.Err(err),
 				logging.Component("reverse-tunnel"))
 		}
-		c.ctrlStream.Close()
+		_ = c.ctrlStream.Close()
 		c.ctrlStream = nil
 	}
 
 	if c.session != nil {
-		c.session.Close()
+		_ = c.session.Close()
 		c.session = nil
 	}
 

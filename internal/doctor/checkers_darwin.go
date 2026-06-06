@@ -52,6 +52,7 @@ func (c *GoVersionChecker) Check(ctx context.Context) CheckResult {
 	}
 
 	// Get version
+	// #nosec G204 -- exec.CommandContext (no shell); goPath is a resolved binary path, subcommand is the constant "version"
 	out, err := exec.CommandContext(ctx, goPath, "version").Output()
 	if err != nil {
 		result.Status = StatusError
@@ -475,7 +476,7 @@ func (c *ConfigFileChecker) Fix(ctx context.Context, pm PackageManager) error {
 	}
 
 	configDir := filepath.Join(homeDir, ".moltbunker")
-	if err := os.MkdirAll(configDir, 0755); err != nil {
+	if err := os.MkdirAll(configDir, 0700); err != nil {
 		return err
 	}
 
@@ -537,6 +538,7 @@ func (c *SocketPermissionChecker) Check(ctx context.Context) CheckResult {
 
 	// Try to check if we have write permissions
 	testFile := filepath.Join(socketDir, ".write_test")
+	// #nosec G304 -- testFile is socketDir/.write_test, an internally constructed probe path, not request input
 	f, err := os.Create(testFile)
 	if err != nil {
 		result.Status = StatusError
@@ -544,8 +546,8 @@ func (c *SocketPermissionChecker) Check(ctx context.Context) CheckResult {
 		result.Details = err.Error()
 		return result
 	}
-	f.Close()
-	os.Remove(testFile)
+	_ = f.Close()
+	_ = os.Remove(testFile)
 
 	result.Status = StatusOK
 	result.Message = "Socket permissions: OK"

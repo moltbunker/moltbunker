@@ -50,6 +50,7 @@ func NewMoltMetrics() *MoltMetrics {
 
 // RecordInvocation records a completed invocation.
 func (m *MoltMetrics) RecordInvocation(deploymentID string, duration time.Duration, success bool, timeout bool) {
+	// #nosec G115 -- duration is elapsed wall-clock time, always non-negative
 	ns := uint64(duration.Nanoseconds())
 
 	atomic.AddUint64(&m.totalInvocations, 1)
@@ -100,7 +101,8 @@ func (m *MoltMetrics) GetGlobalStats() MoltStats {
 		ErrorInvocations:   atomic.LoadUint64(&m.errorInvocations),
 		TimeoutInvocations: atomic.LoadUint64(&m.timeoutInvocations),
 		ActiveInvocations:  atomic.LoadInt64(&m.activeInvocations),
-		TotalDuration:      time.Duration(atomic.LoadUint64(&m.totalDuration)),
+		// #nosec G115 -- accumulated nanoseconds; would require ~292 years of total duration to overflow int64
+		TotalDuration: time.Duration(atomic.LoadUint64(&m.totalDuration)),
 	}
 }
 
@@ -117,7 +119,8 @@ func (m *MoltMetrics) GetStats(deploymentID string) MoltStats {
 		SuccessInvocations: ds.success,
 		ErrorInvocations:   ds.errors,
 		TimeoutInvocations: ds.timeouts,
-		TotalDuration:      time.Duration(ds.duration),
+		// #nosec G115 -- accumulated nanoseconds; would require ~292 years of total duration to overflow int64
+		TotalDuration: time.Duration(ds.duration),
 	}
 	m.mu.RUnlock()
 	return stats

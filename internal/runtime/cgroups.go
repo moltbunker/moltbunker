@@ -29,7 +29,7 @@ func NewCgroupManager(cgroupRoot string) *CgroupManager {
 func (cm *CgroupManager) CreateCgroup(containerID string) error {
 	cgroupPath := filepath.Join(cm.cgroupRoot, "moltbunker", containerID)
 
-	if err := os.MkdirAll(cgroupPath, 0755); err != nil {
+	if err := os.MkdirAll(cgroupPath, 0700); err != nil {
 		return fmt.Errorf("failed to create cgroup: %w", err)
 	}
 
@@ -43,7 +43,7 @@ func (cm *CgroupManager) SetCPULimit(containerID string, quota int64, period uin
 	// Set CPU quota
 	quotaPath := filepath.Join(cgroupPath, "cpu.max")
 	quotaStr := fmt.Sprintf("%d %d", quota, period)
-	if err := os.WriteFile(quotaPath, []byte(quotaStr), 0644); err != nil {
+	if err := os.WriteFile(quotaPath, []byte(quotaStr), 0600); err != nil {
 		return fmt.Errorf("failed to set CPU quota: %w", err)
 	}
 
@@ -57,7 +57,7 @@ func (cm *CgroupManager) SetMemoryLimit(containerID string, limit int64) error {
 	// Set memory limit
 	memoryPath := filepath.Join(cgroupPath, "memory.max")
 	limitStr := strconv.FormatInt(limit, 10)
-	if err := os.WriteFile(memoryPath, []byte(limitStr), 0644); err != nil {
+	if err := os.WriteFile(memoryPath, []byte(limitStr), 0600); err != nil {
 		return fmt.Errorf("failed to set memory limit: %w", err)
 	}
 
@@ -71,7 +71,7 @@ func (cm *CgroupManager) SetPIDLimit(containerID string, limit int) error {
 	// Set PID limit
 	pidPath := filepath.Join(cgroupPath, "pids.max")
 	limitStr := strconv.Itoa(limit)
-	if err := os.WriteFile(pidPath, []byte(limitStr), 0644); err != nil {
+	if err := os.WriteFile(pidPath, []byte(limitStr), 0600); err != nil {
 		return fmt.Errorf("failed to set PID limit: %w", err)
 	}
 

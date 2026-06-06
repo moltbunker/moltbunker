@@ -32,6 +32,10 @@ type Frame struct {
 
 // writeFrame writes a length-prefixed frame: [4-byte big-endian length][1-byte type][payload].
 func writeFrame(w io.Writer, f *Frame) error {
+	if len(f.Payload) >= maxFrameSize {
+		return fmt.Errorf("frame payload too large: %d (max %d)", len(f.Payload), maxFrameSize)
+	}
+	// #nosec G115 -- bounded above: payload < maxFrameSize (1MB), so 1+len fits in uint32
 	totalLen := uint32(1 + len(f.Payload))
 	if err := binary.Write(w, binary.BigEndian, totalLen); err != nil {
 		return fmt.Errorf("write frame length: %w", err)

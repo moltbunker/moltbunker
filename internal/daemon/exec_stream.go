@@ -84,7 +84,7 @@ func (es *ExecStream) readLoop(ctx context.Context) {
 		case <-ctx.Done():
 		case <-es.session.Done():
 		}
-		es.session.Stdout.Close()
+		_ = es.session.Stdout.Close()
 	}()
 
 	if es.execAgentMode {
@@ -208,6 +208,11 @@ func (es *ExecStream) Resize(cols, rows uint16) error {
 // writeAgentFrame writes a length-prefixed frame to exec-agent stdin.
 // Format: [4-byte big-endian len(1+len(payload))][frameType][payload]
 func (es *ExecStream) writeAgentFrame(frameType byte, payload []byte) error {
+	// Enforce the same 1MB cap as readLoopFramed; this also bounds the conversion.
+	if len(payload) > (1<<20)-1 {
+		return fmt.Errorf("exec-agent frame payload too large: %d bytes", len(payload))
+	}
+	// #nosec G115 -- payload length bounded above (1MB), so 1+len cannot overflow uint32
 	totalLen := uint32(1 + len(payload))
 	buf := make([]byte, 4+totalLen)
 	binary.BigEndian.PutUint32(buf[0:4], totalLen)

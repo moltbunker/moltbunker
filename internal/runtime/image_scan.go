@@ -291,6 +291,7 @@ func (t *TrivyCLIScanner) Scan(ctx context.Context, imageRef string) (*ScanRepor
 	args = append(args, imageRef)
 
 	started := time.Now()
+	// #nosec G204 -- exec.CommandContext (no shell); BinaryPath is the operator-configured trivy binary (defaults to "trivy" on PATH), args are controlled
 	cmd := exec.CommandContext(ctx, t.BinaryPath, args...)
 	stdout, err := cmd.Output()
 	if err != nil {

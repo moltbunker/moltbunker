@@ -617,7 +617,7 @@ func (r *Router) Close() error {
 		}
 		peer.mu.Lock()
 		if peer.Conn != nil {
-			peer.Conn.Close()
+			_ = peer.Conn.Close()
 		}
 		peer.mu.Unlock()
 	}

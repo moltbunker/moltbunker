@@ -27,6 +27,7 @@ func hostResultSize(ctx context.Context, mod api.Module, stack []uint64) {
 		stack[0] = 0
 		return
 	}
+	// #nosec G115 -- result size is bounded by 32-bit WASM linear memory (max 4GB), fits in int32
 	stack[0] = api.EncodeI32(int32(size))
 }
 
@@ -51,6 +52,7 @@ func hostResultRead(ctx context.Context, mod api.Module, stack []uint64) {
 	}
 
 	// Clamp to destination buffer size
+	// #nosec G115 -- data length is bounded by 32-bit WASM linear memory (max 4GB), fits in uint32
 	writeLen := uint32(len(data))
 	if writeLen > dstLen {
 		writeLen = dstLen
@@ -70,6 +72,7 @@ func hostResultRead(ctx context.Context, mod api.Module, stack []uint64) {
 		}
 	}
 
+	// #nosec G115 -- writeLen is clamped to dstLen (a WASM u32 pointer length), fits in int32
 	stack[0] = api.EncodeI32(int32(writeLen))
 }
 
@@ -94,6 +97,7 @@ func hostErrorMessage(ctx context.Context, mod api.Module, stack []uint64) {
 	}
 
 	msgBytes := []byte(msg)
+	// #nosec G115 -- message length is bounded by 32-bit WASM linear memory (max 4GB), fits in uint32
 	writeLen := uint32(len(msgBytes))
 	if writeLen > dstLen {
 		writeLen = dstLen
@@ -113,6 +117,7 @@ func hostErrorMessage(ctx context.Context, mod api.Module, stack []uint64) {
 		}
 	}
 
+	// #nosec G115 -- writeLen is clamped to dstLen (a WASM u32 pointer length), fits in int32
 	stack[0] = api.EncodeI32(int32(writeLen))
 }
 
@@ -147,6 +152,7 @@ func hostRandomBytes(_ context.Context, mod api.Module, stack []uint64) {
 		return
 	}
 
+	// #nosec G115 -- dstLen is a WASM u32 pointer length, bounded by 32-bit linear memory, fits in int32
 	stack[0] = api.EncodeI32(int32(dstLen))
 }
 

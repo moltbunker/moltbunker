@@ -77,13 +77,13 @@ func (ts *TorService) Stop() error {
 	// Close all onion services
 	for _, service := range ts.onionServices {
 		// Silently close onion services - errors are non-fatal during shutdown
-		service.Close()
+		_ = service.Close()
 	}
 	ts.onionServices = make(map[int]*tor.OnionService)
 
 	// Close main onion service
 	if ts.onion != nil {
-		ts.onion.Close()
+		_ = ts.onion.Close()
 		ts.onion = nil
 	}
 
@@ -180,6 +180,7 @@ func (ts *TorService) loadOrGenerateKey(keyPath string) (ed25519.PrivateKey, err
 	}
 
 	// Load existing key
+	// #nosec G304 -- keyPath is built from the configured data dir + internal service id, not request input
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read onion key: %w", err)

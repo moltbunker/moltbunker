@@ -141,7 +141,7 @@ func (c *NodeKeysChecker) Fix(ctx context.Context, pm PackageManager) error {
 
 	// Remove empty file if it exists (NewKeyManager panics on empty files)
 	if info, err := os.Stat(keyPath); err == nil && info.Size() == 0 {
-		os.Remove(keyPath)
+		_ = os.Remove(keyPath)
 	}
 
 	_, err = identity.NewKeyManager(keyPath)

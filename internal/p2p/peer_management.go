@@ -172,7 +172,7 @@ func (r *Router) evictOldestIdlePeerLocked() bool {
 			}
 			peer.mu.Lock()
 			if peer.Conn != nil {
-				peer.Conn.Close()
+				_ = peer.Conn.Close()
 			}
 			peer.mu.Unlock()
 		}
@@ -206,7 +206,7 @@ func (r *Router) RemovePeer(nodeID types.NodeID) {
 			r.stakeVerifier.RemovePeer(nodeID)
 		}
 		if peerConn.Conn != nil {
-			peerConn.Conn.Close()
+			_ = peerConn.Conn.Close()
 		}
 		delete(r.peers, nodeID)
 	}
@@ -243,7 +243,7 @@ func (r *Router) CleanupStaleConnections(maxAge time.Duration) {
 				r.stakeVerifier.RemovePeer(nodeID)
 			}
 			if peer.Conn != nil {
-				peer.Conn.Close()
+				_ = peer.Conn.Close()
 			}
 			delete(r.peers, nodeID)
 		}

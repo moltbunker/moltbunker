@@ -194,7 +194,7 @@ func NewDHT(ctx context.Context, config *DHTConfig, keyManager *identity.KeyMana
 		),
 	)
 	if err != nil {
-		h.Close()
+		_ = h.Close()
 		return nil, fmt.Errorf("failed to create DHT: %w", err)
 	}
 
@@ -637,7 +637,7 @@ func (d *DHT) connectFromAddressBook(ctx context.Context) {
 // Both resources are closed regardless of individual errors.
 func (d *DHT) Close() error {
 	if d.mdns != nil {
-		d.mdns.Close()
+		_ = d.mdns.Close()
 	}
 	dhtErr := d.dht.Close()
 	hostErr := d.host.Close()

@@ -317,7 +317,7 @@ func (c *DaemonClient) call(method string, params interface{}) (*APIResponse, er
 	if err := c.encoder.Encode(req); err != nil {
 		// Connection is in an inconsistent state (partial write possible);
 		// close it so the next call reconnects cleanly.
-		c.conn.Close()
+		_ = c.conn.Close()
 		c.conn = nil
 		c.encoder = nil
 		c.decoder = nil
@@ -327,7 +327,7 @@ func (c *DaemonClient) call(method string, params interface{}) (*APIResponse, er
 	var resp APIResponse
 	if err := c.decoder.Decode(&resp); err != nil {
 		// Connection is broken; close so subsequent calls reconnect.
-		c.conn.Close()
+		_ = c.conn.Close()
 		c.conn = nil
 		c.encoder = nil
 		c.decoder = nil

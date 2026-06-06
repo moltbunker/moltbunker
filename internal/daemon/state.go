@@ -147,6 +147,7 @@ func (cm *ContainerManager) saveStateJSON() error {
 	cm.mu.RUnlock()
 
 	tmpPath := cm.stateFilePath() + ".tmp"
+	// #nosec G304 -- tmpPath is derived from cm.stateFilePath() (DataDir-based), not request input
 	f, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to create temp state file: %w", err)
@@ -155,24 +156,24 @@ func (cm *ContainerManager) saveStateJSON() error {
 	encoder := json.NewEncoder(f)
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(state); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to encode state: %w", err)
 	}
 
 	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmpPath)
+		_ = f.Close()
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to sync state file: %w", err)
 	}
 
 	if err := f.Close(); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to close state file: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, cm.stateFilePath()); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("failed to rename state file: %w", err)
 	}
 

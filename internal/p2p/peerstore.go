@@ -62,7 +62,7 @@ func (d *DHT) SaveRoutingTable(path string) error {
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		// Clean up temp file on rename failure
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename routing table file: %w", err)
 	}
 
@@ -77,6 +77,7 @@ func (d *DHT) SaveRoutingTable(path string) error {
 // LoadRoutingTable reads persisted peer records from disk and attempts to
 // connect to each saved peer. Connection failures are logged but not fatal.
 func (d *DHT) LoadRoutingTable(path string) error {
+	// #nosec G304 -- path is the daemon's configured routing-table file (DataDir-derived), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

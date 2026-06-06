@@ -64,6 +64,9 @@ func (t *Transport) serverTLSConfig() *tls.Config {
 			tls.TLS_CHACHA20_POLY1305_SHA256,
 			tls.TLS_AES_128_GCM_SHA256,
 		},
+		// Disable session resumption so resumed handshakes cannot skip the
+		// VerifyPeerCertificate pin check; every handshake runs full verification.
+		SessionTicketsDisabled: true,
 		// Require client certificates for mutual TLS
 		ClientAuth: tls.RequireAnyClientCert,
 		// Custom verification for self-signed certificates
@@ -133,7 +136,13 @@ func (t *Transport) DialContext(ctx context.Context, nodeID types.NodeID, addres
 		},
 		// Skip standard CA verification for self-signed certs
 		// We use certificate pinning instead
+		// #nosec G402 -- cert pinning via VerifyPeerCertificate (SPKI); CA chain validation intentionally bypassed
 		InsecureSkipVerify: true,
+		// No ClientSessionCache + SessionTicketsDisabled: disable session
+		// resumption so resumed handshakes cannot skip the VerifyPeerCertificate
+		// pin check; every handshake runs full verification.
+		ClientSessionCache:     nil,
+		SessionTicketsDisabled: true,
 		// ALWAYS verify peer certificate - either against pin or validate format
 		VerifyPeerCertificate: func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 			if len(rawCerts) == 0 {
@@ -201,7 +210,7 @@ func (t *Transport) DialContext(ctx context.Context, nodeID types.NodeID, addres
 	defer cancel()
 
 	if err := tlsConn.HandshakeContext(handshakeCtx); err != nil {
-		tcpConn.Close()
+		_ = tcpConn.Close()
 		return nil, fmt.Errorf("TLS handshake failed: %w", err)
 	}
 
@@ -216,7 +225,7 @@ func (t *Transport) DialContext(ctx context.Context, nodeID types.NodeID, addres
 		var derivedNodeID types.NodeID
 		copy(derivedNodeID[:], certHash[:])
 		if derivedNodeID != nodeID {
-			tlsConn.Close()
+			_ = tlsConn.Close()
 			return nil, fmt.Errorf("SECURITY: peer certificate NodeID mismatch: expected %s, got %s",
 				nodeID.String()[:16], derivedNodeID.String()[:16])
 		}

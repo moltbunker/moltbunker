@@ -27,22 +27,25 @@ func openPTY() (master, slave *os.File, err error) {
 
 	// Unlock the slave side
 	var unlock int
+	// #nosec G103 -- unsafe.Pointer required to pass the ioctl arg to the kernel (TIOCSPTLCK)
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), syscall.TIOCSPTLCK, uintptr(unsafe.Pointer(&unlock))); errno != 0 {
-		master.Close()
+		_ = master.Close()
 		return nil, nil, fmt.Errorf("TIOCSPTLCK: %w", errno)
 	}
 
 	// Get the slave device number
 	var ptyno uint32
+	// #nosec G103 -- unsafe.Pointer required to receive the ioctl result from the kernel (TIOCGPTN)
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, master.Fd(), syscall.TIOCGPTN, uintptr(unsafe.Pointer(&ptyno))); errno != 0 {
-		master.Close()
+		_ = master.Close()
 		return nil, nil, fmt.Errorf("TIOCGPTN: %w", errno)
 	}
 
 	slavePath := fmt.Sprintf("/dev/pts/%d", ptyno)
+	// #nosec G304 -- slavePath is /dev/pts/<N> where N is the PTY index returned by the TIOCGPTN ioctl, not external input
 	slave, err = os.OpenFile(slavePath, os.O_RDWR|syscall.O_NOCTTY, 0)
 	if err != nil {
-		master.Close()
+		_ = master.Close()
 		return nil, nil, fmt.Errorf("open slave %s: %w", slavePath, err)
 	}
 
@@ -59,8 +62,8 @@ func SpawnShell(cols, rows uint16) (*PTY, error) {
 
 	// Set initial terminal size
 	if err := setWinsize(master, cols, rows); err != nil {
-		master.Close()
-		slave.Close()
+		_ = master.Close()
+		_ = slave.Close()
 		return nil, fmt.Errorf("set initial winsize: %w", err)
 	}
 
@@ -70,6 +73,7 @@ func SpawnShell(cols, rows uint16) (*PTY, error) {
 		shell = "/bin/sh"
 	}
 
+	// #nosec G204 G702 -- exec.Command (no shell parsing); shell is the in-container SHELL env or the /bin/sh constant, and this agent runs inside the user's own already-isolated container
 	cmd := exec.Command(shell)
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
 	cmd.Stdin = slave
@@ -82,13 +86,13 @@ func SpawnShell(cols, rows uint16) (*PTY, error) {
 	}
 
 	if err := cmd.Start(); err != nil {
-		master.Close()
-		slave.Close()
+		_ = master.Close()
+		_ = slave.Close()
 		return nil, fmt.Errorf("start shell: %w", err)
 	}
 
 	// Close slave on our side — the child process owns it now
-	slave.Close()
+	_ = slave.Close()
 
 	return &PTY{
 		master: master,
@@ -139,6 +143,7 @@ type winsize struct {
 
 func setWinsize(f *os.File, cols, rows uint16) error {
 	ws := winsize{Rows: rows, Cols: cols}
+	// #nosec G103 -- unsafe.Pointer required to pass the winsize struct to the kernel (TIOCSWINSZ)
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_IOCTL,
 		f.Fd(),

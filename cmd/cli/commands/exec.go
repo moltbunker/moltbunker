@@ -176,7 +176,7 @@ func bridgeTerminalToWebSocket(ctx context.Context, conn *websocket.Conn, cols, 
 
 			switch frameType {
 			case wsFrameData:
-				os.Stdout.Write(data)
+				_, _ = os.Stdout.Write(data)
 			}
 		}
 	}()

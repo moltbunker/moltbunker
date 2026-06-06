@@ -49,6 +49,7 @@ func NewDenoWorker(id int, cfg DenoConfig, bindingsPath string) (*DenoWorker, er
 		bindingsPath,
 	}
 
+	// #nosec G204 -- exec.Command (no shell); denoPath is operator-configured (defaults to "deno" on PATH), args are controlled
 	cmd := exec.Command(denoPath, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -56,17 +57,17 @@ func NewDenoWorker(id int, cfg DenoConfig, bindingsPath string) (*DenoWorker, er
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		stdin.Close()
+		_ = stdin.Close()
 		return nil, fmt.Errorf("create stdout pipe: %w", err)
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
-		stdin.Close()
+		_ = stdin.Close()
 		return nil, fmt.Errorf("create stderr pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
-		stdin.Close()
+		_ = stdin.Close()
 		return nil, fmt.Errorf("start deno: %w", err)
 	}
 
@@ -311,7 +312,7 @@ func (w *DenoWorker) Close() error {
 
 	// Try graceful shutdown
 	_ = WriteMessage(w.stdin, &Message{Type: MsgTypeShutdown})
-	w.stdin.Close()
+	_ = w.stdin.Close()
 
 	// Wait with timeout
 	done := make(chan error, 1)

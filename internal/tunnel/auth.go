@@ -73,6 +73,7 @@ func IssueReconnToken(secret []byte, nodeID types.NodeID, subdomain string) stri
 	mac.Write(nodeID[:])
 	mac.Write([]byte(subdomain))
 	var ts [8]byte
+	// #nosec G115 -- now is time.Now().Unix(), always positive; wraps deterministically into HMAC input
 	binary.BigEndian.PutUint64(ts[:], uint64(now))
 	mac.Write(ts[:])
 	return hex.EncodeToString(mac.Sum(nil)) + fmt.Sprintf(":%d", now)
@@ -113,6 +114,7 @@ func ValidateReconnToken(secret []byte, token string, nodeID types.NodeID,
 	mac.Write(nodeID[:])
 	mac.Write([]byte(subdomain))
 	var ts [8]byte
+	// #nosec G115 -- issuedAt is a deterministic HMAC input; the same conversion is used on issue and validate, and the age check above bounds the accepted range
 	binary.BigEndian.PutUint64(ts[:], uint64(issuedAt))
 	mac.Write(ts[:])
 	expected := hex.EncodeToString(mac.Sum(nil))

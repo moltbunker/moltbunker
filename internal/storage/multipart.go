@@ -3,7 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
+	"crypto/md5" // #nosec G501 -- non-security use: S3-compatible ETag (content identifier), not auth/integrity
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -113,16 +113,18 @@ func (m *MultipartManager) UploadPart(_ context.Context, uploadID string, partNu
 
 	// Write part to temp file
 	partPath := filepath.Join(m.partsDir, uploadID, fmt.Sprintf("part-%05d", partNumber))
+	// #nosec G304 -- partsDir is DataDir-derived; uploadID is internally generated and partNumber is validated (1-10000)
 	f, err := os.Create(partPath)
 	if err != nil {
 		return nil, fmt.Errorf("create part file: %w", err)
 	}
 
+	// #nosec G401 -- non-security use: S3-compatible ETag (content identifier), not auth/integrity
 	h := md5.New()
 	size, err := io.Copy(io.MultiWriter(f, h), body)
-	f.Close()
+	_ = f.Close()
 	if err != nil {
-		os.Remove(partPath)
+		_ = os.Remove(partPath)
 		return nil, fmt.Errorf("write part: %w", err)
 	}
 
@@ -174,6 +176,7 @@ func (m *MultipartManager) CompleteUpload(_ context.Context, uploadID string, pa
 
 	for _, cp := range parts {
 		partPath := filepath.Join(m.partsDir, uploadID, fmt.Sprintf("part-%05d", cp.PartNumber))
+		// #nosec G304 -- partsDir is DataDir-derived; uploadID is internally generated and part number is formatted numeric
 		data, err := os.ReadFile(partPath)
 		if err != nil {
 			return nil, 0, "", fmt.Errorf("read part %d: %w", cp.PartNumber, err)
@@ -241,7 +244,7 @@ func (m *MultipartManager) cleanup(uploadID string) {
 	m.mu.Unlock()
 
 	dir := filepath.Join(m.partsDir, uploadID)
-	os.RemoveAll(dir)
+	_ = os.RemoveAll(dir)
 }
 
 func generateUploadID() (string, error) {

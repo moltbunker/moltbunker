@@ -114,7 +114,7 @@ func NewContainerdClient(socketPath string, namespace string, logsDir string, ru
 	// Create log manager
 	logManager, err := NewLogManager(logsDir)
 	if err != nil {
-		client.Close()
+		_ = client.Close()
 		return nil, fmt.Errorf("failed to create log manager: %w", err)
 	}
 

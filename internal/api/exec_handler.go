@@ -364,7 +364,7 @@ func (s *Server) bridgeLocalExec(
 ) {
 	ws := newSafeWSConn(conn)
 	defer func() {
-		ws.conn.Close()
+		_ = ws.conn.Close()
 		s.execSessions.RemoveSession(session.SessionID)
 
 		logging.Info("exec local session ended",
@@ -385,6 +385,7 @@ func (s *Server) bridgeLocalExec(
 
 	// Open PTY directly on the local container runtime (with ownership verification)
 	ctx := context.Background()
+	// #nosec G115 -- terminal dimensions; truncation to uint16 (max 65535 cols/rows) is harmless and intended
 	ptySession, err := cm.ExecLocal(ctx, session.ContainerID, session.WalletAddress, uint16(cols), uint16(rows))
 	if err != nil {
 		logging.Error("local exec failed",
@@ -527,7 +528,7 @@ func (s *Server) bridgeRemoteExec(
 ) {
 	ws := newSafeWSConn(conn)
 	defer func() {
-		ws.conn.Close()
+		_ = ws.conn.Close()
 		cm.RemoveExecRelay(session.SessionID)
 		s.execSessions.RemoveSession(session.SessionID)
 

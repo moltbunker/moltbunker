@@ -60,6 +60,7 @@ func main() {
 	}
 
 	// Create server config
+	// #nosec G101 -- not a credential: config-struct literal (addr/header-name/timeout fields), no secrets
 	serverCfg := &api.ServerConfig{
 		HTTPAddr:         *httpAddr,
 		HTTPSAddr:        *httpsAddr,

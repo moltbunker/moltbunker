@@ -89,21 +89,23 @@ func (em *EncryptionManager) CreateEncryptedVolume(containerID string, sizeGB in
 
 	// Create sparse file for volume
 	volumeSize := int64(sizeGB) * 1024 * 1024 * 1024
+	// #nosec G304 -- volumePath is volumesDir/<containerID>.img, internally constructed, not request input
 	file, err := os.Create(volumePath)
 	if err != nil {
-		os.Remove(keyPath)
+		_ = os.Remove(keyPath)
 		return nil, fmt.Errorf("failed to create volume file: %w", err)
 	}
 
 	if err := file.Truncate(volumeSize); err != nil {
-		file.Close()
-		os.Remove(keyPath)
-		os.Remove(volumePath)
+		_ = file.Close()
+		_ = os.Remove(keyPath)
+		_ = os.Remove(volumePath)
 		return nil, fmt.Errorf("failed to truncate volume file: %w", err)
 	}
-	file.Close()
+	_ = file.Close()
 
 	// Format as LUKS with key file (non-interactive)
+	// #nosec G204 -- exec.Command (no shell); command name is constant "cryptsetup", args are internal paths/flags
 	cmd := exec.Command("cryptsetup", "luksFormat",
 		"--type", "luks2",
 		"--key-file", keyPath,
@@ -113,8 +115,8 @@ func (em *EncryptionManager) CreateEncryptedVolume(containerID string, sizeGB in
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		os.Remove(keyPath)
-		os.Remove(volumePath)
+		_ = os.Remove(keyPath)
+		_ = os.Remove(volumePath)
 		return nil, fmt.Errorf("failed to create LUKS volume: %w (%s)", err, stderr.String())
 	}
 
@@ -149,6 +151,7 @@ func (em *EncryptionManager) OpenVolume(containerID string) error {
 	}
 
 	// Open LUKS volume
+	// #nosec G204 -- exec.Command (no shell); command name is constant "cryptsetup", args are internal volume paths
 	cmd := exec.Command("cryptsetup", "open",
 		"--key-file", volume.KeyPath,
 		volume.VolumePath,
@@ -174,6 +177,7 @@ func (em *EncryptionManager) FormatVolume(containerID string) error {
 	}
 
 	// Format with ext4
+	// #nosec G204 -- exec.Command (no shell); command name is constant "mkfs.ext4", arg is internal mapper path
 	cmd := exec.Command("mkfs.ext4", "-F", volume.MapperPath)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -199,11 +203,12 @@ func (em *EncryptionManager) MountVolume(containerID string) (string, error) {
 	}
 
 	// Create mount point
-	if err := os.MkdirAll(volume.MountPath, 0755); err != nil {
+	if err := os.MkdirAll(volume.MountPath, 0700); err != nil {
 		return "", fmt.Errorf("failed to create mount point: %w", err)
 	}
 
 	// Mount the volume
+	// #nosec G204 -- exec.Command (no shell); command name is constant "mount", args are internal mapper/mount paths
 	cmd := exec.Command("mount", volume.MapperPath, volume.MountPath)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -230,6 +235,7 @@ func (em *EncryptionManager) UnmountVolume(containerID string) error {
 	}
 
 	// Unmount the volume
+	// #nosec G204 -- exec.Command (no shell); command name is constant "umount", arg is internal mount path
 	cmd := exec.Command("umount", volume.MountPath)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -263,6 +269,7 @@ func (em *EncryptionManager) CloseVolume(containerID string) error {
 	}
 
 	// Close LUKS volume (no lock needed for external command)
+	// #nosec G204 -- exec.Command (no shell); command name is constant "cryptsetup", arg is internal mapper name
 	cmd := exec.Command("cryptsetup", "close", mapperName)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -289,9 +296,9 @@ func (em *EncryptionManager) DeleteEncryptedVolume(containerID string) error {
 		keyPath := filepath.Join(em.keysDir, fmt.Sprintf("%s.key", containerID))
 		mountPath := filepath.Join(em.mountsDir, containerID)
 
-		os.Remove(volumePath)
-		os.Remove(keyPath)
-		os.RemoveAll(mountPath)
+		_ = os.Remove(volumePath)
+		_ = os.Remove(keyPath)
+		_ = os.RemoveAll(mountPath)
 		return nil
 	}
 
@@ -417,6 +424,7 @@ func (em *EncryptionManager) LoadExistingVolumes() error {
 		mounted := false
 		if _, err := os.Stat(mountPath); err == nil {
 			// Check if actually mounted
+			// #nosec G204 -- exec.Command (no shell); command name is constant "mountpoint", arg is internal mount path
 			cmd := exec.Command("mountpoint", "-q", mountPath)
 			if cmd.Run() == nil {
 				mounted = true

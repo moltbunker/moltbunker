@@ -230,6 +230,7 @@ func runStoragePut(_ *cobra.Command, args []string) error {
 		key = filepath.Base(localFile)
 	}
 
+	// #nosec G304 -- localFile is the user-provided upload source path (CLI arg); reading it is the command's purpose
 	data, err := os.ReadFile(localFile)
 	if err != nil {
 		return fmt.Errorf("read file: %w", err)
@@ -297,7 +298,7 @@ func runStorageGet(_ *cobra.Command, args []string) error {
 		return fmt.Errorf("download failed: %w", err)
 	}
 
-	if err := os.WriteFile(outputFile, resp.Data, 0644); err != nil {
+	if err := os.WriteFile(outputFile, resp.Data, 0600); err != nil {
 		return fmt.Errorf("write file: %w", err)
 	}
 

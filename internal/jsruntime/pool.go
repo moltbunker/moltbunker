@@ -51,7 +51,7 @@ func NewDenoPool(cfg DenoConfig, bindingsPath string, services *molt.HostService
 	for i := 0; i < cfg.PoolSize; i++ {
 		w, err := pool.spawnWorker()
 		if err != nil {
-			pool.Close()
+			_ = pool.Close()
 			return nil, fmt.Errorf("spawn initial worker %d: %w", i, err)
 		}
 		pool.workers = append(pool.workers, w)
@@ -88,7 +88,7 @@ func (p *DenoPool) Execute(ctx context.Context, invocation JSInvocation) (*JSRes
 	// Ensure worker is alive, restart if dead
 	if !worker.Alive() {
 		logging.Warn("deno worker dead, restarting", "worker_id", worker.id)
-		worker.Close()
+		_ = worker.Close()
 		var err error
 		worker, err = p.spawnWorker()
 		if err != nil {
@@ -104,7 +104,7 @@ func (p *DenoPool) Execute(ctx context.Context, invocation JSInvocation) (*JSRes
 		p.available <- worker
 	} else {
 		logging.Warn("deno worker died during invocation, spawning replacement", "worker_id", worker.id)
-		worker.Close()
+		_ = worker.Close()
 		newWorker, spawnErr := p.spawnWorker()
 		if spawnErr != nil {
 			logging.Error("failed to spawn replacement worker", "err", spawnErr)
@@ -136,13 +136,13 @@ func (p *DenoPool) Close() error {
 	// Drain available channel
 	close(p.available)
 	for w := range p.available {
-		w.Close()
+		_ = w.Close()
 	}
 
 	// Close any remaining workers
 	p.mu.Lock()
 	for _, w := range p.workers {
-		w.Close()
+		_ = w.Close()
 	}
 	p.workers = nil
 	p.mu.Unlock()

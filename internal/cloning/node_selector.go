@@ -25,6 +25,7 @@ func cryptoRandShuffle(n int, swap func(i, j int)) {
 	for i := n - 1; i > 0; i-- {
 		var b [8]byte
 		_, _ = rand.Read(b[:])
+		// #nosec G115 -- i is a non-negative loop index; i+1 widens safely to uint64
 		j := int(binary.BigEndian.Uint64(b[:]) % uint64(i+1))
 		swap(i, j)
 	}

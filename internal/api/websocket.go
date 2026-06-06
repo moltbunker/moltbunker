@@ -176,7 +176,7 @@ func newWebSocketClient(hub *WebSocketHub, conn *websocket.Conn) *WebSocketClien
 func (c *WebSocketClient) readPump() {
 	defer func() {
 		c.hub.unregister <- c
-		c.conn.Close()
+		_ = c.conn.Close()
 	}()
 
 	c.conn.SetReadLimit(512 * 1024) // 512KB
@@ -221,7 +221,7 @@ func (c *WebSocketClient) writePump() {
 	ticker := time.NewTicker(54 * time.Second) // Ping interval
 	defer func() {
 		ticker.Stop()
-		c.conn.Close()
+		_ = c.conn.Close()
 	}()
 
 	for {

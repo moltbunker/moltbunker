@@ -185,7 +185,7 @@ func (bl *BanList) Save(path string) error {
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		// Clean up temp file on rename failure
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename ban list file: %w", err)
 	}
 
@@ -200,6 +200,7 @@ func (bl *BanList) Save(path string) error {
 // Load reads the ban list from a JSON file. If the file does not exist,
 // the ban list is left empty (no error).
 func (bl *BanList) Load(path string) error {
+	// #nosec G304 -- path is the daemon's configured ban-list file (DataDir-derived), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

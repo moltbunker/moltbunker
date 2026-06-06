@@ -651,6 +651,7 @@ func main() {
 	// This runs in the same process as the daemon so exec has direct ContainerManager access.
 	var httpAPIServer *api.Server
 	if *httpAddr != "" {
+		// #nosec G101 -- not a credential: config-struct literal (addr/header-name/timeout fields), no secrets
 		httpServerCfg := &api.ServerConfig{
 			HTTPAddr:         *httpAddr,
 			DaemonSocketPath: cfg.Daemon.SocketPath,
@@ -880,7 +881,7 @@ func main() {
 		}
 
 		// M1: Remove PID file
-		os.Remove(pidPath)
+		_ = os.Remove(pidPath)
 	}()
 
 	// Wait for shutdown to complete or timeout to expire
@@ -985,6 +986,7 @@ func resolveWalletPassword(cfg *config.Config) (string, bool) {
 // Returns an error if another daemon process is already running.
 func checkAndWritePIDFile(pidPath string) error {
 	// Check for existing PID file
+	// #nosec G304 -- pidPath is the daemon's configured PID file path (DataDir-derived), not request input
 	data, err := os.ReadFile(pidPath)
 	if err == nil {
 		// PID file exists, check if process is still running
@@ -1003,7 +1005,7 @@ func checkAndWritePIDFile(pidPath string) error {
 			"path", pidPath,
 			"stale_pid", string(data),
 			logging.Component("daemon"))
-		os.Remove(pidPath)
+		_ = os.Remove(pidPath)
 	}
 
 	// Ensure parent directory exists

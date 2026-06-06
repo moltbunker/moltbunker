@@ -110,6 +110,7 @@ func startForegroundDaemon(keyPath, keystoreDir, dataDir, walletPassword string)
 		args = append(args, "--config", configPath)
 	}
 
+	// #nosec G204 -- exec.Command (no shell); daemonBin is resolved by findDaemonBinary (allowlisted locations), args are controlled
 	daemonCmd := exec.Command(daemonBin, args...)
 	daemonCmd.Stdout = os.Stdout
 	daemonCmd.Stderr = os.Stderr
@@ -147,7 +148,7 @@ func startDaemonProcess(keyPath, keystoreDir, dataDir, walletPassword string) er
 
 	logFile := filepath.Join(dataDir, "logs", "daemon.log")
 	logDir := filepath.Dir(logFile)
-	if err := os.MkdirAll(logDir, 0755); err != nil {
+	if err := os.MkdirAll(logDir, 0700); err != nil {
 		return fmt.Errorf("failed to create log directory %s: %w", logDir, err)
 	}
 
@@ -155,7 +156,8 @@ func startDaemonProcess(keyPath, keystoreDir, dataDir, walletPassword string) er
 	logOffset := getFileSize(logFile)
 
 	// Open log file for daemon output
-	logFD, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// #nosec G304 -- logFile is dataDir/logs/daemon.log (DataDir-derived), not request input
+	logFD, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return fmt.Errorf("failed to open log file: %w", err)
 	}
@@ -172,6 +174,7 @@ func startDaemonProcess(keyPath, keystoreDir, dataDir, walletPassword string) er
 		args = append(args, "--config", configPath)
 	}
 
+	// #nosec G204 -- exec.Command (no shell); daemonBin is resolved by findDaemonBinary (allowlisted locations), args are controlled
 	daemonCmd := exec.Command(daemonBin, args...)
 	daemonCmd.Stdout = logFD
 	daemonCmd.Stderr = logFD
@@ -184,7 +187,7 @@ func startDaemonProcess(keyPath, keystoreDir, dataDir, walletPassword string) er
 	}
 
 	if err := daemonCmd.Start(); err != nil {
-		logFD.Close()
+		_ = logFD.Close()
 		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 
@@ -196,7 +199,7 @@ func startDaemonProcess(keyPath, keystoreDir, dataDir, walletPassword string) er
 
 	// Wait for daemon to either establish itself or exit
 	time.Sleep(2 * time.Second)
-	logFD.Close()
+	_ = logFD.Close()
 
 	// Check if daemon is responding via socket
 	daemonClient := client.NewDaemonClient(SocketPath)
@@ -359,6 +362,7 @@ func appendWalletEnv(env []string, password string) []string {
 
 // readPIDFile reads a PID from the given file path. Returns 0 on any error.
 func readPIDFile(path string) int {
+	// #nosec G304 -- path is the daemon PID file (DataDir/HomeDir-derived), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0
@@ -392,6 +396,7 @@ func getFileSize(path string) int64 {
 // readDaemonFailureReason reads log output written after startOffset and
 // extracts a human-readable failure reason from common error patterns.
 func readDaemonFailureReason(logFile string, startOffset int64) string {
+	// #nosec G304 -- logFile is dataDir/logs/daemon.log (DataDir-derived), not request input
 	f, err := os.Open(logFile)
 	if err != nil {
 		return ""

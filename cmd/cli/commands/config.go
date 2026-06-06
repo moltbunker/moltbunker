@@ -102,6 +102,7 @@ func NewConfigShowCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			configPath := getConfigPath()
 
+			// #nosec G304 -- configPath is ~/.moltbunker/config.yaml (HomeDir-derived), not request input
 			data, err := os.ReadFile(configPath)
 			if err != nil {
 				return fmt.Errorf("failed to read config: %w", err)
@@ -134,6 +135,7 @@ func NewConfigEditCmd() *cobra.Command {
 			// but pass configPath as a separate argument to prevent injection.
 			parts := strings.Fields(editor)
 			editorArgs := append(parts[1:], configPath)
+			// #nosec G204 G702 -- exec.Command (no shell); editor comes from the user's own $EDITOR (defaults to "vi"); configPath passed as a separate arg
 			c := exec.Command(parts[0], editorArgs...)
 			c.Stdin = os.Stdin
 			c.Stdout = os.Stdout
@@ -151,6 +153,7 @@ func getConfigPath() string {
 func loadConfigFile() (map[string]interface{}, error) {
 	configPath := getConfigPath()
 
+	// #nosec G304 -- configPath is ~/.moltbunker/config.yaml (HomeDir-derived), not request input
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read config: %w", err)
@@ -172,7 +175,7 @@ func saveConfigFile(config map[string]interface{}) error {
 		return fmt.Errorf("failed to serialize config: %w", err)
 	}
 
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 

@@ -204,7 +204,7 @@ func newRequesterKeysExportCmd() *cobra.Command {
 				outputFile = "moltbunker_pubkey.bin"
 			}
 
-			if err := os.WriteFile(outputFile, pubKey, 0644); err != nil {
+			if err := os.WriteFile(outputFile, pubKey, 0600); err != nil {
 				return fmt.Errorf("failed to write file: %w", err)
 			}
 
@@ -305,7 +305,7 @@ func runRequesterJobs(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s BUNKER\t%d/3\n",
 			j.ID[:12], j.Image, j.Status, j.Duration, j.Cost, j.ReplicaCount)
 	}
-	w.Flush()
+	_ = w.Flush()
 
 	return nil
 }

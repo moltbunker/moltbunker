@@ -28,6 +28,7 @@ func (am *AuthManager) CreateAuthToken(nodeID types.NodeID, timestamp time.Time)
 	token := make([]byte, 32+8+64) // nodeID (32) + timestamp (8) + signature (64)
 
 	copy(token[0:32], nodeID[:])
+	// #nosec G115 -- Unix timestamp is positive; round-trips deterministically through the token
 	binary.BigEndian.PutUint64(token[32:40], uint64(timestamp.Unix()))
 
 	// Sign the token
@@ -49,6 +50,7 @@ func (am *AuthManager) VerifyAuthToken(token []byte, publicKey ed25519.PublicKey
 	var nodeID types.NodeID
 	copy(nodeID[:], token[0:32])
 
+	// #nosec G115 -- decodes the same Unix timestamp written in CreateAuthToken; round-trip conversion
 	timestamp := time.Unix(int64(binary.BigEndian.Uint64(token[32:40])), 0)
 	signature := token[40:]
 

@@ -48,12 +48,12 @@ func NewTestHarness(t *testing.T) *TestHarness {
 	// Create subdirectories
 	dataDir := filepath.Join(tempDir, "data")
 	logsDir := filepath.Join(tempDir, "logs")
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		os.RemoveAll(tempDir)
+	if err := os.MkdirAll(dataDir, 0750); err != nil {
+		_ = os.RemoveAll(tempDir)
 		t.Fatalf("Failed to create data directory: %v", err)
 	}
-	if err := os.MkdirAll(logsDir, 0755); err != nil {
-		os.RemoveAll(tempDir)
+	if err := os.MkdirAll(logsDir, 0750); err != nil {
+		_ = os.RemoveAll(tempDir)
 		t.Fatalf("Failed to create logs directory: %v", err)
 	}
 
@@ -114,7 +114,7 @@ func (h *TestHarness) Cleanup() {
 
 	// Remove temp directory
 	if h.TempDir != "" {
-		os.RemoveAll(h.TempDir)
+		_ = os.RemoveAll(h.TempDir)
 	}
 }
 
@@ -149,7 +149,7 @@ payment:
   enabled: false
 `, h.DataDir, h.SocketPath, h.TempDir)
 
-	return os.WriteFile(h.ConfigPath, []byte(config), 0644)
+	return os.WriteFile(h.ConfigPath, []byte(config), 0600)
 }
 
 // WaitFor waits for a condition to be true, with timeout
@@ -209,9 +209,9 @@ func (h *TestHarness) AssertTorNotRunning() {
 
 // MockPaymentEnvironment sets up the mock payment environment
 func (h *TestHarness) MockPaymentEnvironment() {
-	os.Setenv("MOLTBUNKER_MOCK_PAYMENTS", "true")
+	_ = os.Setenv("MOLTBUNKER_MOCK_PAYMENTS", "true")
 	h.AddCleanup(func() {
-		os.Unsetenv("MOLTBUNKER_MOCK_PAYMENTS")
+		_ = os.Unsetenv("MOLTBUNKER_MOCK_PAYMENTS")
 	})
 }
 
@@ -235,7 +235,7 @@ func (h *TestHarness) SetupMockContainer(id, image string) (*mocks.MockContainer
 func (h *TestHarness) TempFile(name string, content []byte) string {
 	h.t.Helper()
 	path := filepath.Join(h.TempDir, name)
-	if err := os.WriteFile(path, content, 0644); err != nil {
+	if err := os.WriteFile(path, content, 0600); err != nil {
 		h.t.Fatalf("Failed to create temp file: %v", err)
 	}
 	return path
@@ -245,7 +245,7 @@ func (h *TestHarness) TempFile(name string, content []byte) string {
 func (h *TestHarness) TempSubDir(name string) string {
 	h.t.Helper()
 	path := filepath.Join(h.TempDir, name)
-	if err := os.MkdirAll(path, 0755); err != nil {
+	if err := os.MkdirAll(path, 0750); err != nil {
 		h.t.Fatalf("Failed to create temp subdirectory: %v", err)
 	}
 	return path

@@ -49,7 +49,7 @@ func (b *DaemonBridge) putClient(c *client.DaemonClient) {
 		// Returned to pool
 	default:
 		// Pool full, close client
-		c.Close()
+		_ = c.Close()
 	}
 }
 
@@ -63,7 +63,7 @@ func (b *DaemonBridge) withClient(fn func(*client.DaemonClient) error) error {
 	err = fn(c)
 	if err != nil {
 		// On error, close and don't return to pool
-		c.Close()
+		_ = c.Close()
 		return err
 	}
 
@@ -246,7 +246,7 @@ func (b *DaemonBridge) GetLogs(containerID string, follow bool, tail int) (strin
 func (b *DaemonBridge) Close() {
 	close(b.pool)
 	for c := range b.pool {
-		c.Close()
+		_ = c.Close()
 	}
 	logging.Info("daemon bridge closed", logging.Component("api"))
 }
