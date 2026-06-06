@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/huh"
 	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/moltbunker/moltbunker/internal/identity"
+	"github.com/moltbunker/moltbunker/internal/security"
 	"github.com/spf13/cobra"
 )
 
@@ -388,9 +389,13 @@ func runDeployDirect(image string) error {
 		Spot:            deploySpot,
 	}
 
-	// Generate E2E exec key if wallet is available
-	if execKey, nonce, err := generateExecKey(); err == nil {
-		req.EncryptedExecKey = execKey
+	// Generate + seal an E2E exec key if a wallet and provider pubkey are
+	// available. The exec_key is ECIES-sealed to the daemon's stable X25519
+	// public key so it never transits in cleartext.
+	if env, nonce, err := generateSealedExecKey(c); err == nil {
+		req.EncryptedExecKey = env.Ciphertext
+		req.ExecKeyNonce = env.Nonce
+		req.RequesterEphemeralPubKey = env.EphemeralPub
 		req.DeployNonce = nonce
 		Info("E2E encrypted exec enabled")
 	}
@@ -425,9 +430,25 @@ func runDeployDirect(image string) error {
 	return nil
 }
 
-// generateExecKey attempts to derive an exec_key from the local wallet.
-// Returns (execKey, hexDeployNonce, nil) on success, or error if wallet unavailable.
-func generateExecKey() ([]byte, string, error) {
+// execPubKeyFetcher is the subset of the client used to obtain the provider's
+// stable X25519 public key. Kept as an interface for testability.
+type execPubKeyFetcher interface {
+	GetExecPubKey() ([]byte, error)
+}
+
+// generateSealedExecKey derives an exec_key from the local wallet and seals it
+// to the provider's stable X25519 public key using ECIES. Returns the envelope
+// and the hex-encoded deploy nonce on success, or an error if the wallet or
+// provider pubkey is unavailable (in which case the deploy proceeds without
+// E2E exec).
+func generateSealedExecKey(c execPubKeyFetcher) (*security.X25519Envelope, string, error) {
+	// Fetch the provider's stable X25519 public key. If unavailable (older
+	// daemon, key load failure), skip E2E exec rather than send cleartext.
+	providerPub, err := c.GetExecPubKey()
+	if err != nil {
+		return nil, "", fmt.Errorf("fetch provider exec pubkey: %w", err)
+	}
+
 	keystoreDir := defaultKeystoreDir()
 	wm, err := identity.LoadWalletManager(keystoreDir)
 	if err != nil {
@@ -462,7 +483,13 @@ func generateExecKey() ([]byte, string, error) {
 		return nil, "", fmt.Errorf("derive exec key: %w", err)
 	}
 
-	return execKey, hex.EncodeToString(deployNonce), nil
+	// Seal the exec_key to the provider's stable X25519 public key (ECIES).
+	env, err := security.SealToX25519(providerPub, execKey)
+	if err != nil {
+		return nil, "", fmt.Errorf("seal exec key: %w", err)
+	}
+
+	return env, hex.EncodeToString(deployNonce), nil
 }
 
 // toExposedPorts converts a slice of port ints to ExposedPort structs.

@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -77,10 +79,10 @@ type ExecChallengeResponse struct {
 
 // WSFrame types for the exec WebSocket protocol
 const (
-	WSFrameData   byte = 0x01 // Terminal data (stdin/stdout)
-	WSFrameResize byte = 0x02 // Terminal resize event
-	WSFramePing   byte = 0x03 // Keep-alive ping
-	WSFramePong   byte = 0x04 // Keep-alive pong
+	WSFrameData    byte = 0x01 // Terminal data (stdin/stdout)
+	WSFrameResize  byte = 0x02 // Terminal resize event
+	WSFramePing    byte = 0x03 // Keep-alive ping
+	WSFramePong    byte = 0x04 // Keep-alive pong
 	WSFrameClose   byte = 0x05 // Close session
 	WSFrameError   byte = 0x06 // Error message
 	WSFrameKeyInit byte = 0x07 // Session key initialization (carries session_nonce)
@@ -383,7 +385,21 @@ func (s *Server) bridgeLocalExec(
 		})
 	}()
 
-	// Open PTY directly on the local container runtime (with ownership verification)
+	// Detect exec-agent mode (E2E encrypted exec). When the container has the
+	// exec-agent injected, ExecLocal launches "/usr/local/bin/exec-agent --stdio"
+	// instead of a plaintext PTY (mirrors handleExecOpen on the remote path).
+	// In agent mode the API server is a TRANSPARENT byte-pipe of the exec-agent
+	// frame protocol: it never decrypts, and must translate between the
+	// browser/CLI WebSocket framing ([type][payload], no length prefix) and the
+	// exec-agent stdio wire framing ([4-byte BE len][type][payload]).
+	execAgentMode := false
+	if deployment, ok := cm.GetDeployment(session.ContainerID); ok {
+		execAgentMode = deployment.ExecAgentEnabled
+	}
+
+	// Open the session on the local container runtime (with ownership
+	// verification). ExecLocal returns either a plaintext PTY (non-agent) or a
+	// raw exec-agent session (agent mode), branching on ExecAgentEnabled.
 	ctx := context.Background()
 	ptySession, err := cm.ExecLocal(ctx, session.ContainerID, session.WalletAddress, uint16(cols), uint16(rows))
 	if err != nil {
@@ -402,38 +418,43 @@ func (s *Server) bridgeLocalExec(
 		"container_id", session.ContainerID,
 		"cols", cols,
 		"rows", rows,
+		"exec_agent", execAgentMode,
 		logging.Component("exec_api"))
 
-	// Goroutine: PTY stdout → WebSocket (all writes go through ws to serialize)
+	// Goroutine: PTY/agent stdout → WebSocket (all writes go through ws to serialize)
 	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		buf := make([]byte, 4096)
-		for {
-			n, readErr := ptySession.Stdout.Read(buf)
-			if n > 0 {
-				frame := make([]byte, 1+n)
-				frame[0] = WSFrameData
-				copy(frame[1:], buf[:n])
-				if writeErr := ws.writeMessage(frame); writeErr != nil {
+	if execAgentMode {
+		go s.relayAgentStdoutToWS(ws, ptySession.Stdout, session, done)
+	} else {
+		go func() {
+			defer close(done)
+			buf := make([]byte, 4096)
+			for {
+				n, readErr := ptySession.Stdout.Read(buf)
+				if n > 0 {
+					frame := make([]byte, 1+n)
+					frame[0] = WSFrameData
+					copy(frame[1:], buf[:n])
+					if writeErr := ws.writeMessage(frame); writeErr != nil {
+						return
+					}
+					s.execSessions.AddBytes(session.SessionID, int64(n), 0)
+				}
+				if readErr != nil {
+					// PTY closed — send close frame
+					closeFrame := []byte{WSFrameClose}
+					closeFrame = append(closeFrame, []byte("session_ended")...)
+					if writeErr := ws.writeMessage(closeFrame); writeErr != nil {
+						logging.Warn("failed to write close frame on PTY end",
+							"session_id", session.SessionID,
+							"error", writeErr.Error(),
+							logging.Component("exec_api"))
+					}
 					return
 				}
-				s.execSessions.AddBytes(session.SessionID, int64(n), 0)
 			}
-			if readErr != nil {
-				// PTY closed — send close frame
-				closeFrame := []byte{WSFrameClose}
-				closeFrame = append(closeFrame, []byte("session_ended")...)
-				if writeErr := ws.writeMessage(closeFrame); writeErr != nil {
-					logging.Warn("failed to write close frame on PTY end",
-						"session_id", session.SessionID,
-						"error", writeErr.Error(),
-						logging.Component("exec_api"))
-				}
-				return
-			}
-		}
-	}()
+		}()
+	}
 
 	// Main loop: WebSocket → PTY stdin
 	conn.SetReadLimit(64 * 1024)
@@ -468,6 +489,39 @@ func (s *Server) bridgeLocalExec(
 
 		frameType := message[0]
 		frameData := message[1:]
+
+		// Agent mode: translate every browser/CLI WS frame into an exec-agent
+		// stdio wire frame ([4-byte BE len][type][payload]) and write it to the
+		// agent's stdin. The agent handles resize/key-exchange/ciphertext itself;
+		// the API server never decrypts and never strips the frame type byte.
+		if execAgentMode {
+			switch frameType {
+			case WSFrameData:
+				// Plain terminal DATA: the WS type byte is stripped on the wire,
+				// so re-stamp it as a DATA (0x01) agent frame.
+				if writeErr := writeAgentStdinFrame(ptySession.Stdin, WSFrameData, frameData); writeErr != nil {
+					logging.Warn("failed to write DATA frame to agent stdin",
+						"session_id", session.SessionID,
+						"error", writeErr.Error(),
+						logging.Component("exec_api"))
+				}
+				s.execSessions.AddBytes(session.SessionID, 0, int64(len(frameData)))
+			case WSFrameResize, WSFrameKeyInit, WSFrameKeyAck, WSFramePing, WSFramePong, WSFrameClose:
+				// Control frames carry their semantic type as message[0]; relay
+				// that type verbatim to the agent (resize, key exchange, etc.).
+				if writeErr := writeAgentStdinFrame(ptySession.Stdin, frameType, frameData); writeErr != nil {
+					logging.Warn("failed to relay control frame to agent stdin",
+						"session_id", session.SessionID,
+						"frame_type", frameType,
+						"error", writeErr.Error(),
+						logging.Component("exec_api"))
+				}
+				if frameType == WSFrameClose {
+					goto cleanup
+				}
+			}
+			continue
+		}
 
 		switch frameType {
 		case WSFrameData:
@@ -514,6 +568,94 @@ cleanup:
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
+	}
+}
+
+// maxAgentFrameSize bounds a single exec-agent stdio frame payload (1MB).
+// Must match cmd/exec-agent/protocol.go maxFrameSize.
+const maxAgentFrameSize = 1 << 20
+
+// writeAgentStdinFrame encodes a single exec-agent stdio wire frame and writes
+// it to the agent's stdin. Wire format: [4-byte BE total length][1-byte type]
+// [payload], matching cmd/exec-agent/protocol.go writeFrame. The frame type uses
+// the shared WS/agent frame numbers (DATA 0x01, RESIZE 0x02, KEY_INIT 0x07, …).
+func writeAgentStdinFrame(w io.Writer, frameType byte, payload []byte) error {
+	frame := make([]byte, 4+1+len(payload))
+	binary.BigEndian.PutUint32(frame[0:4], uint32(1+len(payload)))
+	frame[4] = frameType
+	copy(frame[5:], payload)
+	_, err := w.Write(frame)
+	return err
+}
+
+// relayAgentStdoutToWS reads length-prefixed exec-agent stdio frames from the
+// agent's stdout and forwards each as a top-level WebSocket frame, preserving the
+// frame type byte. DATA frames carry opaque ciphertext; control frames (KEY_ACK,
+// ERROR, PONG, …) keep their type so the browser/CLI can distinguish them. The
+// type byte is stamped as message[0], matching what the local inbound path and
+// the CLI client (decodeControlFrame) expect. On agent stdout EOF/CLOSE a
+// WSFrameClose is sent. This is the local-path mirror of the daemon ExecStream
+// readLoopFramed relay; the API server never decrypts.
+func (s *Server) relayAgentStdoutToWS(ws *safeWSConn, r io.Reader, session *ExecSession, done chan struct{}) {
+	defer close(done)
+	pumpAgentStdoutFrames(r, ws.writeMessage, func(n int) {
+		s.execSessions.AddBytes(session.SessionID, int64(n), 0)
+	}, session.SessionID)
+}
+
+// pumpAgentStdoutFrames is the pure frame-translation loop behind
+// relayAgentStdoutToWS, factored out for testability. It reads exec-agent stdio
+// wire frames ([4-byte BE len][type][payload]) from r and, for each, calls
+// writeFrame with a top-level WS frame [type][payload]. onData(n) is invoked with
+// the ciphertext length for DATA frames (byte accounting). On EOF, an invalid
+// frame length, or an agent CLOSE frame, it emits a final WSFrameClose and
+// returns. If writeFrame errors, the pump stops without emitting a close.
+func pumpAgentStdoutFrames(r io.Reader, writeFrame func([]byte) error, onData func(n int), sessionID string) {
+	var lenBuf [4]byte
+	for {
+		if _, err := io.ReadFull(r, lenBuf[:]); err != nil {
+			break
+		}
+		totalLen := binary.BigEndian.Uint32(lenBuf[:])
+		if totalLen < 1 || totalLen > maxAgentFrameSize {
+			logging.Warn("exec-agent invalid stdout frame length",
+				"session_id", sessionID,
+				"length", totalLen,
+				logging.Component("exec_api"))
+			break
+		}
+		frameBuf := make([]byte, totalLen)
+		if _, err := io.ReadFull(r, frameBuf); err != nil {
+			break
+		}
+		agentType := frameBuf[0]
+		payload := frameBuf[1:]
+
+		if agentType == WSFrameClose {
+			break
+		}
+
+		// Forward as a top-level WS frame [type][payload]. For DATA this is
+		// [WSFrameData][ciphertext]; for control frames [WSFrameKeyAck][...] etc.
+		wsFrame := make([]byte, 1+len(payload))
+		wsFrame[0] = agentType
+		copy(wsFrame[1:], payload)
+		if err := writeFrame(wsFrame); err != nil {
+			return
+		}
+		if agentType == WSFrameData && onData != nil {
+			onData(len(payload))
+		}
+	}
+
+	// Agent exited or closed the stream — notify the client.
+	closeFrame := []byte{WSFrameClose}
+	closeFrame = append(closeFrame, []byte("session_ended")...)
+	if writeErr := writeFrame(closeFrame); writeErr != nil {
+		logging.Warn("failed to write close frame on agent stdout end",
+			"session_id", sessionID,
+			"error", writeErr.Error(),
+			logging.Component("exec_api"))
 	}
 }
 

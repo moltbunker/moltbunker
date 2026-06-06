@@ -99,10 +99,14 @@ type DeployRequest struct {
 	// Minimum provider tier requirement
 	MinProviderTier string `json:"min_provider_tier,omitempty"` // "confidential", "standard", "dev", or empty for any
 
-	// E2E exec encryption (optional)
-	EncryptedExecKey []byte `json:"encrypted_exec_key,omitempty"` // Exec key encrypted with provider's X25519 pubkey
-	ExecKeyNonce     []byte `json:"exec_key_nonce,omitempty"`     // Nonce for exec key decryption
-	DeployNonce      string `json:"deploy_nonce,omitempty"`       // Deploy nonce used to derive exec_key
+	// E2E exec encryption (optional). The CLI seals the 32-byte exec_key to the
+	// provider's stable X25519 public key using ECIES (ephemeral-static X25519 ->
+	// HKDF-SHA256 -> AES-256-GCM). The envelope below carries everything the
+	// daemon needs to unwrap it with its stable private key.
+	EncryptedExecKey         []byte `json:"encrypted_exec_key,omitempty"`           // ECIES envelope ciphertext: gcm_nonce(12) || ciphertext || tag(16)
+	ExecKeyNonce             []byte `json:"exec_key_nonce,omitempty"`               // GCM nonce (also prefixed in EncryptedExecKey; carried for transport parity)
+	RequesterEphemeralPubKey []byte `json:"requester_ephemeral_pub_key,omitempty"`  // Sender's ephemeral X25519 public key (32 bytes)
+	DeployNonce              string `json:"deploy_nonce,omitempty"`                 // Deploy nonce used to derive exec_key
 
 	// Spot pricing (optional — lower cost, preemptible)
 	Spot bool `json:"spot,omitempty"`

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -675,6 +676,25 @@ func (s *APIServer) handleContainerDetail(ctx context.Context, req *APIRequest) 
 	return &APIResponse{
 		Result: detail,
 		ID:     req.ID,
+	}
+}
+
+// handleExecPubKey returns the daemon's stable X25519 public key (hex-encoded)
+// used to seal E2E exec keys. The CLI fetches this before deploying so it can
+// ECIES-encrypt the exec key to this provider.
+func (s *APIServer) handleExecPubKey(_ context.Context, req *APIRequest) *APIResponse {
+	if s.containerManager == nil {
+		return &APIResponse{Error: "container manager unavailable", ID: req.ID}
+	}
+	pub := s.containerManager.ProviderExecPubKey()
+	if len(pub) == 0 {
+		return &APIResponse{Error: "provider exec key unavailable", ID: req.ID}
+	}
+	return &APIResponse{
+		Result: map[string]interface{}{
+			"x25519_pub_key": hex.EncodeToString(pub),
+		},
+		ID: req.ID,
 	}
 }
 

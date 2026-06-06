@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,11 +24,16 @@ import (
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/redundancy"
 	"github.com/moltbunker/moltbunker/internal/runtime"
+	"github.com/moltbunker/moltbunker/internal/security"
 	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/internal/tor"
 	"github.com/moltbunker/moltbunker/internal/util"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
+
+// execKeyLen is the required length of a recovered plaintext exec key. The
+// exec-agent enforces exactly this size at startup.
+const execKeyLen = 32
 
 // ContainerManager coordinates container lifecycle across all subsystems
 type ContainerManager struct {
@@ -76,6 +82,10 @@ type ContainerManager struct {
 
 	// Reverse tunnel manager (optional, set via SetReverseTunnelManager)
 	reverseTunnel *ReverseTunnelManager
+
+	// providerKey is the daemon's stable X25519 keypair used to unwrap
+	// E2E-encrypted exec keys (ECIES). nil if it could not be loaded/created.
+	providerKey *ProviderKeyManager
 
 	// P1-10: Container lifecycle event counters (atomic, lock-free)
 	deploysTotal  atomic.Int64
@@ -165,6 +175,17 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		acceptServices:     config.AcceptServices,
 		acceptJobs:         config.AcceptJobs,
 		acceptFunctions:    config.AcceptFunctions,
+	}
+
+	// Load (or create) the stable provider X25519 keypair used to unwrap
+	// E2E-encrypted exec keys. A failure here is non-fatal: the daemon still
+	// runs, but E2E exec falls back to unavailable (deploys that send a sealed
+	// exec key will be rejected at prepareExecAgent).
+	if pk, pkErr := LoadOrCreateProviderKey(config.DataDir); pkErr != nil {
+		logging.Warn("failed to load provider X25519 keypair; E2E exec disabled",
+			logging.Err(pkErr), logging.Component("exec"))
+	} else {
+		cm.providerKey = pk
 	}
 
 	// Initialize Molt (WASM serverless) runtime if enabled
@@ -567,9 +588,11 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 		SecurityProfile: types.DeploymentSecurityProfile(),
 	}
 
-	// Inject exec-agent if encrypted exec key is provided (E2E encrypted exec)
+	// Inject exec-agent if an encrypted exec key envelope is provided (E2E
+	// encrypted exec). The CLI seals the exec key to this provider's stable
+	// X25519 public key; prepareExecAgent unwraps it with the private key.
 	if len(req.EncryptedExecKey) > 0 {
-		mounts, keyPath, err := cm.prepareExecAgent(deploymentID, req.EncryptedExecKey)
+		mounts, keyPath, err := cm.prepareExecAgent(deploymentID, req.EncryptedExecKey, req.RequesterEphemeralPubKey)
 		if err != nil {
 			logging.Warn("failed to prepare exec-agent, continuing without E2E exec",
 				logging.ContainerID(deploymentID),
@@ -579,6 +602,10 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 			deployment.ExecAgentEnabled = true
 			deployment.ExecKeyPath = keyPath
 			deployment.DeployNonce = req.DeployNonce
+			// Persist the envelope on the deployment so it can reach replicas.
+			deployment.EncryptedExecKey = req.EncryptedExecKey
+			deployment.ExecKeyNonce = req.ExecKeyNonce
+			deployment.RequesterEphemeralPubKey = req.RequesterEphemeralPubKey
 		}
 	}
 
@@ -675,10 +702,30 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 	return nil
 }
 
-// prepareExecAgent writes the exec key to a temp file and returns bind-mounts
-// for the exec-agent binary and key file. The exec-agent binary path is
-// resolved from the daemon's own binary directory.
-func (cm *ContainerManager) prepareExecAgent(deploymentID string, execKey []byte) ([]runtime.BindMount, string, error) {
+// prepareExecAgent unwraps the ECIES-sealed exec key with the daemon's stable
+// X25519 private key, writes the recovered 32-byte plaintext key to a secure
+// file, and returns bind-mounts for the exec-agent binary and key file. The
+// exec-agent binary path is resolved from the daemon's own binary directory.
+//
+// The exec key is never logged. The plaintext only exists transiently in memory
+// and in the 0600 key file that is bind-mounted read-only into the container.
+func (cm *ContainerManager) prepareExecAgent(deploymentID string, encryptedExecKey, ephemeralPubKey []byte) ([]runtime.BindMount, string, error) {
+	if cm.providerKey == nil {
+		return nil, "", fmt.Errorf("provider X25519 key unavailable; cannot unwrap exec key")
+	}
+
+	// Unwrap the ECIES envelope to recover the 32-byte plaintext exec key.
+	execKey, err := security.OpenFromX25519(cm.providerKey.privateKey(), &security.X25519Envelope{
+		EphemeralPub: ephemeralPubKey,
+		Ciphertext:   encryptedExecKey,
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("unwrap exec key: %w", err)
+	}
+	if len(execKey) != execKeyLen {
+		return nil, "", fmt.Errorf("unwrapped exec key has invalid size %d (expected %d)", len(execKey), execKeyLen)
+	}
+
 	// Write exec_key to a secure temp file
 	dataDir := cm.dataDir
 	if dataDir == "" {
@@ -724,26 +771,42 @@ func (cm *ContainerManager) prepareExecAgent(deploymentID string, execKey []byte
 
 // resolveExecAgentPath finds the exec-agent binary.
 // Checks: same directory as daemon binary, then /usr/local/bin.
+//
+// Candidate names are tried in order: the GOARCH-suffixed name for the host
+// architecture (e.g. "exec-agent-arm64" or "exec-agent-amd64", matching the
+// Makefile/.goreleaser artifact names), then the bare "exec-agent" name (the
+// Dockerfile/deploy.sh install name). This ensures arm64 providers resolve the
+// correct binary instead of silently falling back to no-E2E exec.
 func (cm *ContainerManager) resolveExecAgentPath() string {
+	candidates := []string{"exec-agent-" + goruntime.GOARCH, "exec-agent"}
+
 	// Check alongside the daemon binary
 	if exe, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(exe), "exec-agent-amd64")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
-		}
-		candidate = filepath.Join(filepath.Dir(exe), "exec-agent")
-		if _, err := os.Stat(candidate); err == nil {
-			return candidate
+		dir := filepath.Dir(exe)
+		for _, name := range candidates {
+			candidate := filepath.Join(dir, name)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
 		}
 	}
 	// Fallback: /usr/local/bin
-	for _, name := range []string{"exec-agent-amd64", "exec-agent"} {
+	for _, name := range candidates {
 		candidate := filepath.Join("/usr/local/bin", name)
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 	}
 	return ""
+}
+
+// ProviderExecPubKey returns the daemon's stable X25519 public key used to seal
+// exec keys (ECIES). Returns nil if the keypair is unavailable.
+func (cm *ContainerManager) ProviderExecPubKey() []byte {
+	if cm.providerKey == nil {
+		return nil
+	}
+	return cm.providerKey.PublicKey()
 }
 
 // cleanupExecKey removes the exec key file from disk.
@@ -891,11 +954,15 @@ func (cm *ContainerManager) Stop(ctx context.Context, containerID string) error 
 	// Release image from GC tracking
 	cm.unmarkImageInUse(deployment.Image)
 
-	// Update status with volume retention
+	// Update status with volume retention. Also remove the plaintext exec_key
+	// file (and its bind-mount source) so no key material is left on disk after
+	// teardown. cleanupExecKey mutates deployment.ExecKeyPath, so it runs under
+	// the same lock as the status update.
 	cm.mu.Lock()
 	deployment.Status = types.ContainerStatusStopped
 	deployment.StoppedAt = time.Now()
 	deployment.VolumeExpiresAt = deployment.StoppedAt.Add(volumeRetentionDuration)
+	cm.cleanupExecKey(deployment)
 	cm.mu.Unlock()
 
 	// P1-10: Track stop event
@@ -1050,6 +1117,14 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 				logging.Component("container_manager"))
 		}
 	}
+
+	// Remove the plaintext exec_key file (and its bind-mount source) so no key
+	// material is left on disk after teardown. The deployment is already removed
+	// from cm.deployments, but cleanupExecKey mutates deployment.ExecKeyPath, so
+	// take the lock to avoid racing the async state writers.
+	cm.mu.Lock()
+	cm.cleanupExecKey(deployment)
+	cm.mu.Unlock()
 
 	// Clean up subsystem state to prevent memory leaks
 	if cm.healthMonitor != nil {
