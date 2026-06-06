@@ -580,7 +580,11 @@ const maxAgentFrameSize = 1 << 20
 // [payload], matching cmd/exec-agent/protocol.go writeFrame. The frame type uses
 // the shared WS/agent frame numbers (DATA 0x01, RESIZE 0x02, KEY_INIT 0x07, …).
 func writeAgentStdinFrame(w io.Writer, frameType byte, payload []byte) error {
+	if len(payload) > maxAgentFrameSize {
+		return fmt.Errorf("exec agent frame payload too large: %d > %d", len(payload), maxAgentFrameSize)
+	}
 	frame := make([]byte, 4+1+len(payload))
+	// #nosec G115 -- len(payload) is bounded by maxAgentFrameSize (1 MiB) above, so 1+len fits in uint32.
 	binary.BigEndian.PutUint32(frame[0:4], uint32(1+len(payload)))
 	frame[4] = frameType
 	copy(frame[5:], payload)

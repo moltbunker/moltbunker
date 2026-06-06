@@ -430,7 +430,10 @@ func bridgeTerminalEncrypted(ctx context.Context, conn *websocket.Conn, session 
 					errCh <- fmt.Errorf("decrypt terminal data: %w", derr)
 					return
 				}
-				os.Stdout.Write(plaintext)
+				if _, werr := os.Stdout.Write(plaintext); werr != nil {
+					errCh <- fmt.Errorf("write terminal output: %w", werr)
+					return
+				}
 			case wsFramePing:
 				writeMu.Lock()
 				_ = writeWSFrame(conn, wsFramePong, nil)

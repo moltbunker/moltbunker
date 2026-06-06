@@ -41,6 +41,7 @@ func LoadOrCreateProviderKey(dataDir string) (*ProviderKeyManager, error) {
 	pm := &ProviderKeyManager{path: path}
 
 	// Try to load an existing key.
+	// #nosec G304 -- path is composed from the daemon-controlled DataDir and a constant filename, not user input.
 	if data, err := os.ReadFile(path); err == nil {
 		if len(data) != security.X25519KeySize {
 			return nil, fmt.Errorf("provider key file %s has invalid size %d (expected %d)", path, len(data), security.X25519KeySize)
