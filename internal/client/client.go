@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -171,10 +172,15 @@ type DeployRequest struct {
 	ReservationID   string          `json:"reservation_id,omitempty"`    // On-chain escrow reservation ID (user-created)
 	Owner           string          `json:"owner,omitempty"`             // Wallet address of the deployer
 	MinProviderTier  string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
-	EncryptedExecKey []byte          `json:"encrypted_exec_key,omitempty"` // Exec key for E2E encrypted exec (32 bytes)
-	DeployNonce      string          `json:"deploy_nonce,omitempty"`       // Hex-encoded deploy nonce for exec_key derivation
-	ExposePorts      []ExposedPort   `json:"expose_ports,omitempty"`       // Container ports to expose via ingress
-	Spot             bool            `json:"spot,omitempty"`               // Spot pricing (lower cost, preemptible)
+	// E2E exec encryption (optional). The exec_key is sealed to the provider's
+	// stable X25519 public key via ECIES (ephemeral-static X25519 -> HKDF-SHA256
+	// -> AES-256-GCM). The fields below carry the resulting envelope.
+	EncryptedExecKey         []byte        `json:"encrypted_exec_key,omitempty"`          // ECIES envelope ciphertext: gcm_nonce(12) || ciphertext || tag(16)
+	ExecKeyNonce             []byte        `json:"exec_key_nonce,omitempty"`              // GCM nonce (also prefixed in EncryptedExecKey)
+	RequesterEphemeralPubKey []byte        `json:"requester_ephemeral_pub_key,omitempty"` // Sender's ephemeral X25519 public key (32 bytes)
+	DeployNonce              string        `json:"deploy_nonce,omitempty"`                // Hex-encoded deploy nonce for exec_key derivation
+	ExposePorts              []ExposedPort `json:"expose_ports,omitempty"`                // Container ports to expose via ingress
+	Spot                     bool          `json:"spot,omitempty"`                        // Spot pricing (lower cost, preemptible)
 }
 
 // DeployResponse contains deployment result
@@ -551,6 +557,14 @@ type ContainerDetail struct {
 	ProviderNodeID  string `json:"provider_node_id"`
 	ProviderAddress string `json:"provider_address"`
 	Owner           string `json:"owner,omitempty"`
+	// ExecAgentEnabled reports whether the container was deployed with an
+	// E2E-encrypted exec agent. When true, the CLI must perform the
+	// KEY_INIT/KEY_ACK handshake and encrypt terminal I/O.
+	ExecAgentEnabled bool `json:"exec_agent_enabled,omitempty"`
+	// DeployNonce is the hex-encoded 32-byte nonce used as the HKDF salt when
+	// deriving the container's exec_key. Required to re-derive the exec_key
+	// for the E2E exec handshake.
+	DeployNonce string `json:"deploy_nonce,omitempty"`
 }
 
 // GetContainerDetail retrieves detailed container info including provider location.
@@ -566,4 +580,25 @@ func (c *DaemonClient) GetContainerDetail(containerID string) (*ContainerDetail,
 	}
 
 	return &detail, nil
+}
+
+// GetExecPubKey retrieves the daemon's stable X25519 public key (32 bytes) used
+// to seal E2E exec keys. The CLI uses it to ECIES-encrypt the exec key before
+// deploying.
+func (c *DaemonClient) GetExecPubKey() ([]byte, error) {
+	resp, err := c.call("exec_pubkey", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out struct {
+		X25519PubKey string `json:"x25519_pub_key"`
+	}
+	if err := json.Unmarshal(resp.Result, &out); err != nil {
+		return nil, fmt.Errorf("failed to parse exec pubkey: %w", err)
+	}
+	pub, err := hex.DecodeString(out.X25519PubKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode exec pubkey: %w", err)
+	}
+	return pub, nil
 }

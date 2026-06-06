@@ -312,11 +312,41 @@ func (cm *ContainerManager) deployReplica(ctx context.Context, deployment *Deplo
 		Scanner:         cm.imageScanner,
 		ScanPolicy:      resolveScanPolicy(deployment.IgnoreCVEs),
 	}
+
+	// Best-effort exec-agent seeding on the replica. The gossiped Deployment
+	// carries the ECIES exec-key envelope + deploy nonce. The envelope is sealed
+	// to the ORIGINATOR provider's stable X25519 public key, so this replica can
+	// only unwrap it if the envelope was sealed to its own key. Today peers do
+	// not advertise per-node X25519 keys, so prepareExecAgent's unwrap will fail
+	// here for foreign replicas — in that case we SKIP exec seeding and log it,
+	// without breaking replication. Once per-replica re-encryption (sealing the
+	// exec_key to each target's advertised X25519 pubkey) lands, this path will
+	// succeed transparently because the envelope will already be addressed to
+	// this provider's key.
+	if len(deployment.EncryptedExecKey) > 0 {
+		mounts, keyPath, execErr := cm.prepareExecAgent(deployment.ID, deployment.EncryptedExecKey, deployment.RequesterEphemeralPubKey)
+		if execErr != nil {
+			logging.Info("skipping exec-agent seeding on replica (envelope not sealed to this provider's key); replica continues without E2E exec",
+				logging.ContainerID(deployment.ID),
+				logging.Err(execErr),
+				logging.Component("replication"))
+		} else {
+			secConfig.BindMounts = mounts
+			cm.mu.Lock()
+			deployment.ExecAgentEnabled = true
+			deployment.ExecKeyPath = keyPath
+			cm.mu.Unlock()
+		}
+	}
+
 	managed, err := cm.containerd.CreateSecureContainer(ctx, secConfig)
 	if err != nil {
 		logging.Error("failed to create replica container",
 			logging.ContainerID(deployment.ID),
 			logging.Err(err))
+		cm.mu.Lock()
+		cm.cleanupExecKey(deployment)
+		cm.mu.Unlock()
 		cm.sendDeployAck(ctx, originatorID, deployment.ID, false, err.Error())
 		return fmt.Errorf("failed to create container: %w", err)
 	}
@@ -337,6 +367,9 @@ func (cm *ContainerManager) deployReplica(ctx context.Context, deployment *Deplo
 				logging.Err(cleanupErr),
 				logging.Component("replication"))
 		}
+		cm.mu.Lock()
+		cm.cleanupExecKey(deployment)
+		cm.mu.Unlock()
 		cm.sendDeployAck(ctx, originatorID, deployment.ID, false, err.Error())
 		return fmt.Errorf("failed to start container: %w", err)
 	}
