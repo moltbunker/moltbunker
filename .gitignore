@@ -199,13 +199,16 @@ configs/
 
 docs/
 
-# Bruno API collection (local testing only)
-api/
+# Bruno API collection (local testing only).
+# Scoped to the collection dir: a bare "api/" also ignored internal/api/ (Go
+# package) and the root api/openapi.yaml spec, silently dropping new source files.
+api/bruno/
 
 # ===================
 # ROOT-LEVEL BINARIES
 # ===================
 # Built binaries outside bin/ (dev builds)
+/cli
 /daemon
 /exec-agent
 /moltbunker
