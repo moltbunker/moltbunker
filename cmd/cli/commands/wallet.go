@@ -261,9 +261,9 @@ func newWalletShowCmd() *cobra.Command {
 
 			pwStatus := "not stored (manual unlock required)"
 			if pw, err := identity.RetrieveWalletPassword(); err == nil && pw != "" {
-				pwStatus = "stored in platform keyring"
+				pwStatus = "stored in platform keyring" // #nosec G101 -- not a credential: human-readable status string
 			} else if pw, err := identity.RetrieveKernelKeyring(); err == nil && pw != "" {
-				pwStatus = "stored in kernel keyring"
+				pwStatus = "stored in kernel keyring" // #nosec G101 -- not a credential: human-readable status string
 			}
 
 			fmt.Println(StatusBox("Wallet", [][2]string{

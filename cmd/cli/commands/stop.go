@@ -44,6 +44,7 @@ func stopDaemonProcess() error {
 	homeDir, _ := os.UserHomeDir()
 	pidFile := filepath.Join(homeDir, ".moltbunker", "daemon.pid")
 
+	// #nosec G304 -- pidFile is ~/.moltbunker/daemon.pid (HomeDir-derived), not request input
 	data, err := os.ReadFile(pidFile)
 	if err != nil {
 		return fmt.Errorf("daemon not running (no PID file)")
@@ -66,7 +67,7 @@ func stopDaemonProcess() error {
 	}
 
 	// Remove PID file
-	os.Remove(pidFile)
+	_ = os.Remove(pidFile)
 
 	Success(fmt.Sprintf("Daemon stopped (PID: %d)", pid))
 	return nil

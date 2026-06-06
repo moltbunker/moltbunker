@@ -430,7 +430,7 @@ func (hc *HealthChecker) runTCPProbe(ctx context.Context, containerID string, en
 	if err != nil {
 		return false, fmt.Errorf("TCP probe failed: %w", err)
 	}
-	conn.Close()
+	_ = conn.Close()
 
 	return true, nil
 }

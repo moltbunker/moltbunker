@@ -191,6 +191,7 @@ func (m *MoltManager) GetMetrics(deploymentID string) *types.MoltDeploymentMetri
 	stats := m.runtime.Metrics().GetStats(deploymentID)
 	var avgLatency time.Duration
 	if stats.TotalInvocations > 0 {
+		// #nosec G115 -- TotalInvocations is an invocation count; never approaches int64 max
 		avgLatency = stats.TotalDuration / time.Duration(stats.TotalInvocations)
 	}
 

@@ -88,11 +88,13 @@ func (cs *MemoryCanarySet) Plant(mem CanaryMemory) bool {
 	}
 
 	usableRange := maxOffset - minOffset
+	// #nosec G115 -- canary count is a small fixed-size slice length, fits in uint32
 	if uint32(len(cs.canaries))*CanarySize > usableRange {
 		return false // not enough room for all canaries
 	}
 
 	// Distribute canaries evenly across usable range with random jitter
+	// #nosec G115 -- canary count is a small fixed-size slice length, fits in uint32
 	stride := usableRange / uint32(len(cs.canaries))
 	for i := range cs.canaries {
 		// Deterministic base + random jitter within stride

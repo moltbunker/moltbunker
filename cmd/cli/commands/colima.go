@@ -71,6 +71,7 @@ func runColimaCommand(action string) error {
 		return fmt.Errorf("colima not found (install with: brew install colima)")
 	}
 
+	// #nosec G204 -- exec.Command (no shell); path is resolved via LookPath("colima"), action is a constant ("start"/"stop"/"status")
 	cmd := exec.Command(path, action)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

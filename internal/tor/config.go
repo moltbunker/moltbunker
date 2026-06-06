@@ -48,8 +48,8 @@ SOCKSPort %d
 		}
 	}
 
-	// Write torrc file
-	if err := os.WriteFile(tc.TorrcPath, []byte(content), 0644); err != nil {
+	// Write torrc file (private: may contain control settings)
+	if err := os.WriteFile(tc.TorrcPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("failed to write torrc: %w", err)
 	}
 

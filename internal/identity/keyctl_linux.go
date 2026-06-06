@@ -34,6 +34,7 @@ func RetrieveKernelKeyring() (string, error) {
 	keyID := strings.TrimSpace(string(out))
 
 	// Read the key payload
+	// #nosec G204 -- exec.Command (no shell); command name is the constant "keyctl", keyID is a numeric key handle returned by the prior keyctl search
 	out, err = exec.Command("keyctl", "pipe", keyID).Output()
 	if err != nil {
 		return "", fmt.Errorf("keyctl pipe failed: %w", err)
@@ -48,6 +49,7 @@ func DeleteKernelKeyring() error {
 		return nil // Key not found, nothing to delete
 	}
 	keyID := strings.TrimSpace(string(out))
+	// #nosec G204 -- exec.Command (no shell); command name is the constant "keyctl", keyID is a numeric key handle returned by the prior keyctl search
 	_, err = exec.Command("keyctl", "unlink", keyID, "@u").Output()
 	return err
 }

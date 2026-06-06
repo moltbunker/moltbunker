@@ -41,6 +41,7 @@ func (h *HomebrewManager) Install(ctx context.Context, pkg string) error {
 	// Map package names to Homebrew formula names if needed
 	formulaName := mapPackageToFormula(pkg)
 
+	// #nosec G204 -- exec.CommandContext (no shell); brewPath is a resolved binary, subcommand constant, formula from mapPackageToFormula
 	cmd := exec.CommandContext(ctx, h.brewPath, "install", formulaName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -57,6 +58,7 @@ func (h *HomebrewManager) IsInstalled(pkg string) bool {
 	}
 
 	formulaName := mapPackageToFormula(pkg)
+	// #nosec G204 -- exec.Command (no shell); brewPath is a resolved binary, subcommand constant, formula from mapPackageToFormula
 	cmd := exec.Command(h.brewPath, "list", formulaName)
 	err := cmd.Run()
 	return err == nil
@@ -88,6 +90,7 @@ func (h *HomebrewManager) Update(ctx context.Context) error {
 		return fmt.Errorf("homebrew is not installed")
 	}
 
+	// #nosec G204 -- exec.CommandContext (no shell); brewPath is a resolved binary, subcommand constant
 	cmd := exec.CommandContext(ctx, h.brewPath, "update")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -104,6 +107,7 @@ func (h *HomebrewManager) Upgrade(ctx context.Context, pkg string) error {
 	}
 
 	formulaName := mapPackageToFormula(pkg)
+	// #nosec G204 -- exec.CommandContext (no shell); brewPath is a resolved binary, subcommand constant, formula from mapPackageToFormula
 	cmd := exec.CommandContext(ctx, h.brewPath, "upgrade", formulaName)
 	output, err := cmd.CombinedOutput()
 	if err != nil {

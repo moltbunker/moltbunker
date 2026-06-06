@@ -30,6 +30,7 @@ func (s *stdioReadWriteCloser) Close() error                { return nil }
 
 const (
 	// defaultSecretPath is where the exec_key is mounted inside the container.
+	// #nosec G101 -- not a credential: filesystem path to the bind-mounted exec_key secret
 	defaultSecretPath = "/run/secrets/exec_key"
 	// defaultSocketPath is the Unix socket the agent listens on.
 	defaultSocketPath = "/run/exec-agent.sock"
@@ -46,6 +47,7 @@ func main() {
 	socketPath := envOr("EXEC_SOCKET_PATH", defaultSocketPath)
 
 	// Load exec_key from mounted secret
+	// #nosec G304 -- secretPath is the operator-controlled mount path (constant default or EXEC_KEY_PATH env), not request input
 	execKey, err := os.ReadFile(secretPath)
 	if err != nil {
 		log.Fatalf("failed to read exec_key from %s: %v", secretPath, err)
@@ -67,7 +69,7 @@ func main() {
 	}
 
 	// Default: Unix socket mode
-	os.Remove(socketPath)
+	_ = os.Remove(socketPath) // best-effort: clear any stale socket before listening
 
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -102,7 +104,7 @@ func main() {
 
 	<-ctx.Done()
 	log.Println("shutting down...")
-	listener.Close()
+	_ = listener.Close() // best-effort: unblock Accept on shutdown
 	wg.Wait()
 	log.Println("exit")
 }

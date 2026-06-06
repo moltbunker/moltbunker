@@ -145,6 +145,7 @@ func isSEVSNPActive() bool {
 // isSysfsParamActive reads a kvm_amd sysfs parameter and returns true if
 // it is "Y" or "y" (the standard boolean format for kernel module params).
 func isSysfsParamActive(path string) bool {
+	// #nosec G304 -- path is a constant sysfs parameter path passed by internal callers, not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false

@@ -50,7 +50,7 @@ func (r *Router) cleanupIdleConnections() {
 					logging.NodeID(nodeID.String()[:16]),
 					"idle_time", now.Sub(lastSeen).String(),
 					logging.Component("router"))
-				peer.Conn.Close()
+				_ = peer.Conn.Close()
 				peer.Conn = nil
 				peer.Connected = false
 			}

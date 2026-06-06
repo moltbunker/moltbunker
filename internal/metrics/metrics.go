@@ -104,6 +104,7 @@ func (h *LatencyHistogram) Record(d time.Duration) {
 	}
 
 	h.buckets[bucketIdx]++
+	// #nosec G115 -- d is an elapsed duration, always non-negative
 	h.sum += uint64(d.Nanoseconds())
 	h.count++
 }

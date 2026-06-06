@@ -85,6 +85,7 @@ func MigrateFromJSON(ctx context.Context, store StateStore, dataDir string) erro
 // migrateStateJSON reads the legacy state.json (object with "deployments" map)
 // and writes each deployment to the store. Returns the number migrated.
 func migrateStateJSON(ctx context.Context, store StateStore, path string) (int, error) {
+	// #nosec G304 -- path is a daemon-configured legacy state file (DataDir-derived), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -125,6 +126,7 @@ type putFunc func(ctx context.Context, key string, data []byte) error
 // entry to the store. The original file is NOT renamed — callers that
 // still read from JSON need the file to remain.
 func migrateArrayJSON(ctx context.Context, _ StateStore, path, keyField string, put putFunc) (int, error) {
+	// #nosec G304 -- path is a daemon-configured legacy state file (DataDir-derived), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

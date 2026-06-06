@@ -16,7 +16,7 @@ type ImageCache struct {
 
 // NewImageCache creates a new image cache
 func NewImageCache(cacheDir string) (*ImageCache, error) {
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
 
@@ -40,17 +40,20 @@ func (ic *ImageCache) CacheImage(cid string, imagePath string) error {
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
 
-	// Copy image to cache directory
-	cachePath := filepath.Join(ic.cacheDir, cid)
-	
+	// Copy image to cache directory. Sanitize the CID to a bare filename so it
+	// cannot escape the cache directory via path separators or "..".
+	cachePath := filepath.Join(ic.cacheDir, filepath.Base(cid))
+
 	// Read source file
+	// #nosec G304 -- imagePath is an internally managed image file path, not request input
 	data, err := os.ReadFile(imagePath)
 	if err != nil {
 		return fmt.Errorf("failed to read image: %w", err)
 	}
 
 	// Write to cache
-	if err := os.WriteFile(cachePath, data, 0644); err != nil {
+	// #nosec G304 G703 -- cachePath is cacheDir joined with filepath.Base(cid); traversal not possible
+	if err := os.WriteFile(cachePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write cache: %w", err)
 	}
 

@@ -132,7 +132,7 @@ func (s *SOCKS5Server) ListenAndServe(addr string) error {
 func (s *SOCKS5Server) Close() error {
 	s.cancel()
 	if s.listener != nil {
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
 	s.wg.Wait()
 	return nil
@@ -391,6 +391,7 @@ func (s *SOCKS5Server) sendReply(conn net.Conn, rep byte, bindAddr *net.TCPAddr)
 
 	port := make([]byte, 2)
 	if bindAddr != nil {
+		// #nosec G115 -- bindAddr.Port is a TCP port (0-65535), always fits in uint16
 		binary.BigEndian.PutUint16(port, uint16(bindAddr.Port))
 	}
 	reply = append(reply, port...)

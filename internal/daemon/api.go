@@ -179,7 +179,7 @@ func (s *APIServer) Start(ctx context.Context) error {
 	}
 
 	// Remove existing socket
-	os.Remove(s.socketPath)
+	_ = os.Remove(s.socketPath)
 
 	// Set umask before creating socket to avoid TOCTOU race condition.
 	// Use 0007 to allow group access (the API service runs as the moltbunker group
@@ -265,7 +265,7 @@ func (s *APIServer) Start(ctx context.Context) error {
 	}
 	containerManager, err := NewContainerManager(ctx, cmConfig, s.node)
 	if err != nil {
-		listener.Close()
+		_ = listener.Close()
 		s.mu.Unlock()
 		return fmt.Errorf("failed to create container manager: %w", err)
 	}
@@ -310,17 +310,17 @@ func (s *APIServer) Stop() error {
 	// Close container manager (stops health monitoring, containers, containerd)
 	if s.containerManager != nil {
 		logging.Info("closing container manager", logging.Component("api"))
-		s.containerManager.Close()
+		_ = s.containerManager.Close()
 	}
 
 	// Close listener to stop accepting new connections
 	if s.listener != nil {
 		logging.Info("closing API socket listener", logging.Component("api"))
-		s.listener.Close()
+		_ = s.listener.Close()
 	}
 
 	// Clean up socket file
-	os.Remove(s.socketPath)
+	_ = os.Remove(s.socketPath)
 
 	return nil
 }

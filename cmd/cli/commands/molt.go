@@ -144,6 +144,7 @@ func runMoltDeploy(_ *cobra.Command, args []string) error {
 	wasmPath := args[0]
 
 	// Read WASM file
+	// #nosec G304 -- wasmPath is the user-provided WASM module path (CLI arg); reading it is the command's purpose
 	wasmBytes, err := os.ReadFile(wasmPath)
 	if err != nil {
 		return fmt.Errorf("failed to read WASM file: %w", err)

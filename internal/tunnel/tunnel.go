@@ -86,6 +86,11 @@ func (t *tunnel) Close() error {
 
 // writeControlMsg writes a length-prefixed control message.
 func writeControlMsg(w io.Writer, msgType byte, payload []byte) error {
+	// Enforce the same 1MB cap as readControlMsg; this also bounds the conversion.
+	if len(payload) > (1<<20)-1 {
+		return fmt.Errorf("control msg payload too large: %d bytes", len(payload))
+	}
+	// #nosec G115 -- payload length bounded above (1MB), so 1+len cannot overflow uint32
 	totalLen := uint32(1 + len(payload))
 	if err := binary.Write(w, binary.BigEndian, totalLen); err != nil {
 		return fmt.Errorf("write control msg length: %w", err)

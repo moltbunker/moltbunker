@@ -11,6 +11,7 @@ import (
 func detectMemoryGB() int {
 	var info syscall.Sysinfo_t
 	if err := syscall.Sysinfo(&info); err == nil && info.Totalram > 0 {
+		// #nosec G115 -- memory size in GB is a small value, fits in int on all supported platforms
 		gb := int(info.Totalram * uint64(info.Unit) / (1024 * 1024 * 1024))
 		if gb > 0 {
 			return gb
@@ -23,6 +24,7 @@ func detectMemoryGB() int {
 func detectStorageGB() int {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err == nil {
+		// #nosec G115 -- disk size in GB is a small value, fits in int on all supported platforms
 		gb := int(stat.Blocks * uint64(stat.Bsize) / (1024 * 1024 * 1024))
 		if gb > 0 {
 			return gb
@@ -147,6 +149,7 @@ func detectStorageType() string {
 		if strings.HasPrefix(name, "loop") || strings.HasPrefix(name, "ram") || strings.HasPrefix(name, "dm-") {
 			continue
 		}
+		// #nosec G304 -- path is built from a kernel-provided /sys/block dir entry name, not external/request input
 		data, err := os.ReadFile("/sys/block/" + name + "/queue/rotational")
 		if err != nil {
 			continue
@@ -229,6 +232,7 @@ func detectKernel() string {
 		if b == 0 {
 			break
 		}
+		// #nosec G115 -- reinterpreting a kernel utsname int8 byte as byte; bit pattern preserved, no overflow
 		buf = append(buf, byte(b))
 	}
 	return string(buf)

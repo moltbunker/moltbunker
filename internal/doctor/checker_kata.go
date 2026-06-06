@@ -80,6 +80,7 @@ func (c *KataRuntimeChecker) Check(ctx context.Context) CheckResult {
 		}
 	} else {
 		// Get QEMU version for details
+		// #nosec G204 -- exec.CommandContext (no shell); qemuPath is resolved via exec.LookPath, argument is the constant "--version"
 		if out, err := exec.CommandContext(ctx, qemuPath, "--version").Output(); err == nil {
 			lines := strings.SplitN(string(out), "\n", 2)
 			if len(lines) > 0 {

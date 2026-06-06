@@ -796,7 +796,7 @@ func (cm *ContainerManager) prepareExecAgent(deploymentID string, encryptedExecK
 	// Resolve exec-agent binary path (same dir as the daemon binary)
 	execAgentPath := cm.resolveExecAgentPath()
 	if execAgentPath == "" {
-		os.Remove(keyPath)
+		_ = os.Remove(keyPath)
 		return nil, "", fmt.Errorf("exec-agent binary not found")
 	}
 
@@ -864,7 +864,7 @@ func (cm *ContainerManager) ProviderExecPubKey() []byte {
 // cleanupExecKey removes the exec key file from disk.
 func (cm *ContainerManager) cleanupExecKey(deployment *Deployment) {
 	if deployment.ExecKeyPath != "" {
-		os.Remove(deployment.ExecKeyPath)
+		_ = os.Remove(deployment.ExecKeyPath)
 		deployment.ExecKeyPath = ""
 	}
 }
@@ -1648,7 +1648,7 @@ func (cm *ContainerManager) Close() error {
 
 	// Close containerd client (does NOT stop containers)
 	if cm.containerd != nil {
-		cm.containerd.Close()
+		_ = cm.containerd.Close()
 	}
 
 	// Stop Tor

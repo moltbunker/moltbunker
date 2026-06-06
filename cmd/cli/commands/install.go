@@ -79,7 +79,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	configPath := filepath.Join(installDataDir, "config.yaml")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		config := generateDefaultConfig(installDataDir)
-		if err := os.WriteFile(configPath, []byte(config), 0644); err != nil {
+		if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
 			return fmt.Errorf("failed to write config: %w", err)
 		}
 		fmt.Printf("  Created config: %s\n", configPath)
@@ -190,6 +190,7 @@ WantedBy=multi-user.target
 `, os.Getenv("USER"), installDataDir)
 
 	servicePath := "/etc/systemd/system/moltbunker.service"
+	// #nosec G306 G703 -- must be world-readable (systemd unit file); servicePath is a constant system path
 	if err := os.WriteFile(servicePath, []byte(serviceContent), 0644); err != nil {
 		fmt.Printf("  Failed to write systemd service: %v\n", err)
 		return
@@ -239,11 +240,13 @@ func installLaunchdService(cmd *cobra.Command) {
 `, installDataDir, installDataDir, installDataDir)
 
 	plistPath := filepath.Join(homeDir, "Library", "LaunchAgents", "com.moltbunker.daemon.plist")
+	// #nosec G306 -- must be world-readable (launchd plist); plistPath is in the user's LaunchAgents dir
 	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
 		fmt.Printf("  Failed to write launchd plist: %v\n", err)
 		return
 	}
 
+	// #nosec G204 -- exec.Command (no shell); command name is constant "launchctl", plistPath is internally constructed
 	if err := exec.Command("launchctl", "load", plistPath).Run(); err != nil {
 		fmt.Printf("  launchctl load failed: %v\n", err)
 	}

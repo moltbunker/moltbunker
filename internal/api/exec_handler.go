@@ -366,7 +366,7 @@ func (s *Server) bridgeLocalExec(
 ) {
 	ws := newSafeWSConn(conn)
 	defer func() {
-		ws.conn.Close()
+		_ = ws.conn.Close()
 		s.execSessions.RemoveSession(session.SessionID)
 
 		logging.Info("exec local session ended",
@@ -401,6 +401,7 @@ func (s *Server) bridgeLocalExec(
 	// verification). ExecLocal returns either a plaintext PTY (non-agent) or a
 	// raw exec-agent session (agent mode), branching on ExecAgentEnabled.
 	ctx := context.Background()
+	// #nosec G115 -- terminal dimensions; truncation to uint16 (max 65535 cols/rows) is harmless and intended
 	ptySession, err := cm.ExecLocal(ctx, session.ContainerID, session.WalletAddress, uint16(cols), uint16(rows))
 	if err != nil {
 		logging.Error("local exec failed",
@@ -673,7 +674,7 @@ func (s *Server) bridgeRemoteExec(
 ) {
 	ws := newSafeWSConn(conn)
 	defer func() {
-		ws.conn.Close()
+		_ = ws.conn.Close()
 		cm.RemoveExecRelay(session.SessionID)
 		s.execSessions.RemoveSession(session.SessionID)
 

@@ -135,7 +135,7 @@ func (cps *CertPinStore) Save(path string) error {
 
 	if err := os.Rename(tmpPath, path); err != nil {
 		// Clean up temp file on rename failure
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 		return fmt.Errorf("rename cert pin store file: %w", err)
 	}
 
@@ -145,6 +145,7 @@ func (cps *CertPinStore) Save(path string) error {
 // Load reads pinned certificates from a JSON file. If the file does not
 // exist, the pin store is left empty (no error).
 func (cps *CertPinStore) Load(path string) error {
+	// #nosec G304 -- path is the daemon's configured cert-pin store file (DataDir-derived), not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

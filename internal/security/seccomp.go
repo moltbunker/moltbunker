@@ -332,6 +332,7 @@ func (p *SeccompProfile) DeniedSyscalls() []string {
 
 // LoadSeccompProfile loads a seccomp profile from a file
 func LoadSeccompProfile(path string) (*SeccompProfile, error) {
+	// #nosec G304 -- path is a daemon/config-supplied seccomp profile path, not request input
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read seccomp profile: %w", err)
@@ -352,7 +353,7 @@ func SaveSeccompProfile(profile *SeccompProfile, path string) error {
 		return fmt.Errorf("failed to marshal seccomp profile: %w", err)
 	}
 
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("failed to write seccomp profile: %w", err)
 	}
 

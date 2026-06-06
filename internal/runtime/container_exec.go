@@ -44,7 +44,7 @@ func (s *InteractiveSession) Close() {
 			s.cancel()
 		}
 		if s.Stdin != nil {
-			s.Stdin.Close()
+			_ = s.Stdin.Close()
 		}
 		close(s.done)
 	})
@@ -176,10 +176,10 @@ func (cc *ContainerdClient) ExecInteractive(ctx context.Context, id string, cols
 		cio.NewCreator(cio.WithTerminal, cio.WithStreams(stdinR, stdoutW, nil)))
 	if err != nil {
 		execCancel()
-		stdinR.Close()
-		stdinW.Close()
-		stdoutR.Close()
-		stdoutW.Close()
+		_ = stdinR.Close()
+		_ = stdinW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, fmt.Errorf("failed to create interactive exec: %w", err)
 	}
 
@@ -190,10 +190,10 @@ func (cc *ContainerdClient) ExecInteractive(ctx context.Context, id string, cols
 				logging.Err(delErr))
 		}
 		execCancel()
-		stdinR.Close()
-		stdinW.Close()
-		stdoutR.Close()
-		stdoutW.Close()
+		_ = stdinR.Close()
+		_ = stdinW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, fmt.Errorf("failed to start interactive exec: %w", err)
 	}
 
@@ -211,8 +211,8 @@ func (cc *ContainerdClient) ExecInteractive(ctx context.Context, id string, cols
 	// Wait for process exit in background and clean up
 	go func() {
 		defer func() {
-			stdoutW.Close()
-			stdinR.Close()
+			_ = stdoutW.Close()
+			_ = stdinR.Close()
 			if _, delErr := process.Delete(context.Background()); delErr != nil {
 				logging.Warn("failed to delete interactive exec process on exit",
 					"exec_id", execID,
@@ -281,10 +281,10 @@ func (cc *ContainerdClient) ExecRaw(ctx context.Context, id string, cmd []string
 		cio.NewCreator(cio.WithStreams(stdinR, stdoutW, stdoutW)))
 	if err != nil {
 		execCancel()
-		stdinR.Close()
-		stdinW.Close()
-		stdoutR.Close()
-		stdoutW.Close()
+		_ = stdinR.Close()
+		_ = stdinW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, fmt.Errorf("failed to create raw exec: %w", err)
 	}
 
@@ -295,10 +295,10 @@ func (cc *ContainerdClient) ExecRaw(ctx context.Context, id string, cmd []string
 				logging.Err(delErr))
 		}
 		execCancel()
-		stdinR.Close()
-		stdinW.Close()
-		stdoutR.Close()
-		stdoutW.Close()
+		_ = stdinR.Close()
+		_ = stdinW.Close()
+		_ = stdoutR.Close()
+		_ = stdoutW.Close()
 		return nil, fmt.Errorf("failed to start raw exec: %w", err)
 	}
 
@@ -313,8 +313,8 @@ func (cc *ContainerdClient) ExecRaw(ctx context.Context, id string, cmd []string
 
 	go func() {
 		defer func() {
-			stdoutW.Close()
-			stdinR.Close()
+			_ = stdoutW.Close()
+			_ = stdinR.Close()
 			if _, delErr := process.Delete(context.Background()); delErr != nil {
 				logging.Warn("failed to delete raw exec process on exit",
 					"exec_id", execID,

@@ -12,6 +12,7 @@ import (
 // These ABIs define the interface for interacting with deployed contracts
 
 // BunkerTokenABI is the ABI for the BUNKER ERC20 token contract
+// #nosec G101 -- not a credential: this is a Solidity contract ABI (JSON interface definition)
 const BunkerTokenABI = `[
 	{
 		"constant": true,

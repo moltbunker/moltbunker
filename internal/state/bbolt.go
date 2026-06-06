@@ -58,7 +58,7 @@ func NewBboltStore(path string) (*BboltStore, error) {
 		return nil
 	})
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("initialize buckets: %w", err)
 	}
 

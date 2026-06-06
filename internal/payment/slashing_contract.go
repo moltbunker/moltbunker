@@ -471,6 +471,7 @@ func (sc *SlashingContract) parseSlashEvent(log types.Log) (*SlashEvent, error) 
 	// Parse data (amount, reason)
 	if len(log.Data) >= 64 {
 		event.Amount = new(big.Int).SetBytes(log.Data[:32])
+		// #nosec G115 -- reason is an on-chain Solidity uint8 enum (ABI-encoded), value is 0-255 by definition
 		event.Reason = ViolationReason(new(big.Int).SetBytes(log.Data[32:64]).Uint64())
 	}
 

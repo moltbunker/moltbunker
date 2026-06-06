@@ -66,7 +66,9 @@ func (cm *ContainerManager) handleExecOpen(ctx context.Context, msg *types.Messa
 	}
 
 	// Set default terminal size
+	// #nosec G115 -- terminal dimensions; truncation to uint16 (max 65535 cols/rows) is harmless and intended
 	cols := uint16(payload.Cols)
+	// #nosec G115 -- terminal dimensions; truncation to uint16 (max 65535 cols/rows) is harmless and intended
 	rows := uint16(payload.Rows)
 	if cols == 0 {
 		cols = 80
@@ -174,6 +176,7 @@ func (cm *ContainerManager) handleExecResize(_ context.Context, msg *types.Messa
 		return nil // silently drop: sender is not the session originator
 	}
 
+	// #nosec G115 -- terminal dimensions; truncation to uint16 (max 65535 cols/rows) is harmless and intended
 	return stream.Resize(uint16(payload.Cols), uint16(payload.Rows))
 }
 

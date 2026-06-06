@@ -202,7 +202,7 @@ func (pm *ProbeManager) checkNetworkConnectivity() {
 	for _, target := range pm.config.NetworkTargets {
 		conn, err := net.DialTimeout("tcp", target, pm.config.NetworkTimeout)
 		if err == nil {
-			conn.Close()
+			_ = conn.Close()
 			reachable++
 		}
 	}
@@ -319,6 +319,7 @@ func (pm *ProbeManager) checkSuspiciousProcesses() {
 		}
 
 		commPath := filepath.Join(procDir, pid, "comm")
+		// #nosec G304 -- procDir is constant; pid is validated numeric (isNumericString), no traversal possible
 		comm, err := os.ReadFile(commPath)
 		if err != nil {
 			continue
@@ -543,6 +544,7 @@ func detectProcessMonitoring() (bool, float64, string) {
 
 		// Read comm file to get process name
 		commPath := "/proc/" + entry + "/comm"
+		// #nosec G304 -- "/proc/" is constant; entry is validated numeric (strconv.Atoi) above, no traversal possible
 		comm, err := os.ReadFile(commPath)
 		if err != nil {
 			continue

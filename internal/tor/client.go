@@ -55,7 +55,7 @@ func (tc *TorClient) DialContext(ctx context.Context, network, address string) (
 		// to prevent TCP connection leak through the SOCKS proxy
 		go func() {
 			if res := <-resultChan; res.conn != nil {
-				res.conn.Close()
+				_ = res.conn.Close()
 			}
 		}()
 		return nil, ctx.Err()

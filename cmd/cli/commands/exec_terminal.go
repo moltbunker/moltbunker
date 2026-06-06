@@ -35,5 +35,6 @@ func terminalSize() (cols, rows uint16) {
 	if err != nil || w <= 0 || h <= 0 {
 		return 80, 24
 	}
+	// #nosec G115 -- w,h are positive terminal dimensions (guarded > 0); fit in uint16
 	return uint16(w), uint16(h)
 }

@@ -17,7 +17,7 @@ func WriteBindingsFile(dir string) (string, error) {
 		return "", fmt.Errorf("create bindings dir: %w", err)
 	}
 	path := filepath.Join(dir, "bindings.ts")
-	if err := os.WriteFile(path, bindingsTS, 0o644); err != nil {
+	if err := os.WriteFile(path, bindingsTS, 0o600); err != nil {
 		return "", fmt.Errorf("write bindings.ts: %w", err)
 	}
 	return path, nil

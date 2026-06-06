@@ -111,6 +111,7 @@ func NewNodeProfileManager(dir string, cfg *config.Config, node *Node, cm *Conta
 func (pm *NodeProfileManager) loadFromDisk() {
 	// Load self profile
 	selfPath := filepath.Join(pm.dir, "self.json")
+	// #nosec G304 -- selfPath is pm.dir/self.json (DataDir-derived), not request input
 	if data, err := os.ReadFile(selfPath); err == nil {
 		var profile NodeProfile
 		if err := json.Unmarshal(data, &profile); err == nil {
@@ -411,6 +412,7 @@ func (pm *NodeProfileManager) GetAggregatedCapacity() *AggregatedCapacity {
 		deployments := pm.cm.ListDeployments()
 		for _, d := range deployments {
 			if d.Resources.CPUQuota > 0 && d.Resources.CPUPeriod > 0 {
+				// #nosec G115 -- quotient of two small positive resource limits; CPU core count fits in int
 				agg.CPUUsed += int(d.Resources.CPUQuota / int64(d.Resources.CPUPeriod))
 			}
 			if d.Resources.MemoryLimit > 0 {

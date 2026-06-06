@@ -23,8 +23,14 @@ func (r *Router) sendLengthPrefixed(conn *tls.Conn, data []byte) error {
 			logging.Component("p2p"))
 	}
 
+	// Enforce the same 16MB cap as the reader; this also bounds the conversion.
+	if len(data) > maxLengthPrefixedSize {
+		return fmt.Errorf("message too large: %d bytes", len(data))
+	}
+
 	// Write length prefix (4 bytes, big endian)
 	lengthBuf := make([]byte, 4)
+	// #nosec G115 -- len(data) bounded above by maxLengthPrefixedSize (16MB), cannot overflow uint32
 	binary.BigEndian.PutUint32(lengthBuf, uint32(len(data)))
 
 	if _, err := conn.Write(lengthBuf); err != nil {
@@ -39,10 +45,17 @@ func (r *Router) sendLengthPrefixed(conn *tls.Conn, data []byte) error {
 	return nil
 }
 
+// maxLengthPrefixedSize bounds the size of a single length-prefixed message (16MB).
+const maxLengthPrefixedSize = 16 * 1024 * 1024
+
 // WriteLengthPrefixed writes data with a 4-byte length prefix to any writer.
 // This is the public counterpart of Router.sendLengthPrefixed.
 func WriteLengthPrefixed(conn io.Writer, data []byte) error {
+	if len(data) > maxLengthPrefixedSize {
+		return fmt.Errorf("message too large: %d bytes", len(data))
+	}
 	lengthBuf := make([]byte, 4)
+	// #nosec G115 -- len(data) bounded above by maxLengthPrefixedSize (16MB), cannot overflow uint32
 	binary.BigEndian.PutUint32(lengthBuf, uint32(len(data)))
 
 	if _, err := conn.Write(lengthBuf); err != nil {
@@ -65,7 +78,7 @@ func ReadLengthPrefixed(conn io.Reader) ([]byte, error) {
 	length := binary.BigEndian.Uint32(lengthBuf)
 
 	// Sanity check - max message size 16MB
-	if length > 16*1024*1024 {
+	if length > maxLengthPrefixedSize {
 		return nil, fmt.Errorf("message too large: %d bytes", length)
 	}
 

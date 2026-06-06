@@ -515,6 +515,7 @@ func (bc *BaseClient) GetTransactOpts(ctx context.Context) (*bind.TransactOpts, 
 
 	// Set nonce
 	bc.nonceMu.Lock()
+	// #nosec G115 -- pendingNonce is an account nonce; real-world values never approach int64 max
 	auth.Nonce = big.NewInt(int64(bc.pendingNonce))
 	bc.pendingNonce++
 	bc.nonceMu.Unlock()

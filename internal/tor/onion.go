@@ -54,6 +54,7 @@ func (om *OnionManager) GenerateOnionAddress(serviceID string) (string, error) {
 func (om *OnionManager) LoadOnionAddress(serviceID string) (string, error) {
 	keyPath := filepath.Join(om.dataDir, fmt.Sprintf("%s_onion_key", serviceID))
 
+	// #nosec G304 -- keyPath is built from the configured data dir + internal service id, not request input
 	keyData, err := os.ReadFile(keyPath)
 	if err != nil {
 		return "", fmt.Errorf("failed to read onion key: %w", err)

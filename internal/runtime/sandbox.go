@@ -35,6 +35,7 @@ func (sm *SandboxManager) CreateSandbox(ctx context.Context, containerID string,
 		containerd.WithNewSpec(
 			oci.WithImageConfig(image),
 			oci.WithCPUCFS(resources.CPUQuota, resources.CPUPeriod),
+			// #nosec G115 -- MemoryLimit is a non-negative byte count (resource limit), cannot be negative
 			oci.WithMemoryLimit(uint64(resources.MemoryLimit)),
 			oci.WithPidsLimit(int64(resources.PIDLimit)),
 		),

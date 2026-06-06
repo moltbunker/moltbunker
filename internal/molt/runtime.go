@@ -93,7 +93,7 @@ func NewMoltRuntime(ctx context.Context, cfg MoltConfig) (*MoltRuntime, error) {
 
 	// Register host functions (host.log, stubs)
 	if err := registerHostFunctions(ctx, rt); err != nil {
-		rt.Close(ctx)
+		_ = rt.Close(ctx)
 		return nil, fmt.Errorf("registering molt host functions: %w", err)
 	}
 

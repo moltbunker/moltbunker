@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -100,9 +101,9 @@ func NewManager(config *SnapshotConfig) (*Manager, error) {
 		config = DefaultSnapshotConfig()
 	}
 
-	// Ensure storage directory exists
+	// Ensure storage directory exists (private: holds container state)
 	if config.StoragePath != "" {
-		if err := os.MkdirAll(config.StoragePath, 0755); err != nil {
+		if err := os.MkdirAll(config.StoragePath, 0700); err != nil {
 			return nil, fmt.Errorf("failed to create snapshot storage: %w", err)
 		}
 	}
@@ -150,6 +151,7 @@ func (m *Manager) initEncryption() error {
 	}
 
 	// Try to load existing key
+	// #nosec G304 -- keyPath is from config (EncryptionKeyPath or StoragePath-derived), not request input
 	if data, err := os.ReadFile(keyPath); err == nil && len(data) == 32 {
 		m.encryptionKey = data
 		logging.Debug("loaded existing encryption key",
@@ -189,7 +191,7 @@ func (m *Manager) compressData(data []byte) ([]byte, error) {
 	}
 
 	if _, err := writer.Write(data); err != nil {
-		writer.Close()
+		_ = writer.Close()
 		return nil, fmt.Errorf("failed to write compressed data: %w", err)
 	}
 
@@ -343,6 +345,7 @@ func (m *Manager) loadSnapshots() error {
 			continue
 		}
 
+		// #nosec G304 -- metaDir is StoragePath-derived; entry.Name() comes from os.ReadDir of that dir, no traversal
 		data, err := os.ReadFile(filepath.Join(metaDir, entry.Name()))
 		if err != nil {
 			continue
@@ -471,7 +474,7 @@ func (m *Manager) CreateSnapshot(containerID string, data []byte, snapshotType S
 	dataPath := ""
 	if m.config.StoragePath != "" {
 		dataDir := filepath.Join(m.config.StoragePath, "data")
-		if err := os.MkdirAll(dataDir, 0755); err != nil {
+		if err := os.MkdirAll(dataDir, 0700); err != nil {
 			return nil, fmt.Errorf("failed to create data directory: %w", err)
 		}
 
@@ -530,7 +533,7 @@ func (m *Manager) CreateSnapshot(containerID string, data []byte, snapshotType S
 // saveSnapshotMeta saves snapshot metadata to disk
 func (m *Manager) saveSnapshotMeta(snapshot *Snapshot) error {
 	metaDir := filepath.Join(m.config.StoragePath, "meta")
-	if err := os.MkdirAll(metaDir, 0755); err != nil {
+	if err := os.MkdirAll(metaDir, 0700); err != nil {
 		return err
 	}
 
@@ -673,11 +676,11 @@ func (m *Manager) DeleteSnapshot(snapshotID string) error {
 			if snap.ID == snapshotID {
 				// Remove from disk
 				if snap.DataPath != "" {
-					os.Remove(snap.DataPath)
+					_ = os.Remove(snap.DataPath)
 				}
 				if m.config.StoragePath != "" {
 					metaPath := filepath.Join(m.config.StoragePath, "meta", snapshotID+".json")
-					os.Remove(metaPath)
+					_ = os.Remove(metaPath)
 				}
 
 				// Update total size
@@ -707,11 +710,11 @@ func (m *Manager) DeleteContainerSnapshots(containerID string) error {
 	snapshots := m.snapshots[containerID]
 	for _, snap := range snapshots {
 		if snap.DataPath != "" {
-			os.Remove(snap.DataPath)
+			_ = os.Remove(snap.DataPath)
 		}
 		if m.config.StoragePath != "" {
 			metaPath := filepath.Join(m.config.StoragePath, "meta", snap.ID+".json")
-			os.Remove(metaPath)
+			_ = os.Remove(metaPath)
 		}
 		m.totalSize -= getStoredSize(snap)
 	}
@@ -742,11 +745,11 @@ func (m *Manager) enforceLimit(containerID string) error {
 
 		// Remove from disk
 		if oldest.DataPath != "" {
-			os.Remove(oldest.DataPath)
+			_ = os.Remove(oldest.DataPath)
 		}
 		if m.config.StoragePath != "" {
 			metaPath := filepath.Join(m.config.StoragePath, "meta", oldest.ID+".json")
-			os.Remove(metaPath)
+			_ = os.Remove(metaPath)
 		}
 
 		m.totalSize -= getStoredSize(oldest)
@@ -787,11 +790,11 @@ func (m *Manager) enforceLimit(containerID string) error {
 
 		// Remove it
 		if oldest.DataPath != "" {
-			os.Remove(oldest.DataPath)
+			_ = os.Remove(oldest.DataPath)
 		}
 		if m.config.StoragePath != "" {
 			metaPath := filepath.Join(m.config.StoragePath, "meta", oldest.ID+".json")
-			os.Remove(metaPath)
+			_ = os.Remove(metaPath)
 		}
 
 		m.totalSize -= getStoredSize(oldest)
@@ -829,11 +832,11 @@ func (m *Manager) CleanupExpired() int {
 			if snap.CreatedAt.Before(cutoff) {
 				// Remove from disk
 				if snap.DataPath != "" {
-					os.Remove(snap.DataPath)
+					_ = os.Remove(snap.DataPath)
 				}
 				if m.config.StoragePath != "" {
 					metaPath := filepath.Join(m.config.StoragePath, "meta", snap.ID+".json")
-					os.Remove(metaPath)
+					_ = os.Remove(metaPath)
 				}
 
 				m.totalSize -= getStoredSize(snap)
@@ -961,6 +964,10 @@ func (m *Manager) ExportSnapshot(snapshotID string, w io.Writer) error {
 	}
 
 	// Write format: [4 bytes meta length][meta JSON][data]
+	if len(meta) > math.MaxInt32 {
+		return fmt.Errorf("snapshot metadata too large: %d bytes", len(meta))
+	}
+	// #nosec G115 -- len(meta) bounded above by math.MaxInt32, cannot overflow int32
 	metaLen := int32(len(meta))
 	if err := writeInt32(w, metaLen); err != nil {
 		return err
@@ -1006,7 +1013,7 @@ func (m *Manager) ImportSnapshot(r io.Reader) (*Snapshot, error) {
 	// Save data to storage
 	if m.config.StoragePath != "" {
 		dataDir := filepath.Join(m.config.StoragePath, "data")
-		if err := os.MkdirAll(dataDir, 0755); err != nil {
+		if err := os.MkdirAll(dataDir, 0700); err != nil {
 			return nil, fmt.Errorf("failed to create data directory: %w", err)
 		}
 
@@ -1039,10 +1046,11 @@ func (m *Manager) ImportSnapshot(r io.Reader) (*Snapshot, error) {
 // writeInt32 writes a 32-bit integer in big-endian format
 func writeInt32(w io.Writer, v int32) error {
 	buf := make([]byte, 4)
-	buf[0] = byte(v >> 24)
-	buf[1] = byte(v >> 16)
-	buf[2] = byte(v >> 8)
-	buf[3] = byte(v)
+	// Deliberate big-endian byte extraction via shift+truncate (low 8 bits each).
+	buf[0] = byte(v >> 24) // #nosec G115 -- intentional byte extraction (high byte), not a lossy size conversion
+	buf[1] = byte(v >> 16) // #nosec G115 -- intentional byte extraction, not a lossy size conversion
+	buf[2] = byte(v >> 8)  // #nosec G115 -- intentional byte extraction, not a lossy size conversion
+	buf[3] = byte(v)       // #nosec G115 -- intentional byte extraction (low byte), not a lossy size conversion
 	_, err := w.Write(buf)
 	return err
 }
@@ -1099,6 +1107,7 @@ func (m *Manager) RotateEncryptionKey() error {
 			}
 
 			// Write back
+			// #nosec G703 -- snap.DataPath is internally constructed (StoragePath/data/<id><ext>), not request input
 			if err := os.WriteFile(snap.DataPath, encrypted, 0600); err != nil {
 				return fmt.Errorf("failed to write snapshot %s: %w", snap.ID, err)
 			}

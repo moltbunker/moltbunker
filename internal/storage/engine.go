@@ -2,7 +2,7 @@ package storage
 
 import (
 	"context"
-	"crypto/md5"
+	"crypto/md5" // #nosec G501 -- non-security use: S3-compatible ETag (content identifier), not auth/integrity
 	"encoding/hex"
 	"fmt"
 	"io"
@@ -201,26 +201,27 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 	tempPath := f.Name()
 
 	// Hash while writing for ETag
+	// #nosec G401 -- non-security use: S3-compatible ETag (content identifier), not auth/integrity
 	hasher := md5.New()
 	tee := io.TeeReader(input.Body, hasher)
 
 	n, err := io.Copy(f, tee)
 	if err != nil {
-		f.Close()
-		os.Remove(tempPath)
+		_ = f.Close()
+		_ = os.Remove(tempPath)
 		return nil, fmt.Errorf("write blob: %w", err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	// Check size limit
 	if e.config.MaxObjectSize > 0 && n > e.config.MaxObjectSize {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return nil, fmt.Errorf("object too large: %d bytes exceeds max %d", n, e.config.MaxObjectSize)
 	}
 
 	// Atomic rename
 	if err := os.Rename(tempPath, blobPath); err != nil {
-		os.Remove(tempPath)
+		_ = os.Remove(tempPath)
 		return nil, fmt.Errorf("rename blob: %w", err)
 	}
 
@@ -244,7 +245,7 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 	}
 
 	if err := e.metadata.PutObject(ctx, obj); err != nil {
-		os.Remove(blobPath)
+		_ = os.Remove(blobPath)
 		return nil, fmt.Errorf("persist object metadata: %w", err)
 	}
 
@@ -283,6 +284,7 @@ func (e *StorageEngine) GetObject(ctx context.Context, bucket, key, owner string
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G304 -- blobPath is validated by blobPath() (filepath.Clean + prefix check rejects traversal)
 	f, err := os.Open(blobPath)
 	if err != nil {
 		return nil, fmt.Errorf("open blob: %w", err)
