@@ -1,0 +1,2627 @@
+openapi: 3.0.3
+info:
+  title: Moltbunker API
+  description: |
+    Permissionless, fully encrypted P2P network for containerized compute resources.
+
+    Moltbunker enables deployment of containers across a decentralized network with
+    automatic threat detection, self-cloning capabilities, 3-region redundancy,
+    staking economics, and end-to-end encryption.
+
+    ## Authentication
+
+    The API supports three authentication methods:
+
+    1. **API Key** - Pass a key with the `mb_` prefix via `Authorization: Bearer mb_...`
+       or the `X-API-Key` header.
+    2. **Wallet Session** - Obtain a session token (`wt_` prefix) through the
+       challenge/verify flow and pass it via `Authorization: Bearer wt_...`.
+    3. **Inline Wallet Signature** - Sign each request with your Ethereum wallet using
+       the `X-Wallet-Address`, `X-Wallet-Signature`, and `X-Wallet-Message` headers.
+
+    Health, readiness, and metrics endpoints do not require authentication.
+
+    ## API Key Permission Scopes
+
+    API keys carry permission scopes that control access. Wallet-based authentication
+    (methods 2 and 3) always grants full access.
+
+    | Scope | Access |
+    |-------|--------|
+    | `read` | GET endpoints: status, balance, deployments, containers, snapshots, clones, bots, runtimes, subdomains, threat |
+    | `write` | All `read` access plus POST/DELETE: deploy, reserve, clone, migrate, snapshot, restore, exec, subdomains |
+    | `admin` | All `write` access plus admin endpoints: API key management, metrics, debug |
+
+    Permission hierarchy: `admin` > `write` > `read`. A key with `write` permission
+    can also perform `read` operations.
+
+    ## Regions
+
+    Geographic regions used for replica placement:
+    - `americas`
+    - `europe`
+    - `asia_pacific`
+    - `africa`
+    - `middle_east`
+
+    ## BUNKER Token
+
+    All monetary values are denominated in BUNKER tokens (ERC-20 on Base L2) and
+    expressed as decimal strings in wei (18 decimals) unless noted otherwise.
+  version: 0.1.0
+  contact:
+    name: Moltbunker
+    url: https://moltbunker.com
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://localhost:8443
+    description: Local development server (HTTPS)
+  - url: https://api.moltbunker.com
+    description: Production API
+
+tags:
+  - name: Authentication
+    description: Wallet-based permissionless authentication
+  - name: Status
+    description: Node status and information
+  - name: Deployments
+    description: Container deployment lifecycle
+  - name: Bots
+    description: Bot (managed container) management
+  - name: Runtimes
+    description: Runtime reservation and management
+  - name: Containers
+    description: Direct container operations
+  - name: Clones
+    description: Self-cloning and replication
+  - name: Snapshots
+    description: Container state snapshots
+  - name: Threat Detection
+    description: Threat detection and response
+  - name: Balance
+    description: Wallet balance and economics
+  - name: Health
+    description: Health checks and readiness probes
+  - name: Metrics
+    description: Prometheus-compatible metrics
+  - name: WebSocket
+    description: Real-time event streaming
+
+paths:
+  # ============================================================================
+  # Authentication
+  # ============================================================================
+  /v1/auth/challenge:
+    post:
+      tags: [Authentication]
+      summary: Request authentication challenge
+      description: |
+        Request a challenge message for wallet-based authentication. The returned
+        message must be signed with the wallet's private key and submitted to the
+        verify endpoint.
+      operationId: authChallenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthChallengeRequest'
+            example:
+              address: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+      responses:
+        '200':
+          description: Challenge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthChallengeResponse'
+              example:
+                message: "Sign this message to authenticate with MoltBunker.\n\nWallet: 0x742d35cc6634c0532925a3b844bc9e7595f2bd18\nNonce: a1b2c3d4e5f6...\nTimestamp: 1707350400"
+                expires_in: 300
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /v1/auth/verify:
+    post:
+      tags: [Authentication]
+      summary: Verify wallet signature
+      description: |
+        Verify a signed challenge message and receive a session token (`wt_` prefix).
+        The token can be used as a Bearer token for subsequent authenticated requests.
+        Sessions expire after 1 hour.
+      operationId: authVerify
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthVerifyRequest'
+            example:
+              address: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+              message: "Sign this message to authenticate with MoltBunker.\n\nWallet: 0x742d35cc6634c0532925a3b844bc9e7595f2bd18\nNonce: a1b2c3d4e5f6...\nTimestamp: 1707350400"
+              signature: "0xabcdef1234567890..."
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthVerifyResponse'
+              example:
+                access_token: "wt_a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+                expires_in: 3600
+                wallet: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+                auth_type: "wallet"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  # ============================================================================
+  # Status
+  # ============================================================================
+  /v1/status:
+    get:
+      tags: [Status]
+      summary: Get node status
+      description: Returns the current status of the Moltbunker node including peer count, container count, Tor status, and threat level.
+      operationId: getStatus
+      responses:
+        '200':
+          description: Node status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+              example:
+                node_id: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+                running: true
+                version: "0.1.0"
+                uptime: "2h30m15s"
+                peer_count: 12
+                containers: 3
+                tor_enabled: true
+                tor_address: "abc123def456.onion"
+                region: "europe"
+                threat_level: 0.15
+                timestamp: "2026-02-10T12:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================================================
+  # Core Deployment Operations
+  # ============================================================================
+  /v1/deploy:
+    post:
+      tags: [Deployments]
+      summary: Deploy a container
+      description: |
+        Deploy a container image across the decentralized network. The system
+        automatically provisions 3 replicas across different geographic regions.
+        Supports Tor-only networking and onion service exposure.
+      operationId: deploy
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeployRequest'
+            example:
+              image: "nginx:latest"
+              tor_only: false
+              onion_service: true
+              resources:
+                cpu_quota: 100000
+                memory_limit: 268435456
+      responses:
+        '201':
+          description: Deployment initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeployResponse'
+              example:
+                container_id: "mb-1707350400000000000"
+                status: "deploying"
+                onion_address: "abc123def456.onion"
+                regions:
+                  - americas
+                  - europe
+                  - asia_pacific
+                replica_count: 3
+                created_at: "2026-02-10T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/reserve:
+    post:
+      tags: [Deployments]
+      summary: Reserve compute resources
+      description: |
+        Reserve compute resources by tier before deploying. Returns a runtime ID
+        that can be used in subsequent deploy requests.
+      operationId: reserve
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReserveRequest'
+            example:
+              tier: "standard"
+              duration_hours: 24
+              region: "europe"
+              tor_only: false
+      responses:
+        '201':
+          description: Resources reserved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReserveResponse'
+              example:
+                runtime_id: "rt-1707350400000000000"
+                status: "reserved"
+                tier: "standard"
+                region: "europe"
+                expires_at: "2026-02-11T12:00:00Z"
+                cost: "0.00037"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/migrate:
+    post:
+      tags: [Deployments]
+      summary: Migrate a container
+      description: Migrate a container to a different geographic region. Optionally keep the original running.
+      operationId: migrate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MigrateRequest'
+            example:
+              container_id: "mb-1707350400000000000"
+              target_region: "asia_pacific"
+              keep_original: false
+      responses:
+        '202':
+          description: Migration initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrateResponse'
+              example:
+                migration_id: "mig-1707350400000000000"
+                status: "pending"
+                source_region: "europe"
+                target_region: "asia_pacific"
+                started_at: "2026-02-10T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  # ============================================================================
+  # Deployments (CRUD)
+  # ============================================================================
+  /v1/deployments:
+    get:
+      tags: [Deployments]
+      summary: List deployments
+      description: List all deployments for the authenticated user.
+      operationId: listDeployments
+      responses:
+        '200':
+          description: List of deployments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deployments:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DeploymentResponse'
+              example:
+                deployments: []
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Deployments]
+      summary: Create a deployment
+      description: Create a new deployment on a previously reserved runtime.
+      operationId: createDeployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeploymentCreateRequest'
+            example:
+              runtime_id: "rt-1707350400000000000"
+              env:
+                NODE_ENV: "production"
+              cmd: ["node", "server.js"]
+      responses:
+        '201':
+          description: Deployment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+              example:
+                id: "dep-1707350400000000000"
+                bot_id: "bot-1234"
+                runtime_id: "rt-1707350400000000000"
+                container_id: "mb-1707350400000000000"
+                status: "starting"
+                region: "americas"
+                node_id: "node-42"
+                created_at: "2026-02-10T12:00:00Z"
+                started_at: "2026-02-10T12:00:01Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/deployments/{deployment_id}:
+    get:
+      tags: [Deployments]
+      summary: Get deployment details
+      description: Get details of a specific deployment.
+      operationId: getDeployment
+      parameters:
+        - $ref: '#/components/parameters/DeploymentId'
+      responses:
+        '200':
+          description: Deployment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeploymentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/deployments/{deployment_id}/stop:
+    post:
+      tags: [Deployments]
+      summary: Stop a deployment
+      description: Stop a running deployment. The container will be terminated.
+      operationId: stopDeployment
+      parameters:
+        - $ref: '#/components/parameters/DeploymentId'
+      responses:
+        '204':
+          description: Deployment stopped
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # Bots
+  # ============================================================================
+  /v1/bots:
+    get:
+      tags: [Bots]
+      summary: List bots
+      description: List all bots (managed containers) for the authenticated user.
+      operationId: listBots
+      responses:
+        '200':
+          description: List of bots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  bots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BotResponse'
+              example:
+                bots:
+                  - id: "bot-1707350400000000000"
+                    name: "my-bot"
+                    image: "myimage:latest"
+                    region: "europe"
+                    created_at: "2026-02-10T12:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Bots]
+      summary: Create a bot
+      description: Create a new bot with the specified image and configuration.
+      operationId: createBot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BotRequest'
+            example:
+              name: "my-bot"
+              image: "myimage:latest"
+              description: "A test bot"
+              region: "europe"
+              resources:
+                cpu_shares: 1024
+                memory_mb: 512
+      responses:
+        '201':
+          description: Bot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/bots/{bot_id}:
+    get:
+      tags: [Bots]
+      summary: Get bot details
+      description: Get details of a specific bot by ID.
+      operationId: getBot
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: Bot details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Bots]
+      summary: Update a bot
+      description: Update bot configuration. Supports partial updates.
+      operationId: updateBot
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Partial bot update fields
+              properties:
+                name:
+                  type: string
+                description:
+                  type: string
+                metadata:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '200':
+          description: Bot updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "updated"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Bots]
+      summary: Delete a bot
+      description: Delete a bot and its associated container.
+      operationId: deleteBot
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '204':
+          description: Bot deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/bots/{bot_id}/status:
+    get:
+      tags: [Bots]
+      summary: Get bot status
+      description: Get the current operational status of a bot.
+      operationId: getBotStatus
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: Bot status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotStatusResponse'
+              example:
+                status: "running"
+                uptime: "1h30m"
+                clones: 0
+                active_deployments: 1
+                threat_level: 0.0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/bots/{bot_id}/cloning:
+    post:
+      tags: [Bots]
+      summary: Configure bot cloning
+      description: Configure automatic cloning behavior for a bot.
+      operationId: configureBotCloning
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Cloning configuration
+              properties:
+                enabled:
+                  type: boolean
+                  description: Enable/disable automatic cloning
+                max_clones:
+                  type: integer
+                  description: Maximum number of clones
+                trigger_threshold:
+                  type: number
+                  format: double
+                  description: Threat score threshold to trigger cloning
+      responses:
+        '200':
+          description: Cloning configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "cloning configured"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/bots/{bot_id}/clones:
+    get:
+      tags: [Bots]
+      summary: List bot clones
+      description: List all clones of a specific bot.
+      operationId: listBotClones
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: List of clones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clones:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CloneResponse'
+              example:
+                clones: []
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/bots/{bot_id}/clones/sync:
+    post:
+      tags: [Bots]
+      summary: Sync bot clones
+      description: Trigger synchronization of all clones for the specified bot.
+      operationId: syncBotClones
+      parameters:
+        - $ref: '#/components/parameters/BotId'
+      responses:
+        '200':
+          description: Sync initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "sync initiated"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================================================
+  # Runtimes
+  # ============================================================================
+  /v1/runtimes/reserve:
+    post:
+      tags: [Runtimes]
+      summary: Reserve a runtime
+      description: Reserve a runtime environment for a bot with specified resource requirements.
+      operationId: reserveRuntime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RuntimeReserveRequest'
+            example:
+              bot_id: "bot-1707350400000000000"
+              min_memory_mb: 512
+              min_cpu_shares: 1024
+              duration_hours: 24
+              region: "europe"
+      responses:
+        '201':
+          description: Runtime reserved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeResponse'
+              example:
+                id: "rt-1707350400000000000"
+                bot_id: "bot-1707350400000000000"
+                node_id: "node-42"
+                region: "europe"
+                resources:
+                  cpu_shares: 1024
+                  memory_mb: 512
+                expires_at: "2026-02-11T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/runtimes/{runtime_id}:
+    get:
+      tags: [Runtimes]
+      summary: Get runtime details
+      description: Get details of a specific runtime reservation.
+      operationId: getRuntime
+      parameters:
+        - $ref: '#/components/parameters/RuntimeId'
+      responses:
+        '200':
+          description: Runtime details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Runtimes]
+      summary: Release a runtime
+      description: Release a runtime reservation. Any running containers will be stopped.
+      operationId: releaseRuntime
+      parameters:
+        - $ref: '#/components/parameters/RuntimeId'
+      responses:
+        '204':
+          description: Runtime released
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/runtimes/{runtime_id}/extend:
+    post:
+      tags: [Runtimes]
+      summary: Extend runtime reservation
+      description: Extend the expiration of a runtime reservation.
+      operationId: extendRuntime
+      parameters:
+        - $ref: '#/components/parameters/RuntimeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [duration_hours]
+              properties:
+                duration_hours:
+                  type: integer
+                  description: Additional hours to extend
+                  example: 24
+      responses:
+        '200':
+          description: Runtime extended
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expires_at:
+                    type: string
+                    format: date-time
+                    example: "2026-02-12T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/runtimes/{runtime_id}/status:
+    get:
+      tags: [Runtimes]
+      summary: Get runtime status
+      description: Get the current status and remaining time for a runtime.
+      operationId: getRuntimeStatus
+      parameters:
+        - $ref: '#/components/parameters/RuntimeId'
+      responses:
+        '200':
+          description: Runtime status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [active, expired, releasing]
+                    example: "active"
+                  remaining_hours:
+                    type: number
+                    format: double
+                    example: 23.5
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # Containers
+  # ============================================================================
+  /v1/containers/{container_id}:
+    get:
+      tags: [Containers]
+      summary: Get container details
+      description: Get details of a specific container by ID.
+      operationId: getContainer
+      parameters:
+        - $ref: '#/components/parameters/ContainerId'
+      responses:
+        '200':
+          description: Container details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContainerInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/containers/{container_id}/logs:
+    get:
+      tags: [Containers]
+      summary: Get container logs
+      description: Retrieve logs from a running or stopped container.
+      operationId: getContainerLogs
+      parameters:
+        - $ref: '#/components/parameters/ContainerId'
+      responses:
+        '200':
+          description: Container logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: string
+                    description: Container log output
+                    example: "2026-02-10T12:00:00Z Starting application..."
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/containers/{container_id}/cloning:
+    post:
+      tags: [Containers]
+      summary: Configure container cloning
+      description: Configure automatic cloning for a specific container.
+      operationId: configureContainerCloning
+      parameters:
+        - $ref: '#/components/parameters/ContainerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+                max_clones:
+                  type: integer
+                trigger_threshold:
+                  type: number
+                  format: double
+      responses:
+        '200':
+          description: Cloning configured
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "cloning configured"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/containers/{container_id}/checkpoints:
+    post:
+      tags: [Containers]
+      summary: Create container checkpoint
+      description: Create a checkpoint of the container's current state for later restoration.
+      operationId: createContainerCheckpoint
+      parameters:
+        - $ref: '#/components/parameters/ContainerId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  description: Checkpoint name
+                metadata:
+                  type: object
+                  additionalProperties:
+                    type: string
+      responses:
+        '200':
+          description: Checkpoint created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "checkpoints configured"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================================================
+  # Clones
+  # ============================================================================
+  /v1/clone:
+    post:
+      tags: [Clones]
+      summary: Initiate a clone operation
+      description: |
+        Clone a container or code to a target region. Supports cloning by code hash
+        or from an existing state snapshot.
+      operationId: clone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloneRequest'
+            example:
+              target_region: "asia_pacific"
+              reason: "manual_clone"
+      responses:
+        '202':
+          description: Clone initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloneResponse'
+              example:
+                clone_id: "clone-1707350400000000000"
+                status: "pending"
+                target_region: "asia_pacific"
+                created_at: "2026-02-10T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/clones:
+    get:
+      tags: [Clones]
+      summary: List clones
+      description: List all clone operations.
+      operationId: listClones
+      responses:
+        '200':
+          description: List of clones
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clones:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CloneResponse'
+              example:
+                clones: []
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Clones]
+      summary: Create a clone
+      description: Create a new clone operation (alias for POST /v1/clone).
+      operationId: createClone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CloneRequest'
+      responses:
+        '202':
+          description: Clone initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloneResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/clones/{clone_id}:
+    get:
+      tags: [Clones]
+      summary: Get clone details
+      description: Get the status and details of a specific clone operation.
+      operationId: getClone
+      parameters:
+        - $ref: '#/components/parameters/CloneId'
+      responses:
+        '200':
+          description: Clone details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloneResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/clones/{clone_id}/cancel:
+    post:
+      tags: [Clones]
+      summary: Cancel a clone operation
+      description: Cancel an in-progress clone operation.
+      operationId: cancelClone
+      parameters:
+        - $ref: '#/components/parameters/CloneId'
+      responses:
+        '204':
+          description: Clone cancelled
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ============================================================================
+  # Snapshots
+  # ============================================================================
+  /v1/snapshot:
+    post:
+      tags: [Snapshots]
+      summary: Create a snapshot
+      description: |
+        Create a snapshot of a container's current state. Snapshots are compressed
+        and encrypted. Supports full, incremental, and checkpoint types.
+      operationId: createSnapshot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnapshotRequest'
+            example:
+              container_id: "mb-1707350400000000000"
+              type: "full"
+              metadata:
+                reason: "pre-migration"
+      responses:
+        '201':
+          description: Snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+              example:
+                snapshot_id: "snap-1707350400000000000"
+                container_id: "mb-1707350400000000000"
+                type: "full"
+                size: 52428800
+                checksum: "sha256:a1b2c3d4..."
+                created_at: "2026-02-10T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/snapshots:
+    get:
+      tags: [Snapshots]
+      summary: List snapshots
+      description: List all snapshots.
+      operationId: listSnapshots
+      responses:
+        '200':
+          description: List of snapshots
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snapshots:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SnapshotResponse'
+              example:
+                snapshots: []
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Snapshots]
+      summary: Create a snapshot
+      description: Create a snapshot (alias for POST /v1/snapshot).
+      operationId: createSnapshotAlt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SnapshotRequest'
+      responses:
+        '201':
+          description: Snapshot created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /v1/snapshots/{snapshot_id}:
+    get:
+      tags: [Snapshots]
+      summary: Get snapshot details
+      description: Get details of a specific snapshot.
+      operationId: getSnapshot
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '200':
+          description: Snapshot details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Snapshots]
+      summary: Delete a snapshot
+      description: Permanently delete a snapshot.
+      operationId: deleteSnapshot
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '204':
+          description: Snapshot deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/snapshots/{snapshot_id}/restore:
+    post:
+      tags: [Snapshots]
+      summary: Restore from snapshot
+      description: Restore a container from a snapshot. Can create a new container or restore in-place.
+      operationId: restoreSnapshot
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreRequest'
+            example:
+              snapshot_id: "snap-1707350400000000000"
+              target_region: "europe"
+              new_container: true
+      responses:
+        '202':
+          description: Restore initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestoreResponse'
+              example:
+                container_id: "mb-1707350400000000001"
+                snapshot_id: "snap-1707350400000000000"
+                status: "restoring"
+                restored_at: "2026-02-10T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /v1/snapshots/{snapshot_id}/data:
+    get:
+      tags: [Snapshots]
+      summary: Get snapshot data
+      description: Retrieve the metadata and details for a snapshot.
+      operationId: getSnapshotData
+      parameters:
+        - $ref: '#/components/parameters/SnapshotId'
+      responses:
+        '200':
+          description: Snapshot data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SnapshotResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /v1/restore:
+    post:
+      tags: [Snapshots]
+      summary: Restore from snapshot
+      description: Restore a container from a snapshot (top-level endpoint).
+      operationId: restore
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RestoreRequest'
+            example:
+              snapshot_id: "snap-1707350400000000000"
+              target_region: "europe"
+              new_container: true
+      responses:
+        '202':
+          description: Restore initiated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestoreResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ============================================================================
+  # Threat Detection
+  # ============================================================================
+  /v1/threat:
+    get:
+      tags: [Threat Detection]
+      summary: Get threat level
+      description: |
+        Get the current threat level assessment for the node. The score ranges from
+        0.0 (no threat) to 1.0 (critical). Levels: low, medium, high, critical.
+      operationId: getThreatLevel
+      responses:
+        '200':
+          description: Current threat level
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreatResponse'
+              example:
+                score: 0.15
+                level: "low"
+                active_signals:
+                  - type: "network_anomaly"
+                    score: 0.1
+                    confidence: 0.8
+                    source: "network_monitor"
+                recommendation: "continue_normal"
+                timestamp: "2026-02-10T12:00:00Z"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================================================
+  # Balance
+  # ============================================================================
+  /v1/balance:
+    get:
+      tags: [Balance]
+      summary: Get wallet balance
+      description: |
+        Get the BUNKER token and ETH balance for the authenticated wallet, including
+        deposited, reserved, and available funds.
+      operationId: getBalance
+      responses:
+        '200':
+          description: Wallet balance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+              example:
+                wallet_address: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+                bunker_balance: "10000000000000000000000"
+                eth_balance: "1500000000000000000"
+                deposited: "5000000000000000000000"
+                reserved: "1000000000000000000000"
+                available: "4000000000000000000000"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # ============================================================================
+  # Health
+  # ============================================================================
+  /health:
+    get:
+      tags: [Health]
+      summary: Load balancer health check
+      description: Simple health check endpoint for load balancer probes. No authentication required.
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+              example:
+                status: "healthy"
+                uptime: "2h30m15s"
+                peer_count: 12
+                version: "1.0.0"
+        '503':
+          description: Server is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthCheckResponse'
+              example:
+                status: "unhealthy"
+                uptime: "0s"
+                peer_count: 0
+                version: "1.0.0"
+                reason: "daemon bridge disconnected"
+
+  /v1/health:
+    get:
+      tags: [Health]
+      summary: Simple health check
+      description: Returns a simple OK status. No authentication required.
+      operationId: health
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "ok"
+
+  /v1/healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      description: Detailed liveness check with timestamp. No authentication required.
+      operationId: healthz
+      security: []
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2026-02-10T12:00:00Z"
+
+  /v1/readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      description: |
+        Readiness check that verifies the server is running and daemon connectivity.
+        No authentication required.
+      operationId: readyz
+      security: []
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyzResponse'
+              example:
+                ready: true
+                daemon_connected: true
+                timestamp: "2026-02-10T12:00:00Z"
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadyzResponse'
+              example:
+                ready: false
+                message: "server not running"
+
+  # ============================================================================
+  # Metrics
+  # ============================================================================
+  /v1/metrics:
+    get:
+      tags: [Metrics]
+      summary: Prometheus metrics
+      description: |
+        Returns metrics in Prometheus text exposition format. Includes Go runtime
+        metrics and Moltbunker application metrics (uptime, connections, containers,
+        peers, request counts, request latency histograms). No authentication required.
+      operationId: getMetrics
+      security: []
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: |
+                # HELP go_goroutines Number of goroutines that currently exist
+                # TYPE go_goroutines gauge
+                go_goroutines 42
+                # HELP moltbunker_container_count Number of running containers
+                # TYPE moltbunker_container_count gauge
+                moltbunker_container_count 3
+
+  # ============================================================================
+  # WebSocket
+  # ============================================================================
+  /v1/ws:
+    get:
+      tags: [WebSocket]
+      summary: WebSocket connection
+      description: |
+        Upgrade to a WebSocket connection for real-time event streaming.
+
+        ## Message Format
+
+        All messages use JSON with the following structure:
+        ```json
+        {
+          "type": "event_type",
+          "channel": "optional_channel",
+          "data": {}
+        }
+        ```
+
+        ## Client Messages
+
+        - `subscribe` - Subscribe to channels: `{"type": "subscribe", "data": {"channels": ["deployments", "threat"]}}`
+        - `unsubscribe` - Unsubscribe from channels: `{"type": "unsubscribe", "data": {"channels": ["deployments"]}}`
+        - `ping` - Keep-alive ping (server responds with `pong`)
+
+        ## Server Messages
+
+        - `subscribed` - Subscription confirmation with active channel list
+        - `unsubscribed` - Unsubscription confirmation
+        - `pong` - Response to ping
+        - Event messages on subscribed channels (deployment updates, threat alerts, etc.)
+      operationId: websocket
+      security: []
+      responses:
+        '101':
+          description: WebSocket upgrade successful
+
+components:
+  # ==========================================================================
+  # Security Schemes
+  # ==========================================================================
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        API key (`mb_live_*` prefix) or wallet session token (`wt_*` prefix).
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key with `mb_live_` prefix.
+    WalletInlineAuth:
+      type: apiKey
+      in: header
+      name: X-Wallet-Address
+      description: |
+        Inline wallet authentication. Requires three headers:
+        - `X-Wallet-Address` - Ethereum wallet address
+        - `X-Wallet-Signature` - Signature of the message
+        - `X-Wallet-Message` - Signed message (`moltbunker-auth:{timestamp}`)
+
+  # ==========================================================================
+  # Parameters
+  # ==========================================================================
+  parameters:
+    BotId:
+      name: bot_id
+      in: path
+      required: true
+      description: Bot identifier
+      schema:
+        type: string
+        example: "bot-1707350400000000000"
+    ContainerId:
+      name: container_id
+      in: path
+      required: true
+      description: Container identifier
+      schema:
+        type: string
+        example: "mb-1707350400000000000"
+    DeploymentId:
+      name: deployment_id
+      in: path
+      required: true
+      description: Deployment identifier
+      schema:
+        type: string
+        example: "dep-1707350400000000000"
+    RuntimeId:
+      name: runtime_id
+      in: path
+      required: true
+      description: Runtime identifier
+      schema:
+        type: string
+        example: "rt-1707350400000000000"
+    SnapshotId:
+      name: snapshot_id
+      in: path
+      required: true
+      description: Snapshot identifier
+      schema:
+        type: string
+        example: "snap-1707350400000000000"
+    CloneId:
+      name: clone_id
+      in: path
+      required: true
+      description: Clone operation identifier
+      schema:
+        type: string
+        example: "clone-1707350400000000000"
+
+  # ==========================================================================
+  # Responses
+  # ==========================================================================
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "invalid request body"
+    Unauthorized:
+      description: Authentication required or invalid credentials
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "unauthorized"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "not found"
+    RateLimited:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying
+          schema:
+            type: integer
+            example: 60
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: "rate limit exceeded"
+              retry_after:
+                type: integer
+                example: 60
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "internal server error"
+    ServiceUnavailable:
+      description: Service temporarily unavailable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            error: "service unavailable"
+
+  # ==========================================================================
+  # Schemas
+  # ==========================================================================
+  schemas:
+    # ---- Error ----
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          description: Human-readable error message
+          example: "invalid request"
+
+    # ---- Authentication ----
+    AuthChallengeRequest:
+      type: object
+      required: [address]
+      properties:
+        address:
+          type: string
+          description: Ethereum wallet address (0x-prefixed, 42 characters)
+          pattern: '^0x[0-9a-fA-F]{40}$'
+          example: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+
+    AuthChallengeResponse:
+      type: object
+      required: [message, expires_in]
+      properties:
+        message:
+          type: string
+          description: Message to sign with wallet private key
+          example: "Sign this message to authenticate with MoltBunker.\n\nWallet: 0x742d35cc6634c0532925a3b844bc9e7595f2bd18\nNonce: a1b2c3d4...\nTimestamp: 1707350400"
+        expires_in:
+          type: integer
+          description: Challenge expiration in seconds
+          example: 300
+
+    AuthVerifyRequest:
+      type: object
+      required: [address, message, signature]
+      properties:
+        address:
+          type: string
+          description: Ethereum wallet address
+          pattern: '^0x[0-9a-fA-F]{40}$'
+          example: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+        message:
+          type: string
+          description: The challenge message that was signed
+          example: "Sign this message to authenticate with MoltBunker..."
+        signature:
+          type: string
+          description: Hex-encoded Ethereum signature (65 bytes, 0x-prefixed)
+          example: "0xabcdef1234567890..."
+
+    AuthVerifyResponse:
+      type: object
+      required: [access_token, expires_in, wallet, auth_type]
+      properties:
+        access_token:
+          type: string
+          description: Session token (wt_ prefix) for Bearer authentication
+          example: "wt_a1b2c3d4e5f6..."
+        expires_in:
+          type: integer
+          description: Token expiration in seconds
+          example: 3600
+        wallet:
+          type: string
+          description: Verified wallet address
+          example: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+        auth_type:
+          type: string
+          description: Authentication type
+          enum: [wallet]
+          example: "wallet"
+
+    # ---- Status ----
+    StatusResponse:
+      type: object
+      required: [node_id, running, version, uptime, peer_count, containers, tor_enabled, region, threat_level, timestamp]
+      properties:
+        node_id:
+          type: string
+          description: Hex-encoded SHA-256 of Ed25519 public key (64 characters)
+          example: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+        running:
+          type: boolean
+          description: Whether the node is running
+          example: true
+        version:
+          type: string
+          description: Daemon version
+          example: "0.1.0"
+        uptime:
+          type: string
+          description: Human-readable uptime duration
+          example: "2h30m15s"
+        peer_count:
+          type: integer
+          description: Number of connected peers
+          example: 12
+        containers:
+          type: integer
+          description: Number of running containers
+          example: 3
+        tor_enabled:
+          type: boolean
+          description: Whether Tor is enabled
+          example: true
+        tor_address:
+          type: string
+          description: .onion address if Tor is enabled
+          example: "abc123def456.onion"
+        region:
+          type: string
+          description: Node geographic region
+          example: "europe"
+        threat_level:
+          type: number
+          format: double
+          description: Current threat score (0.0-1.0)
+          minimum: 0
+          maximum: 1
+          example: 0.15
+        timestamp:
+          type: string
+          format: date-time
+          description: Response timestamp
+          example: "2026-02-10T12:00:00Z"
+
+    # ---- Resources ----
+    ResourceLimits:
+      type: object
+      description: Container resource limits
+      properties:
+        cpu_quota:
+          type: integer
+          format: int64
+          description: CPU quota in microseconds
+          example: 100000
+        cpu_period:
+          type: integer
+          format: int64
+          description: CPU period in microseconds
+          example: 100000
+        memory_limit:
+          type: integer
+          format: int64
+          description: Memory limit in bytes
+          example: 268435456
+        disk_limit:
+          type: integer
+          format: int64
+          description: Disk limit in bytes
+          example: 10737418240
+        network_bw:
+          type: integer
+          format: int64
+          description: Network bandwidth in bytes/sec
+          example: 125000000
+        pid_limit:
+          type: integer
+          description: Maximum process count
+          example: 100
+
+    ResourceRequest:
+      type: object
+      description: Simplified resource configuration for API requests
+      properties:
+        cpu_shares:
+          type: integer
+          description: CPU shares (relative weight)
+          example: 1024
+        memory_mb:
+          type: integer
+          description: Memory in megabytes
+          example: 512
+        storage_mb:
+          type: integer
+          description: Storage in megabytes
+          example: 10240
+        network_mbps:
+          type: integer
+          description: Network bandwidth in Mbps
+          example: 100
+
+    # ---- Deploy ----
+    DeployRequest:
+      type: object
+      required: [image]
+      properties:
+        runtime_id:
+          type: string
+          description: Optional runtime reservation ID
+          example: "rt-1707350400000000000"
+        image:
+          type: string
+          description: Container image name or IPFS CID
+          example: "nginx:latest"
+        code_hash:
+          type: string
+          description: SHA-256 hash of the code for verification
+          example: "sha256:a1b2c3d4..."
+        resources:
+          $ref: '#/components/schemas/ResourceLimits'
+        tor_only:
+          type: boolean
+          description: Restrict to Tor-only networking
+          default: false
+          example: false
+        onion_service:
+          type: boolean
+          description: Expose container as a .onion hidden service
+          default: false
+          example: true
+        spot:
+          type: boolean
+          description: Use spot pricing (lower cost, preemptible)
+          default: false
+          example: false
+        min_provider_tier:
+          type: string
+          description: Minimum provider tier required
+          enum: [dev, standard, confidential]
+          example: "standard"
+        expose_ports:
+          type: array
+          items:
+            type: object
+            properties:
+              container_port:
+                type: integer
+                description: Port inside the container
+              protocol:
+                type: string
+                enum: [tcp, udp]
+                default: tcp
+          description: Container ports to expose via ingress
+          example:
+            - container_port: 8080
+              protocol: tcp
+        reservation_id:
+          type: string
+          description: Runtime reservation ID from a prior /v1/reserve call
+          example: "rt-1707350400000000000"
+
+    DeployResponse:
+      type: object
+      required: [container_id, status, regions, replica_count, created_at]
+      properties:
+        container_id:
+          type: string
+          description: Unique container identifier
+          example: "mb-1707350400000000000"
+        status:
+          type: string
+          description: Deployment status
+          enum: [pending, created, deploying, running, paused, stopped, failed, replicating]
+          example: "deploying"
+        onion_address:
+          type: string
+          description: .onion address if onion_service was requested
+          example: "abc123def456.onion"
+        regions:
+          type: array
+          items:
+            type: string
+          description: Geographic regions hosting replicas
+          example: ["americas", "europe", "asia_pacific"]
+        replica_count:
+          type: integer
+          description: Number of replicas provisioned
+          example: 3
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-02-10T12:00:00Z"
+
+    # ---- Reserve ----
+    ReserveRequest:
+      type: object
+      properties:
+        tier:
+          type: string
+          description: Resource tier
+          enum: [minimal, standard, performance, enterprise]
+          default: standard
+          example: "standard"
+        duration_hours:
+          type: integer
+          description: Reservation duration in hours
+          default: 24
+          minimum: 1
+          example: 24
+        region:
+          type: string
+          description: Preferred geographic region
+          example: "europe"
+        tor_only:
+          type: boolean
+          description: Restrict to Tor-only nodes
+          default: false
+          example: false
+
+    ReserveResponse:
+      type: object
+      required: [runtime_id, status, tier, region, expires_at, cost]
+      properties:
+        runtime_id:
+          type: string
+          description: Reserved runtime identifier
+          example: "rt-1707350400000000000"
+        status:
+          type: string
+          description: Reservation status
+          example: "reserved"
+        tier:
+          type: string
+          description: Resource tier
+          enum: [minimal, standard, performance, enterprise]
+          example: "standard"
+        region:
+          type: string
+          description: Assigned geographic region
+          example: "europe"
+        expires_at:
+          type: string
+          format: date-time
+          description: Reservation expiration time
+          example: "2026-02-11T12:00:00Z"
+        onion_address:
+          type: string
+          description: .onion address if tor_only was requested
+        cost:
+          type: string
+          description: Cost in BUNKER tokens
+          example: "0.00037"
+
+    # ---- Clone ----
+    CloneRequest:
+      type: object
+      properties:
+        code_hash:
+          type: string
+          description: Code hash for clone source
+          example: "sha256:a1b2c3d4..."
+        state_snapshot:
+          type: string
+          description: Snapshot ID to clone from
+          example: "snap-1707350400000000000"
+        target_region:
+          type: string
+          description: Target region for the clone
+          default: random
+          example: "asia_pacific"
+        reason:
+          type: string
+          description: Reason for cloning
+          default: manual_clone
+          example: "manual_clone"
+
+    CloneResponse:
+      type: object
+      required: [clone_id, status, target_region, created_at]
+      properties:
+        clone_id:
+          type: string
+          description: Clone operation identifier
+          example: "clone-1707350400000000000"
+        source_id:
+          type: string
+          description: Source container identifier
+          example: "mb-1707350400000000000"
+        target_id:
+          type: string
+          description: Target container identifier (set when clone completes)
+          example: "mb-1707350400000000001"
+        status:
+          type: string
+          description: Clone status
+          enum: [pending, in_progress, completed, failed, cancelled]
+          example: "pending"
+        target_region:
+          type: string
+          description: Target geographic region
+          example: "asia_pacific"
+        created_at:
+          type: string
+          format: date-time
+          description: Clone creation timestamp
+          example: "2026-02-10T12:00:00Z"
+
+    # ---- Migrate ----
+    MigrateRequest:
+      type: object
+      required: [container_id, target_region]
+      properties:
+        container_id:
+          type: string
+          description: Container to migrate
+          example: "mb-1707350400000000000"
+        target_region:
+          type: string
+          description: Target geographic region
+          example: "asia_pacific"
+        keep_original:
+          type: boolean
+          description: Keep the original container running
+          default: false
+          example: false
+
+    MigrateResponse:
+      type: object
+      required: [migration_id, status, source_region, target_region, started_at]
+      properties:
+        migration_id:
+          type: string
+          description: Migration operation identifier
+          example: "mig-1707350400000000000"
+        status:
+          type: string
+          description: Migration status
+          enum: [pending, in_progress, completed, failed]
+          example: "pending"
+        source_region:
+          type: string
+          description: Source geographic region
+          example: "europe"
+        target_region:
+          type: string
+          description: Target geographic region
+          example: "asia_pacific"
+        started_at:
+          type: string
+          format: date-time
+          description: Migration start time
+          example: "2026-02-10T12:00:00Z"
+
+    # ---- Balance ----
+    BalanceResponse:
+      type: object
+      required: [wallet_address, bunker_balance, eth_balance, deposited, reserved, available]
+      properties:
+        wallet_address:
+          type: string
+          description: Ethereum wallet address
+          example: "0x742d35Cc6634C0532925a3b844Bc9e7595f2bD18"
+        bunker_balance:
+          type: string
+          description: Total BUNKER balance in wei
+          example: "10000000000000000000000"
+        eth_balance:
+          type: string
+          description: ETH balance in wei
+          example: "1500000000000000000"
+        deposited:
+          type: string
+          description: Total deposited to escrow in wei
+          example: "5000000000000000000000"
+        reserved:
+          type: string
+          description: Funds reserved for active jobs in wei
+          example: "1000000000000000000000"
+        available:
+          type: string
+          description: Available funds (deposited - reserved) in wei
+          example: "4000000000000000000000"
+
+    # ---- Snapshot ----
+    SnapshotRequest:
+      type: object
+      required: [container_id]
+      properties:
+        container_id:
+          type: string
+          description: Container to snapshot
+          example: "mb-1707350400000000000"
+        type:
+          type: string
+          description: Snapshot type
+          enum: [full, incremental, checkpoint]
+          default: full
+          example: "full"
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Key-value metadata to attach
+          example:
+            reason: "pre-migration"
+
+    SnapshotResponse:
+      type: object
+      required: [snapshot_id, container_id, type, size, checksum, created_at]
+      properties:
+        snapshot_id:
+          type: string
+          description: Snapshot identifier
+          example: "snap-1707350400000000000"
+        container_id:
+          type: string
+          description: Source container identifier
+          example: "mb-1707350400000000000"
+        type:
+          type: string
+          description: Snapshot type
+          enum: [full, incremental, checkpoint]
+          example: "full"
+        size:
+          type: integer
+          format: int64
+          description: Snapshot size in bytes
+          example: 52428800
+        checksum:
+          type: string
+          description: SHA-256 checksum
+          example: "sha256:a1b2c3d4e5f6..."
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-02-10T12:00:00Z"
+
+    # ---- Restore ----
+    RestoreRequest:
+      type: object
+      required: [snapshot_id]
+      properties:
+        snapshot_id:
+          type: string
+          description: Snapshot to restore from
+          example: "snap-1707350400000000000"
+        target_region:
+          type: string
+          description: Target region for the restored container
+          example: "europe"
+        new_container:
+          type: boolean
+          description: Create a new container instead of restoring in-place
+          default: false
+          example: true
+
+    RestoreResponse:
+      type: object
+      required: [container_id, snapshot_id, status, restored_at]
+      properties:
+        container_id:
+          type: string
+          description: Container identifier (new or existing)
+          example: "mb-1707350400000000001"
+        snapshot_id:
+          type: string
+          description: Snapshot that was restored
+          example: "snap-1707350400000000000"
+        status:
+          type: string
+          description: Restore status
+          enum: [restoring, completed, failed]
+          example: "restoring"
+        restored_at:
+          type: string
+          format: date-time
+          description: Restore timestamp
+          example: "2026-02-10T12:00:00Z"
+
+    # ---- Threat ----
+    ThreatResponse:
+      type: object
+      required: [score, level, active_signals, recommendation, timestamp]
+      properties:
+        score:
+          type: number
+          format: double
+          description: Threat score (0.0 = none, 1.0 = critical)
+          minimum: 0
+          maximum: 1
+          example: 0.15
+        level:
+          type: string
+          description: Threat level classification
+          enum: [low, medium, high, critical, unknown]
+          example: "low"
+        active_signals:
+          type: array
+          items:
+            $ref: '#/components/schemas/SignalInfo'
+          description: Currently active threat signals
+        recommendation:
+          type: string
+          description: Recommended action
+          example: "continue_normal"
+        timestamp:
+          type: string
+          format: date-time
+          description: Assessment timestamp
+          example: "2026-02-10T12:00:00Z"
+
+    SignalInfo:
+      type: object
+      required: [type, score, confidence, source]
+      properties:
+        type:
+          type: string
+          description: Signal type identifier
+          example: "network_anomaly"
+        score:
+          type: number
+          format: double
+          description: Signal score
+          minimum: 0
+          maximum: 1
+          example: 0.1
+        confidence:
+          type: number
+          format: double
+          description: Detection confidence
+          minimum: 0
+          maximum: 1
+          example: 0.8
+        source:
+          type: string
+          description: Signal source
+          example: "network_monitor"
+
+    # ---- Bots ----
+    BotRequest:
+      type: object
+      required: [name, image]
+      properties:
+        name:
+          type: string
+          description: Bot name
+          example: "my-bot"
+        image:
+          type: string
+          description: Container image
+          example: "myimage:latest"
+        description:
+          type: string
+          description: Bot description
+          example: "A test bot"
+        resources:
+          $ref: '#/components/schemas/ResourceRequest'
+        region:
+          type: string
+          description: Preferred region
+          example: "europe"
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Key-value metadata
+          example:
+            environment: "production"
+
+    BotResponse:
+      type: object
+      required: [id, name, image, region, created_at]
+      properties:
+        id:
+          type: string
+          description: Bot identifier
+          example: "bot-1707350400000000000"
+        name:
+          type: string
+          description: Bot name
+          example: "my-bot"
+        image:
+          type: string
+          description: Container image
+          example: "myimage:latest"
+        description:
+          type: string
+          description: Bot description
+          example: "A test bot"
+        resources:
+          $ref: '#/components/schemas/ResourceRequest'
+        region:
+          type: string
+          description: Geographic region
+          example: "europe"
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-02-10T12:00:00Z"
+
+    BotStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Bot operational status
+          enum: [running, stopped, error, deploying]
+          example: "running"
+        uptime:
+          type: string
+          description: Human-readable uptime
+          example: "1h30m"
+        clones:
+          type: integer
+          description: Number of active clones
+          example: 0
+        active_deployments:
+          type: integer
+          description: Number of active deployments
+          example: 1
+        threat_level:
+          type: number
+          format: double
+          description: Current threat level for this bot
+          example: 0.0
+
+    # ---- Runtimes ----
+    RuntimeReserveRequest:
+      type: object
+      required: [bot_id]
+      properties:
+        bot_id:
+          type: string
+          description: Bot identifier to reserve runtime for
+          example: "bot-1707350400000000000"
+        min_memory_mb:
+          type: integer
+          description: Minimum memory in MB
+          example: 512
+        min_cpu_shares:
+          type: integer
+          description: Minimum CPU shares
+          example: 1024
+        duration_hours:
+          type: integer
+          description: Reservation duration in hours
+          default: 24
+          example: 24
+        region:
+          type: string
+          description: Preferred region
+          example: "europe"
+
+    RuntimeResponse:
+      type: object
+      required: [id, bot_id, node_id, region, expires_at]
+      properties:
+        id:
+          type: string
+          description: Runtime identifier
+          example: "rt-1707350400000000000"
+        bot_id:
+          type: string
+          description: Associated bot identifier
+          example: "bot-1707350400000000000"
+        node_id:
+          type: string
+          description: Assigned node identifier
+          example: "node-42"
+        region:
+          type: string
+          description: Geographic region
+          example: "europe"
+        resources:
+          $ref: '#/components/schemas/ResourceRequest'
+        expires_at:
+          type: string
+          format: date-time
+          description: Reservation expiration
+          example: "2026-02-11T12:00:00Z"
+
+    # ---- Deployments ----
+    DeploymentCreateRequest:
+      type: object
+      required: [runtime_id]
+      properties:
+        runtime_id:
+          type: string
+          description: Runtime reservation ID
+          example: "rt-1707350400000000000"
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: Environment variables
+          example:
+            NODE_ENV: "production"
+        cmd:
+          type: array
+          items:
+            type: string
+          description: Override command
+          example: ["node", "server.js"]
+        entrypoint:
+          type: array
+          items:
+            type: string
+          description: Override entrypoint
+          example: ["/bin/sh", "-c"]
+
+    DeploymentResponse:
+      type: object
+      required: [id, bot_id, runtime_id, container_id, status, region, node_id, created_at]
+      properties:
+        id:
+          type: string
+          description: Deployment identifier
+          example: "dep-1707350400000000000"
+        bot_id:
+          type: string
+          description: Associated bot identifier
+          example: "bot-1234"
+        runtime_id:
+          type: string
+          description: Runtime reservation identifier
+          example: "rt-1707350400000000000"
+        container_id:
+          type: string
+          description: Container identifier
+          example: "mb-1707350400000000000"
+        status:
+          type: string
+          description: Deployment status
+          enum: [starting, running, stopped, failed, error]
+          example: "starting"
+        region:
+          type: string
+          description: Geographic region
+          example: "americas"
+        node_id:
+          type: string
+          description: Assigned node identifier
+          example: "node-42"
+        onion_address:
+          type: string
+          description: .onion address if available
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-02-10T12:00:00Z"
+        started_at:
+          type: string
+          format: date-time
+          description: Start timestamp
+          example: "2026-02-10T12:00:01Z"
+          nullable: true
+
+    # ---- Containers ----
+    ContainerInfo:
+      type: object
+      required: [id, image, status, created_at, encrypted]
+      properties:
+        id:
+          type: string
+          description: Container identifier
+          example: "mb-1707350400000000000"
+        image:
+          type: string
+          description: Container image
+          example: "nginx:latest"
+        status:
+          type: string
+          description: Container status
+          enum: [pending, created, running, paused, stopped, failed, replicating]
+          example: "running"
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+          example: "2026-02-10T12:00:00Z"
+        started_at:
+          type: string
+          format: date-time
+          description: Start timestamp
+          nullable: true
+        encrypted:
+          type: boolean
+          description: Whether the container volume is encrypted
+          example: true
+        onion_address:
+          type: string
+          description: .onion address if available
+        regions:
+          type: array
+          items:
+            type: string
+          description: Regions hosting replicas
+          example: ["americas", "europe", "asia_pacific"]
+
+    # ---- Health ----
+    HealthCheckResponse:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          description: Health status
+          enum: [healthy, unhealthy]
+          example: "healthy"
+        uptime:
+          type: string
+          description: Human-readable uptime
+          example: "2h30m15s"
+        peer_count:
+          type: integer
+          format: int64
+          description: Number of known peers
+          example: 12
+        version:
+          type: string
+          description: API version
+          example: "1.0.0"
+        reason:
+          type: string
+          description: Reason for unhealthy status
+          example: "daemon bridge disconnected"
+
+    ReadyzResponse:
+      type: object
+      required: [ready]
+      properties:
+        ready:
+          type: boolean
+          description: Whether the service is ready to accept requests
+          example: true
+        daemon_connected:
+          type: boolean
+          description: Whether the daemon is connected
+          example: true
+        message:
+          type: string
+          description: Additional message (populated when not ready)
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-02-10T12:00:00Z"
+
+    # ---- WebSocket ----
+    WebSocketMessage:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          description: Message type
+          enum: [subscribe, unsubscribe, ping, pong, subscribed, unsubscribed]
+          example: "subscribe"
+        channel:
+          type: string
+          description: Target channel name
+          example: "deployments"
+        data:
+          type: object
+          description: Message payload
+          example:
+            channels: ["deployments", "threat"]
+
+# Default security - all endpoints require auth unless overridden
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+  - WalletInlineAuth: []
