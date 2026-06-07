@@ -327,7 +327,7 @@ func TestMemoryStore(t *testing.T) {
 func TestBboltStore(t *testing.T) {
 	conformanceTests(t, "BboltStore", func(t *testing.T) StateStore {
 		path := filepath.Join(t.TempDir(), "test.db")
-		s, err := NewBboltStore(path)
+		s, err := NewBboltStore(path, nil)
 		if err != nil {
 			t.Fatalf("NewBboltStore: %v", err)
 		}
@@ -341,7 +341,7 @@ func TestBboltStore_Persistence(t *testing.T) {
 	ctx := context.Background()
 
 	// Write data, close, reopen, verify
-	s1, err := NewBboltStore(path)
+	s1, err := NewBboltStore(path, nil)
 	if err != nil {
 		t.Fatalf("open 1: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestBboltStore_Persistence(t *testing.T) {
 	}
 	s1.Close()
 
-	s2, err := NewBboltStore(path)
+	s2, err := NewBboltStore(path, nil)
 	if err != nil {
 		t.Fatalf("open 2: %v", err)
 	}

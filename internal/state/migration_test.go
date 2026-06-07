@@ -270,7 +270,7 @@ func TestMigrateFromJSON_BboltStore(t *testing.T) {
 
 	// Use bbolt store
 	dbPath := filepath.Join(dataDir, "moltbunker.db")
-	store, err := NewBboltStore(dbPath)
+	store, err := NewBboltStore(dbPath, nil)
 	if err != nil {
 		t.Fatalf("NewBboltStore: %v", err)
 	}

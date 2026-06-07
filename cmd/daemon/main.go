@@ -113,7 +113,28 @@ func main() {
 	if stateDBPath == "" {
 		stateDBPath = filepath.Join(cfg.Daemon.DataDir, "moltbunker.db")
 	}
-	stateStore, err := state.NewBboltStore(stateDBPath)
+
+	// R8: state-at-rest encryption. Enabled by default (zero value of
+	// StateEncryptionDisabled). Mitigates stolen-disk / leaked-backup / casual
+	// filesystem access to moltbunker.db; it does NOT defend against a live
+	// host-root attacker who can also read DataDir/state.key (that needs
+	// SEV-SNP / TPM). Key-load failure is FATAL: falling back to a nil key would
+	// silently mis-read existing encrypted values as garbage and write new
+	// values in plaintext, so we fail closed and let the operator fix the key
+	// (or set security.state_encryption_disabled to opt out deliberately).
+	var stateEncKey []byte
+	if !cfg.Security.StateEncryptionDisabled {
+		k, kerr := state.LoadOrCreateStateKey(cfg.Daemon.DataDir)
+		if kerr != nil {
+			log.Fatalf("Failed to load state encryption key (set security.state_encryption_disabled to run without it): %v", kerr)
+		}
+		stateEncKey = k
+		logging.Info("state-at-rest encryption enabled", logging.Component("daemon"))
+	} else {
+		logging.Info("state-at-rest encryption disabled", logging.Component("daemon"))
+	}
+
+	stateStore, err := state.NewBboltStore(stateDBPath, stateEncKey)
 	if err != nil {
 		log.Fatalf("Failed to open state database: %v", err)
 	}
