@@ -402,6 +402,13 @@ type SecurityConfig struct {
 	// PATH, deploys are scanned (block HIGH/CRITICAL). Default false: a no-op
 	// scanner is used so a host without trivy never fails a deploy.
 	ImageScanEnabled bool `yaml:"image_scan_enabled"`
+
+	// R8 — state-at-rest encryption. The zero value (false) means ENABLED, so
+	// existing configs get bbolt value encryption by default. Set to true only to
+	// opt out (e.g. for debugging the raw database). The key lives at
+	// DataDir/state.key with 0600 perms; see internal/state/statekey.go for the
+	// threat model.
+	StateEncryptionDisabled bool `yaml:"state_encryption_disabled"`
 }
 
 // RedundancyConfig contains redundancy settings

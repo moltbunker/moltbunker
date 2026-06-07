@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -8,14 +9,31 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+
+	"github.com/moltbunker/moltbunker/internal/security"
 )
 
 // BboltStore implements StateStore using bbolt (embedded B+ tree KV database).
 // Each category of state (deployments, bans, peers, etc.) is stored in its own bucket.
 // All operations are ACID — partial writes on crash are impossible.
+//
+// R8 — encryption at rest: when encKey is non-nil, every value is stored as
+// encMagic || AES-256-GCM(value) and transparently decrypted on read. A nil
+// encKey disables encryption (plaintext), preserving the legacy behavior.
+//
+// Threat model: see internal/state/statekey.go. The on-disk key mitigates
+// stolen-disk / leaked-backup / casual filesystem access, not a live host-root
+// attacker who can also read state.key.
 type BboltStore struct {
-	db *bolt.DB
+	db     *bolt.DB
+	encKey []byte // nil => encryption disabled (plaintext)
 }
+
+// encMagic is a fixed, non-JSON byte prefix marking an encrypted value on disk.
+// Plaintext state values are JSON or short ASCII (schema version, timestamps),
+// none of which begin with these bytes, so the prefix unambiguously
+// distinguishes encrypted blobs from legacy plaintext during lazy migration.
+var encMagic = []byte{0x4D, 0x42, 0x45, 0x4E, 0x43, 0x31, 0x00} // "MBENC1\x00"
 
 // allBuckets is the list of buckets created on database open.
 var allBuckets = []string{
@@ -34,8 +52,13 @@ var allBuckets = []string{
 }
 
 // NewBboltStore opens or creates a bbolt database at the given path.
-// Parent directories are created if they don't exist.
-func NewBboltStore(path string) (*BboltStore, error) {
+// Parent directories are created if they don't exist. If encKey is non-nil it
+// must be a 32-byte AES-256 key; values are then encrypted at rest. Pass nil to
+// store values as plaintext (legacy behavior).
+func NewBboltStore(path string, encKey []byte) (*BboltStore, error) {
+	if encKey != nil && len(encKey) != 32 {
+		return nil, fmt.Errorf("state encryption key must be 32 bytes, got %d", len(encKey))
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, fmt.Errorf("create state db directory: %w", err)
 	}
@@ -62,27 +85,71 @@ func NewBboltStore(path string) (*BboltStore, error) {
 		return nil, fmt.Errorf("initialize buckets: %w", err)
 	}
 
-	return &BboltStore{db: db}, nil
+	return &BboltStore{db: db, encKey: encKey}, nil
 }
 
 func (s *BboltStore) Close() error {
 	return s.db.Close()
 }
 
+// --- encryption helpers ---
+
+// encode returns the bytes to store on disk for a value. With encryption enabled
+// it produces encMagic || AES-256-GCM(data); otherwise data is returned as-is.
+func (s *BboltStore) encode(data []byte) ([]byte, error) {
+	if s.encKey == nil {
+		return data, nil
+	}
+	ct, err := security.EncryptAES256GCM(s.encKey, data)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt state value: %w", err)
+	}
+	out := make([]byte, 0, len(encMagic)+len(ct))
+	out = append(out, encMagic...)
+	out = append(out, ct...)
+	return out, nil
+}
+
+// decode reverses encode for a value read from disk. A value carrying encMagic
+// is decrypted (and a decrypt failure is a hard error — ciphertext is never
+// returned). A value without the magic prefix is returned verbatim: this is the
+// back-compat / lazy-migration path (legacy plaintext, or values written while
+// encryption was disabled). With encryption disabled, values are returned as-is.
+func (s *BboltStore) decode(stored []byte) ([]byte, error) {
+	if stored == nil {
+		return nil, nil
+	}
+	if s.encKey == nil {
+		return stored, nil
+	}
+	if !bytes.HasPrefix(stored, encMagic) {
+		return stored, nil
+	}
+	pt, err := security.DecryptAES256GCM(s.encKey, stored[len(encMagic):])
+	if err != nil {
+		return nil, fmt.Errorf("decrypt state value: %w", err)
+	}
+	return pt, nil
+}
+
 // --- internal helpers ---
 
 func (s *BboltStore) put(bucket, key string, data []byte) error {
+	stored, err := s.encode(data)
+	if err != nil {
+		return err
+	}
 	return s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
 		if b == nil {
 			return fmt.Errorf("bucket %s not found", bucket)
 		}
-		return b.Put([]byte(key), data)
+		return b.Put([]byte(key), stored)
 	})
 }
 
 func (s *BboltStore) get(bucket, key string) ([]byte, error) {
-	var result []byte
+	var stored []byte
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
 		if b == nil {
@@ -90,12 +157,15 @@ func (s *BboltStore) get(bucket, key string) ([]byte, error) {
 		}
 		v := b.Get([]byte(key))
 		if v != nil {
-			result = make([]byte, len(v))
-			copy(result, v)
+			stored = make([]byte, len(v))
+			copy(stored, v)
 		}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	return s.decode(stored)
 }
 
 func (s *BboltStore) del(bucket, key string) error {
@@ -118,10 +188,17 @@ func (s *BboltStore) list(bucket string) (map[string][]byte, error) {
 		return b.ForEach(func(k, v []byte) error {
 			cp := make([]byte, len(v))
 			copy(cp, v)
-			result[string(k)] = cp
+			plain, derr := s.decode(cp)
+			if derr != nil {
+				return fmt.Errorf("decode value for key %q: %w", string(k), derr)
+			}
+			result[string(k)] = plain
 			return nil
 		})
 	})
+	if err != nil {
+		return nil, err
+	}
 	return result, err
 }
 
