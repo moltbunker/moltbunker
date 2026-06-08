@@ -1,5 +1,5 @@
 .PHONY: build build-all daemon api cli exec-agent test test-quick test-smoke test-e2e test-colima \
-       test-integration test-localnet test-fuzz test-contracts test-all test-production \
+       test-containerd-linux test-integration test-localnet test-fuzz test-contracts test-all test-production \
        test-production-verbose clean install lint vet coverage doctor setup setup-linux \
        dev localnet localnet-stop localnet-status localnet-logs localnet-clean \
        docker docker-dev docker-up docker-down release release-snapshot tidy check help
@@ -58,6 +58,11 @@ test-e2e:
 test-colima:
 	@echo "Running Colima E2E tests (requires Colima running)..."
 	@go test -v -tags=colima -timeout 5m ./tests/e2e/colima/...
+
+test-containerd-linux:
+	@echo "Running real-containerd E2E tests against the system containerd (Linux/CI parity)..."
+	@echo "Requires containerd at /run/containerd/containerd.sock (or set COLIMA_CONTAINERD_SOCKET)."
+	@go test -v -tags=colima -timeout 12m ./tests/e2e/colima/...
 
 test-integration:
 	@echo "Running integration tests..."
