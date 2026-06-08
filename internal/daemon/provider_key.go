@@ -84,10 +84,15 @@ func (pm *ProviderKeyManager) PublicKey() []byte {
 	return out
 }
 
-// privateKey returns the raw 32-byte private key for decryption. Unexported so
-// the secret stays inside the daemon package.
+// privateKey returns a COPY of the 32-byte private key for decryption.
+// Unexported so the secret stays inside the daemon package. Returns a defensive
+// copy (matching PublicKey()) so the long-lived key slice is never aliased into
+// callers or third-party libraries (e.g. ocicrypt's DecryptConfig.Parameters via
+// R5 image decryption), which could otherwise retain/mutate the live secret.
 func (pm *ProviderKeyManager) privateKey() []byte {
 	pm.mu.RLock()
 	defer pm.mu.RUnlock()
-	return pm.privKey
+	out := make([]byte, len(pm.privKey))
+	copy(out, pm.privKey)
+	return out
 }

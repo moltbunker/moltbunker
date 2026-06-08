@@ -311,6 +311,13 @@ func (cm *ContainerManager) deployReplica(ctx context.Context, deployment *Deplo
 		TrustPolicy:     toTrustPolicy(deployment.RequireSignature, deployment.TrustedPublishers),
 		Scanner:         cm.imageScanner,
 		ScanPolicy:      resolveScanPolicy(deployment.IgnoreCVEs),
+		// R5 — image-at-rest encryption (self-recipient): this replica encrypts
+		// the image it pulled to its OWN X25519 key, so it gets the same at-rest
+		// protection as the originator with no cross-node key delivery. No-op
+		// unless enabled.
+		ImageCrypter:           cm.imageCrypter,
+		ImageDecryptKey:        cm.imageDecryptKey(),
+		ImageEncryptRecipients: cm.imageEncryptRecipients(),
 	}
 
 	// Best-effort exec-agent seeding on the replica. The gossiped Deployment

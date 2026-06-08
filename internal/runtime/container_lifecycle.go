@@ -116,6 +116,22 @@ type SecureContainerConfig struct {
 	// disabled by daemon config.
 	Scanner    ImageScanner
 	ScanPolicy ScanPolicy
+
+	// R5 — image content encryption at rest.
+	// If ImageCrypter is non-nil and Enabled(), encrypted image layers in the
+	// local content store are decrypted in-process (using ImageDecryptKey, this
+	// node's stable X25519 private key) BEFORE the rootfs is unpacked. Plaintext
+	// images are detected via imgcrypt's HasEncryptedLayer and pass through
+	// untouched, so this is a safe no-op for unencrypted public images.
+	//
+	// ImageEncryptRecipients, when non-empty, are the X25519 public keys (this
+	// deployment's providers — originator + replicas) the image should be
+	// (re)encrypted to at rest after a successful pull. The daemon zone sources
+	// these from the gossiped Deployment so every replica can decrypt the same
+	// image. Leave ImageCrypter as a NoopImageCrypter (or nil) to opt out.
+	ImageCrypter           ImageCrypter
+	ImageDecryptKey        []byte
+	ImageEncryptRecipients [][]byte
 }
 
 // CreateContainer creates a new container
@@ -259,6 +275,18 @@ func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config Se
 		}
 	}
 
+	// R5 — decrypt encrypted image layers at rest before scanning/unpack. The
+	// image must be plaintext for the scanner to read it and for WithNewSnapshot
+	// to build the rootfs. decryptImageForRun is a safe no-op for plaintext
+	// images (it detects encrypted layers by digest), so this never affects
+	// unencrypted public images. Build-verified; runtime-validated under R11.
+	if config.ImageCrypter != nil && config.ImageCrypter.Enabled() && len(config.ImageDecryptKey) > 0 {
+		image, err = cc.decryptImageForRun(ctx, image, config.ImageRef, config.ImageCrypter, config.ImageDecryptKey)
+		if err != nil {
+			return nil, fmt.Errorf("image %s: %w", config.ImageRef, err)
+		}
+	}
+
 	// R4 — vulnerability scan gate. Runs after the image is local but before
 	// any container resource is allocated.
 	if config.Scanner != nil {
@@ -332,6 +360,23 @@ func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config Se
 	container, err := cc.client.NewContainer(ctx, config.ID, cc.baseContainerOpts(config.ID, image, opts)...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create container: %w", err)
+	}
+
+	// R5 — encrypt the durable image record's layer blobs at rest now that the
+	// container's rootfs snapshot has been unpacked. Self-recipient: sealed to
+	// this node's own X25519 key (config.ImageEncryptRecipients). Best-effort and
+	// FAIL-OPEN by design: a failure does NOT tear down an otherwise-healthy
+	// container (the running rootfs already lives in the snapshot); it emits a
+	// Warn and continues. Caveat (honest): even on success the ORIGINAL plaintext
+	// blobs stay pinned by this container's GC ref until it stops (see
+	// image_encrypt_store.go limitation #1), and the fail-open downgrade is
+	// surfaced only by this log line — no metric/state flag yet (R11 follow-up).
+	// No-op when encryption is disabled. Build-verified; runtime-validated under R11.
+	if config.ImageCrypter != nil && config.ImageCrypter.Enabled() && len(config.ImageEncryptRecipients) > 0 {
+		if encErr := cc.EncryptImageAtRest(ctx, config.ImageRef, config.ImageCrypter, config.ImageEncryptRecipients); encErr != nil {
+			logging.Warn("R5: failed to encrypt image at rest; image content remains plaintext on disk",
+				logging.Err(encErr))
+		}
 	}
 
 	managed := &ManagedContainer{

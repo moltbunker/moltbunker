@@ -42,6 +42,46 @@ func buildImageScanner(enabled bool) runtime.ImageScanner {
 	return runtime.NewCachedScanner(runtime.NewTrivyCLIScanner())
 }
 
+// buildImageCrypter returns the R5 image-at-rest crypter. It returns a real
+// ocicrypt/X25519-backed crypter ONLY when image encryption is explicitly
+// enabled; otherwise a NoopImageCrypter (pass-through, Enabled()=false) so the
+// decrypt/encrypt hooks in CreateSecureContainer never touch unencrypted public
+// images. The result is never nil. Opt-in and R11-gated: see the
+// ImageEncryptionEnabled config doc.
+func buildImageCrypter(enabled bool) runtime.ImageCrypter {
+	if !enabled {
+		return runtime.NewNoopImageCrypter()
+	}
+	logging.Info("image content encryption at rest enabled (ocicrypt/X25519)")
+	return runtime.NewOcicryptImageCrypter()
+}
+
+// imageDecryptKey returns this node's stable X25519 private key for decrypting
+// image layers at rest, or nil when image encryption is disabled or the
+// provider key is unavailable. nil makes the runtime decrypt hook a no-op.
+func (cm *ContainerManager) imageDecryptKey() []byte {
+	if cm.imageCrypter == nil || !cm.imageCrypter.Enabled() || cm.providerKey == nil {
+		return nil
+	}
+	return cm.providerKey.privateKey()
+}
+
+// imageEncryptRecipients returns the X25519 public keys an image should be
+// encrypted to at rest. v1 uses a SELF-RECIPIENT model: each provider encrypts
+// the images it pulls to its OWN key. This needs no cross-node key delivery
+// because, in the current data plane, every provider (originator + replicas)
+// pulls the same image from the registry independently — so each can protect its
+// own at-rest copy with zero coordination. Sealing to all replicas' keys (so one
+// provider can encrypt-and-distribute) is a follow-up gated on per-node X25519
+// advertisement (the same capability E2E exec replica-seeding needs). Returns
+// nil when encryption is disabled or the provider key is unavailable.
+func (cm *ContainerManager) imageEncryptRecipients() [][]byte {
+	if cm.imageCrypter == nil || !cm.imageCrypter.Enabled() || cm.providerKey == nil {
+		return nil
+	}
+	return [][]byte{cm.providerKey.PublicKey()}
+}
+
 // security_policy.go — daemon-zone translation of per-deployment security policy
 // (R3 image signature / trust, R4 scan policy, R13/R14 network/egress policy)
 // from the wire types (DeployRequest / Deployment) into the runtime and

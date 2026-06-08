@@ -38,9 +38,9 @@ type APIServer struct {
 	globalLimiter    *rateLimiter
 
 	// Rate limiting configuration (from config)
-	rateLimitRequests   int           // Max requests per connection per window
-	rateLimitWindow     time.Duration // Rate limit window duration
-	maxRequestSize      int64         // Maximum request body size
+	rateLimitRequests int           // Max requests per connection per window
+	rateLimitWindow   time.Duration // Rate limit window duration
+	maxRequestSize    int64         // Maximum request body size
 
 	// State store — passed to ContainerManager for persistent state
 	stateStore state.StateStore
@@ -66,14 +66,14 @@ type AdminNodeMeta struct {
 // NewAPIServer creates a new API server with default rate limiting
 func NewAPIServer(node *Node, socketPath string, dataDir string) *APIServer {
 	return &APIServer{
-		node:                node,
-		socketPath:          socketPath,
-		dataDir:             dataDir,
-		metrics:             metrics.NewCollector(),
-		globalLimiter:       newRateLimiter(globalRateLimitTokens, time.Duration(globalRateLimitRefillSec)*time.Second),
-		rateLimitRequests:   rateLimitTokens,
-		rateLimitWindow:     time.Duration(rateLimitRefillSec) * time.Second,
-		maxRequestSize:      MaxRequestSize,
+		node:              node,
+		socketPath:        socketPath,
+		dataDir:           dataDir,
+		metrics:           metrics.NewCollector(),
+		globalLimiter:     newRateLimiter(globalRateLimitTokens, time.Duration(globalRateLimitRefillSec)*time.Second),
+		rateLimitRequests: rateLimitTokens,
+		rateLimitWindow:   time.Duration(rateLimitRefillSec) * time.Second,
+		maxRequestSize:    MaxRequestSize,
 	}
 }
 
@@ -100,15 +100,15 @@ func NewAPIServerWithFullConfig(node *Node, cfg *config.Config) *APIServer {
 	globalLimit := rateLimitReqs * 10
 
 	return &APIServer{
-		node:                node,
-		socketPath:          cfg.Daemon.SocketPath,
-		dataDir:             cfg.Daemon.DataDir,
-		config:              cfg,
-		metrics:             metrics.NewCollector(),
-		globalLimiter:       newRateLimiter(globalLimit, rateLimitWindow),
-		rateLimitRequests:   rateLimitReqs,
-		rateLimitWindow:     rateLimitWindow,
-		maxRequestSize:      int64(maxReqSize),
+		node:              node,
+		socketPath:        cfg.Daemon.SocketPath,
+		dataDir:           cfg.Daemon.DataDir,
+		config:            cfg,
+		metrics:           metrics.NewCollector(),
+		globalLimiter:     newRateLimiter(globalLimit, rateLimitWindow),
+		rateLimitRequests: rateLimitReqs,
+		rateLimitWindow:   rateLimitWindow,
+		maxRequestSize:    int64(maxReqSize),
 	}
 }
 
@@ -131,14 +131,14 @@ func NewAPIServerWithConfig(node *Node, socketPath string, dataDir string, rateL
 	globalLimit := rateLimitReqs * 10
 
 	return &APIServer{
-		node:                node,
-		socketPath:          socketPath,
-		dataDir:             dataDir,
-		metrics:             metrics.NewCollector(),
-		globalLimiter:       newRateLimiter(globalLimit, rateLimitWindow),
-		rateLimitRequests:   rateLimitReqs,
-		rateLimitWindow:     rateLimitWindow,
-		maxRequestSize:      int64(maxReqSize),
+		node:              node,
+		socketPath:        socketPath,
+		dataDir:           dataDir,
+		metrics:           metrics.NewCollector(),
+		globalLimiter:     newRateLimiter(globalLimit, rateLimitWindow),
+		rateLimitRequests: rateLimitReqs,
+		rateLimitWindow:   rateLimitWindow,
+		maxRequestSize:    int64(maxReqSize),
 	}
 }
 
@@ -248,20 +248,21 @@ func (s *APIServer) Start(ctx context.Context) error {
 		}
 	}
 	cmConfig := ContainerManagerConfig{
-		DataDir:          s.dataDir,
-		ContainerdSocket: containerdSocket,
-		RuntimeName:      runtimeName,
-		KataConfig:       kataConfig,
-		TorDataDir:       filepath.Join(s.dataDir, "tor"),
-		EnableEncryption: true,
-		PaymentService:   s.node.PaymentService(),
-		MoltEnabled:      moltEnabled,
-		MoltConfig:       moltCfg,
-		StateStore:       s.stateStore,
-		AcceptServices:   s.config == nil || s.config.Node.Provider.AcceptServices,
-		AcceptJobs:       s.config == nil || s.config.Node.Provider.AcceptJobs,
-		AcceptFunctions:  s.config == nil || s.config.Node.Provider.AcceptFunctions,
-		EnableImageScan:  s.config != nil && s.config.Security.ImageScanEnabled,
+		DataDir:               s.dataDir,
+		ContainerdSocket:      containerdSocket,
+		RuntimeName:           runtimeName,
+		KataConfig:            kataConfig,
+		TorDataDir:            filepath.Join(s.dataDir, "tor"),
+		EnableEncryption:      true,
+		PaymentService:        s.node.PaymentService(),
+		MoltEnabled:           moltEnabled,
+		MoltConfig:            moltCfg,
+		StateStore:            s.stateStore,
+		AcceptServices:        s.config == nil || s.config.Node.Provider.AcceptServices,
+		AcceptJobs:            s.config == nil || s.config.Node.Provider.AcceptJobs,
+		AcceptFunctions:       s.config == nil || s.config.Node.Provider.AcceptFunctions,
+		EnableImageScan:       s.config != nil && s.config.Security.ImageScanEnabled,
+		EnableImageEncryption: s.config != nil && s.config.Security.ImageEncryptionEnabled,
 	}
 	containerManager, err := NewContainerManager(ctx, cmConfig, s.node)
 	if err != nil {
