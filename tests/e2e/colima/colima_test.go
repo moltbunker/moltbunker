@@ -1,16 +1,22 @@
 //go:build colima
 
-// Package colima contains E2E tests that run against a real containerd instance
-// inside Colima on macOS. These tests verify the ContainerdClient against actual
-// container lifecycle operations.
+// Package colima contains E2E tests that run against a REAL containerd instance.
+// They verify the ContainerdClient against actual container lifecycle operations
+// (pull, create, start, stop, delete, resources). Despite the package/tag name,
+// these run in two environments:
 //
-// Prerequisites:
-//   - Colima running: `colima start --runtime containerd`
-//   - containerd socket at ~/.colima/default/containerd.sock
+//   - macOS dev: Colima containerd (`colima start --runtime containerd`),
+//     socket at ~/.colima/default/containerd.sock.
+//   - Linux CI (R11): the system containerd socket at
+//     /run/containerd/containerd.sock — see the `runtime-e2e` job in
+//     .github/workflows/ci.yml.
+//
+// Socket resolution order (colimaSocket): COLIMA_CONTAINERD_SOCKET env override,
+// then the Linux system socket on non-darwin, then the Colima default.
 //
 // Run with:
 //
-//	go test -tags colima -v -timeout 5m ./tests/e2e/colima/...
+//	go test -tags colima -v -timeout 12m ./tests/e2e/colima/...
 package colima
 
 import (
@@ -19,6 +25,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"testing"
 	"time"
@@ -38,10 +45,23 @@ const (
 	lifecycleTimeout = 30 * time.Second
 )
 
-// colimaSocket returns the containerd socket path, checking env override first.
+// linuxContainerdSocket is the system containerd socket used on Linux (e.g. CI
+// runners), where there is no Colima VM.
+const linuxContainerdSocket = "/run/containerd/containerd.sock"
+
+// colimaSocket returns the containerd socket path. Resolution order: the
+// COLIMA_CONTAINERD_SOCKET env override (used by CI), then the Linux system
+// socket on non-darwin if present, then the macOS Colima default.
 func colimaSocket() string {
 	if s := os.Getenv("COLIMA_CONTAINERD_SOCKET"); s != "" {
 		return s
+	}
+
+	// On Linux (CI / native containerd) prefer the system socket.
+	if goruntime.GOOS != "darwin" {
+		if _, err := os.Stat(linuxContainerdSocket); err == nil {
+			return linuxContainerdSocket
+		}
 	}
 
 	home, err := os.UserHomeDir()

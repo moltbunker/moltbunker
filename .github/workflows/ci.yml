@@ -139,11 +139,86 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      # tests/integration spins up a local chain with Anvil and deploys the
+      # contracts with forge. Without Foundry the suite silently SKIPs
+      # (integration_test.go: "SKIP: Foundry not installed"), so install it and
+      # verify the binaries land where the tests look for them (~/.foundry/bin).
+      - name: Install Foundry (anvil / forge / cast)
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Verify Foundry toolchain
+        run: |
+          set -eux
+          ls -l "$HOME/.foundry/bin/anvil" "$HOME/.foundry/bin/forge" "$HOME/.foundry/bin/cast"
+          "$HOME/.foundry/bin/anvil" --version
+
       - name: Run integration tests
-        run: go test -v -tags=integration ./tests/...
+        run: go test -v -tags=integration -timeout 15m ./tests/...
+
+  runtime-e2e:
+    name: Runtime E2E (Linux containerd)
+    # R11: exercise the real ContainerdClient lifecycle against a live containerd
+    # on Linux. Until now these tests (tests/e2e/colima, //go:build colima) ran
+    # only against Colima on a developer's macOS and never in CI, so Linux
+    # runtime regressions (containerd, snapshots, runc tasks) shipped unverified.
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-e2e-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-e2e-
+            ${{ runner.os }}-go-
+
+      - name: Prepare containerd
+        run: |
+          set -euxo pipefail
+          # ubuntu-latest ships a running containerd (used by Docker) at
+          # /run/containerd/containerd.sock. Ensure it is installed + running and
+          # grant the unprivileged runner user access to the socket so the e2e
+          # client (which connects as the test process, not root) can reach it.
+          if ! command -v containerd >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y containerd runc
+          fi
+          # Start via systemd if available; otherwise launch a background daemon.
+          # `|| true` keeps `set -e` from aborting when the unit is already active.
+          sudo systemctl start containerd 2>/dev/null || true
+          if [ ! -S /run/containerd/containerd.sock ]; then
+            sudo sh -c 'containerd >/tmp/containerd.log 2>&1 &'
+          fi
+          # Wait (≤20s) for the socket to appear. The `if/fi` form is set -e safe.
+          for _ in $(seq 1 40); do
+            if [ -S /run/containerd/containerd.sock ]; then break; fi
+            sleep 0.5
+          done
+          test -S /run/containerd/containerd.sock
+          sudo chmod 666 /run/containerd/containerd.sock
+          sudo ctr version
+
+      - name: Run real-containerd E2E tests
+        env:
+          # tests/e2e/colima honors this override (colima_test.go: colimaSocket);
+          # point it at the Linux runner's system containerd socket.
+          COLIMA_CONTAINERD_SOCKET: /run/containerd/containerd.sock
+        run: go test -tags colima -v -timeout 12m ./tests/e2e/colima/...
