@@ -64,16 +64,16 @@ type ContainerManager struct {
 	execRelays   map[string]*ExecRelay
 	execRelaysMu sync.RWMutex
 
-	networkManager   *networking.NetworkManager
+	networkManager *networking.NetworkManager
 
 	dataDir          string
 	containerdSocket string
-	runtimeName      string          // resolved OCI runtime name for reconnection
-	kataConfig       *runtime.KataConfig // saved for reconnection path
-	acceptServices   bool                // accept long-running services
-	acceptJobs       bool                // accept batch jobs
-	acceptFunctions  bool                // accept serverless functions (Molt)
-	imageGC          *runtime.ImageGC    // image garbage collector (nil if no containerd)
+	runtimeName      string                  // resolved OCI runtime name for reconnection
+	kataConfig       *runtime.KataConfig     // saved for reconnection path
+	acceptServices   bool                    // accept long-running services
+	acceptJobs       bool                    // accept batch jobs
+	acceptFunctions  bool                    // accept serverless functions (Molt)
+	imageGC          *runtime.ImageGC        // image garbage collector (nil if no containerd)
 	cleanupMgr       *runtime.CleanupManager // P1-1: orphan container cleanup
 	healthChecker    *runtime.HealthChecker  // P1-2: container-level health probes
 
@@ -81,6 +81,11 @@ type ContainerManager struct {
 	// a NoopScanner when scanning is disabled / trivy is absent, so the scan
 	// gate never blocks a deploy on a host without trivy.
 	imageScanner runtime.ImageScanner
+
+	// R5: image-at-rest crypter. Never nil after NewContainerManager — a
+	// NoopImageCrypter (Enabled()=false) when image encryption is disabled, so
+	// the decrypt/encrypt-at-rest hooks no-op on unencrypted images.
+	imageCrypter runtime.ImageCrypter
 
 	// R13/R14: per-deployment network/egress policy. policyStore is the source
 	// of truth; policyEnforcer applies rules at container setup (real nft exec
@@ -170,6 +175,11 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 	// without trivy never fails a deploy. The scanner is always non-nil.
 	imageScanner := buildImageScanner(config.EnableImageScan)
 
+	// R5: construct the image-at-rest crypter once. Real ocicrypt/X25519 only
+	// when explicitly enabled; otherwise a NoopImageCrypter so unencrypted
+	// images deploy unchanged.
+	imageCrypter := buildImageCrypter(config.EnableImageEncryption)
+
 	// R13/R14: construct the network-policy store + enforcer once. The enforcer
 	// is a no-op recorder off Linux and a (currently stubbed) nft applier on
 	// Linux; either way nil/empty policies mean allow-all.
@@ -202,6 +212,7 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		acceptJobs:         config.AcceptJobs,
 		acceptFunctions:    config.AcceptFunctions,
 		imageScanner:       imageScanner,
+		imageCrypter:       imageCrypter,
 		policyStore:        policyStore,
 		policyEnforcer:     policyEnforcer,
 	}
@@ -215,6 +226,17 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 			logging.Err(pkErr), logging.Component("exec"))
 	} else {
 		cm.providerKey = pk
+	}
+
+	// R5: the image-at-rest crypter needs the provider X25519 key to seal/unwrap
+	// layer keys (self-recipient model). If encryption was requested but the key
+	// is unavailable, imageEncryptRecipients()/imageDecryptKey() return nil and
+	// every R5 hook silently no-ops — leaving image content PLAINTEXT at rest
+	// despite the operator opting in. Surface that explicitly rather than letting
+	// a requested security control fail silent.
+	if cm.imageCrypter != nil && cm.imageCrypter.Enabled() && cm.providerKey == nil {
+		logging.Warn("image encryption enabled but provider X25519 key unavailable; images will remain PLAINTEXT at rest",
+			logging.Component("container_manager"))
 	}
 
 	// Initialize Molt (WASM serverless) runtime if enabled
@@ -633,6 +655,10 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 		TrustPolicy:     toTrustPolicy(req.RequireSignature, req.TrustedPublishers),
 		Scanner:         cm.imageScanner,
 		ScanPolicy:      resolveScanPolicy(req.IgnoreCVEs),
+		// R5 — image-at-rest encryption (self-recipient). No-op unless enabled.
+		ImageCrypter:           cm.imageCrypter,
+		ImageDecryptKey:        cm.imageDecryptKey(),
+		ImageEncryptRecipients: cm.imageEncryptRecipients(),
 	}
 
 	// Inject exec-agent if an encrypted exec key envelope is provided (E2E
