@@ -151,14 +151,16 @@ func (s *APIServer) handleDeploy(ctx context.Context, req *APIRequest) *APIRespo
 	}
 
 	response := DeployResponse{
-		ContainerID:     result.Deployment.ID,
-		Status:          string(result.Deployment.Status),
-		OnionAddress:    result.Deployment.OnionAddress,
-		EncryptedVolume: result.Deployment.EncryptedVolume,
-		Regions:         result.Deployment.Regions,
-		Locations:       result.Deployment.Locations,
-		ReplicaCount:    result.ReplicaCount,
-		PublicURLs:      result.Deployment.PublicURLs,
+		ContainerID:      result.Deployment.ID,
+		Status:           string(result.Deployment.Status),
+		OnionAddress:     result.Deployment.OnionAddress,
+		EncryptedVolume:  result.Deployment.EncryptedVolume,
+		Regions:          result.Deployment.Regions,
+		Locations:        result.Deployment.Locations,
+		ReplicaCount:     result.ReplicaCount,
+		PublicURLs:       result.Deployment.PublicURLs,
+		ExecAgentEnabled: result.Deployment.ExecAgentEnabled,
+		DeployNonce:      result.Deployment.DeployNonce,
 	}
 
 	return &APIResponse{

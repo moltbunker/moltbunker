@@ -173,6 +173,36 @@ func TestNetworkManager_SetupTeardown(t *testing.T) {
 	}
 }
 
+func TestSetupNetwork_NilPorts(t *testing.T) {
+	// The no-port / replica path: SetupNetwork is called with no exposed ports
+	// purely to allocate a ContainerNetwork (and thus a container IP) so the
+	// per-deployment network policy can be applied. It must succeed and return a
+	// network with a non-empty ContainerIP.
+	nm := NewNetworkManager()
+
+	net, err := nm.SetupNetwork("dep-x", nil)
+	if err != nil {
+		t.Fatalf("SetupNetwork(nil ports): %v", err)
+	}
+	if net == nil {
+		t.Fatal("network should not be nil for a no-port deployment")
+	}
+	// On non-Linux the fallback network reports 127.0.0.1; on Linux the veth
+	// setup assigns an address. Either way it must be non-empty so policy can be
+	// keyed on it.
+	if runtime.GOOS != "linux" && net.ContainerIP() == "" {
+		t.Error("ContainerIP() should be non-empty after a no-port SetupNetwork")
+	}
+
+	// It must be retrievable and tear down cleanly.
+	if _, ok := nm.GetNetwork("dep-x"); !ok {
+		t.Error("no-port network should be retrievable")
+	}
+	if err := nm.TeardownNetwork("dep-x"); err != nil {
+		t.Fatalf("teardown no-port network: %v", err)
+	}
+}
+
 func TestNetworkManager_TeardownNonexistent(t *testing.T) {
 	nm := NewNetworkManager()
 	// Should not error
@@ -185,7 +215,7 @@ func TestNetworkManager_PortAllocation(t *testing.T) {
 	nm := NewNetworkManager()
 
 	ports := []ExposedPort{
-		{ContainerPort: 8080}, // auto-assign
+		{ContainerPort: 8080},                  // auto-assign
 		{ContainerPort: 9090, HostPort: 30000}, // fixed
 	}
 
