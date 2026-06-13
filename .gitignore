@@ -184,8 +184,10 @@ TODO.local.md
 scripts/
 secrets/
 
-# Deployment config (local/generated, do not commit)
-deployment/
+# Deployment config (local/generated, do not commit).
+# Anchored to repo root so it does NOT match internal/deployment/ (Go source)
+# or the committed deployments/addresses.json manifest. See ADDR-01.
+/deployment/
 
 research/
 
@@ -195,7 +197,13 @@ moltbunker/
 # Infrastructure management (contains secrets, SSH keys, credentials)
 management/
 
-configs/
+# Ignore configs/ contents (local/operator daemon.yaml etc.) but allow specific
+# committed codegen artifacts to be re-included. Use configs/* (not configs/) so
+# git can traverse the dir; a bare configs/ rule blocks file-level negation.
+configs/*
+# addresses-fragment.yaml is a deliberately committed codegen artifact
+# (human-readable reference generated from deployments/addresses.json). See ADDR-01.
+!configs/addresses-fragment.yaml
 
 docs/
 
