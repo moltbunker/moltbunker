@@ -1,0 +1,47 @@
+name: Contracts CI
+
+# Scoped to the Solidity contracts only. Kept as a separate workflow (rather than a
+# job inside the Go ci.yml) so the Solidity CI does not run on every Go change.
+# Note: the Go ci.yml currently has no paths filter, so it still runs on
+# contract-only changes; only this contracts workflow is path-scoped.
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts-ci.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'contracts/**'
+      - '.github/workflows/contracts-ci.yml'
+
+jobs:
+  foundry:
+    name: Foundry
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          # Pinned to a specific release for reproducible CI runs (matches the
+          # toolchain used to author the tests). Bump deliberately.
+          version: v1.5.1
+
+      - name: Build contracts
+        working-directory: contracts
+        run: forge build --sizes
+
+      # The `ci` profile picks up invariant.runs=512 / invariant.depth=100 and
+      # fuzz.runs=1024 from [profile.ci] in contracts/foundry.toml. forge selects
+      # the profile via the FOUNDRY_PROFILE env var (`--profile` is not a forge flag).
+      # No secrets, no broadcast, no contract verification.
+      - name: Run Foundry tests (including invariants)
+        working-directory: contracts
+        env:
+          FOUNDRY_PROFILE: ci
+        run: forge test -vv
