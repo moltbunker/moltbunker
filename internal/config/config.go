@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/moltbunker/moltbunker/internal/deployment"
 	"github.com/moltbunker/moltbunker/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -895,6 +896,10 @@ func Load(path string) (*Config, error) {
 
 	cfg.expandPaths()
 
+	// Resolve contract addresses from the canonical embedded manifest for any
+	// fields the operator left blank. Operator-supplied YAML values always win.
+	populateAddressesFromManifest(cfg)
+
 	// Parse staking tier min stakes
 	for _, tier := range cfg.Economics.StakingTiers {
 		if err := tier.ParseMinStake(); err != nil {
@@ -907,6 +912,63 @@ func Load(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// populateAddressesFromManifest fills in empty contract-address fields on the
+// economics config from the canonical embedded manifest (deployments/addresses.json),
+// keyed by the configured chain_id. It is a fallback only: any address the
+// operator set explicitly in YAML is left untouched. This lets a testnet
+// operator configure just `chain_id: 84532` + `mock_payments: false` and get
+// the correct addresses automatically, while still allowing per-deploy
+// overrides. It is a no-op in mock mode (no real addresses are needed).
+func populateAddressesFromManifest(cfg *Config) {
+	if cfg == nil || cfg.Economics.MockPayments {
+		return
+	}
+	cs, ok := deployment.AddressesForChain(cfg.Economics.ChainID)
+	if !ok {
+		return // unknown chain; Validate() will surface any missing required fields
+	}
+	setIfEmpty(&cfg.Economics.TokenAddress, cs.Token)
+	setIfEmpty(&cfg.Economics.StakingAddress, cs.Staking)
+	setIfEmpty(&cfg.Economics.EscrowAddress, cs.Escrow)
+	setIfEmpty(&cfg.Economics.PricingAddress, cs.Pricing)
+	setIfEmpty(&cfg.Economics.GovernanceAddress, cs.Timelock)
+	setIfEmpty(&cfg.Economics.DelegationAddress, cs.Delegation)
+	setIfEmpty(&cfg.Economics.ReputationAddress, cs.Reputation)
+	setIfEmpty(&cfg.Economics.VerificationAddress, cs.Verification)
+	setIfEmpty(&cfg.Economics.SubdomainRegistryAddress, cs.Registry)
+	setIfEmpty(&cfg.Economics.SlashingAddress, cs.Slashing)
+	setIfEmpty(&cfg.Economics.RegistryAddress, cs.Registry)
+}
+
+// setIfEmpty assigns val to *dst only when *dst is currently empty and val is a
+// non-empty, non-zero address. The zero address is treated as "not deployed"
+// and is never copied from the manifest (e.g. a chain whose contract is not yet
+// live), so it does not satisfy the daemon's non-zero address validation.
+func setIfEmpty(dst *string, val string) {
+	if dst == nil || *dst != "" {
+		return
+	}
+	if val == "" || isZeroAddress(val) {
+		return
+	}
+	*dst = val
+}
+
+// isZeroAddress reports whether addr is the all-zero Ethereum address,
+// case-insensitively and tolerant of a missing/present 0x prefix.
+func isZeroAddress(addr string) bool {
+	hexPart := strings.TrimPrefix(strings.TrimPrefix(addr, "0x"), "0X")
+	if hexPart == "" {
+		return false
+	}
+	for _, c := range hexPart {
+		if c != '0' {
+			return false
+		}
+	}
+	return true
 }
 
 // Save saves configuration to file
