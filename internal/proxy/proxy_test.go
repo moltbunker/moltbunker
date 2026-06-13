@@ -575,6 +575,90 @@ func TestHTTPProxy_Forward(t *testing.T) {
 	}
 }
 
+// capturingMeter records the last RecordProxySession call for assertions.
+type capturingMeter struct {
+	mu       sync.Mutex
+	calls    int
+	wallet   string
+	bytesIn  int64
+	bytesOut int64
+}
+
+func (m *capturingMeter) RecordProxySession(wallet string, bytesIn, bytesOut int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls++
+	m.wallet = wallet
+	m.bytesIn = bytesIn
+	m.bytesOut = bytesOut
+}
+
+func (m *capturingMeter) snapshot() (int, int64, int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.calls, m.bytesIn, m.bytesOut
+}
+
+// TestHTTPProxy_Forward_CountsUploadBytes (LOW-2) asserts that the request-body
+// (upload) bytes are counted into BytesIn for billing, not just the response's
+// BytesOut. Before the fix, BytesIn stayed zero on uploads (under-billing).
+func TestHTTPProxy_Forward_CountsUploadBytes(t *testing.T) {
+	// Target echoes nothing; it just drains the body and returns a small reply.
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer target.Close()
+
+	auth := &AllowAllAuth{DefaultWallet: "w-upload"}
+	tracker := NewSessionTracker(10)
+	proxy := NewHTTPProxyServer(&DirectDialer{}, auth, tracker, nil)
+	meter := &capturingMeter{}
+	proxy.meter = meter // in-package: inject the metering hook directly
+
+	proxyServer := httptest.NewServer(proxy)
+	defer proxyServer.Close()
+
+	proxyConn, err := net.Dial("tcp", strings.TrimPrefix(proxyServer.URL, "http://"))
+	if err != nil {
+		t.Fatalf("dial proxy: %v", err)
+	}
+	defer proxyConn.Close()
+	_ = proxyConn.SetDeadline(time.Now().Add(5 * time.Second))
+
+	body := strings.Repeat("A", 1234) // known upload size
+	forwardReq := fmt.Sprintf(
+		"POST %s/upload HTTP/1.1\r\nHost: %s\r\nContent-Length: %d\r\nConnection: close\r\n\r\n%s",
+		target.URL, strings.TrimPrefix(target.URL, "http://"), len(body), body)
+	if _, err := proxyConn.Write([]byte(forwardReq)); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	// Drain the response so the handler completes and records the session.
+	_, _ = io.Copy(io.Discard, proxyConn)
+
+	// Poll for the metering call (handler runs in the proxy server goroutine).
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if calls, _, _ := meter.snapshot(); calls > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	calls, bytesIn, bytesOut := meter.snapshot()
+	if calls == 0 {
+		t.Fatal("expected RecordProxySession to be called")
+	}
+	if bytesIn != int64(len(body)) {
+		t.Errorf("BytesIn = %d, want %d (uploaded body)", bytesIn, len(body))
+	}
+	if bytesOut != 2 { // "ok"
+		t.Errorf("BytesOut = %d, want 2 (response body)", bytesOut)
+	}
+}
+
 // --- REST Handler tests ---
 
 func TestRESTHandler_Status(t *testing.T) {

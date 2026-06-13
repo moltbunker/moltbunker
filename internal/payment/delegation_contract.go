@@ -108,8 +108,8 @@ func (dc *DelegationContract) mockDelegate(_ context.Context, provider common.Ad
 	dc.mockDelegations[delegator] = &DelegationData{
 		Provider:    provider,
 		Amount:      new(big.Int).Set(amount),
-		RewardDebt:  big.NewInt(0),
 		DelegatedAt: time.Now(),
+		Active:      true,
 	}
 
 	total, exists := dc.mockTotalDelegated[provider]
@@ -211,6 +211,38 @@ func (dc *DelegationContract) mockCompleteUndelegate(_ context.Context, index *b
 	return nil, nil
 }
 
+// delegationInfoTuple is the canonical Go shape that go-ethereum unpacks the
+// getDelegation() return tuple into. It must match the on-chain DelegationInfo
+// struct field-for-field, in declaration order:
+//
+//	struct DelegationInfo { address provider; uint128 amount; uint48 delegatedAt; bool active; }
+//
+// go-ethereum decodes uint128/uint48 into *big.Int. Field names (capitalized)
+// map to ABI component names by case-insensitive match. Keeping this as a named
+// type (rather than an inline anonymous struct) makes the decode path stable and
+// grep-able, and is the seam the abigen migration (ABIGEN-01) will replace.
+//
+// TODO(ABIGEN-01): replace with abigen-generated binding.
+type delegationInfoTuple struct {
+	Provider    common.Address
+	Amount      *big.Int
+	DelegatedAt *big.Int
+	Active      bool
+}
+
+// providerConfigTuple is the canonical Go shape getProviderConfig() unpacks
+// into, matching the Go-side ABI tuple declared in DelegationContractABI.
+// rewardCutEffectiveAt is uint48 on-chain and decodes as *big.Int (seconds).
+//
+// TODO(ABIGEN-01): replace with abigen-generated binding.
+type providerConfigTuple struct {
+	RewardCutBps         uint16
+	FeeShareBps          uint16
+	AcceptDelegations    bool
+	PendingRewardCutBps  uint16
+	RewardCutEffectiveAt *big.Int
+}
+
 // GetDelegation returns the delegation data for a delegator.
 func (dc *DelegationContract) GetDelegation(ctx context.Context, delegator common.Address) (*DelegationData, error) {
 	if dc.mockMode {
@@ -218,37 +250,41 @@ func (dc *DelegationContract) GetDelegation(ctx context.Context, delegator commo
 		defer dc.mockMu.RUnlock()
 		del, exists := dc.mockDelegations[delegator]
 		if !exists {
-			return &DelegationData{Amount: big.NewInt(0), RewardDebt: big.NewInt(0)}, nil
+			return &DelegationData{Amount: big.NewInt(0)}, nil
 		}
 		return &DelegationData{
 			Provider:    del.Provider,
 			Amount:      new(big.Int).Set(del.Amount),
-			RewardDebt:  new(big.Int).Set(del.RewardDebt),
 			DelegatedAt: del.DelegatedAt,
+			Active:      del.Active,
 		}, nil
 	}
 
-	var result []interface{}
-	err := dc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getDelegation", delegator)
-	if err != nil {
+	// go-ethereum decodes a single tuple return by mapping the output argument
+	// positionally onto the fields of the destination struct. The tuple is
+	// therefore the single field of an outer wrapper, decoded via
+	// UnpackIntoInterface (the bind.Call res[0] path). Asserting on the raw
+	// []interface{} fails because the runtime tuple type is a reflect.StructOf
+	// (with json tags) that is not identical to any named Go type — that
+	// mismatch is exactly the silent-zero bug this PR fixes.
+	var out struct {
+		Info delegationInfoTuple
+	}
+	result := []interface{}{&out}
+	if err := dc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getDelegation", delegator); err != nil {
 		return nil, fmt.Errorf("failed to get delegation: %w", err)
 	}
 
-	data := &DelegationData{Amount: big.NewInt(0), RewardDebt: big.NewInt(0)}
-	if len(result) > 0 {
-		if res, ok := result[0].(struct {
-			Provider    common.Address
-			Amount      *big.Int
-			RewardDebt  *big.Int
-			DelegatedAt *big.Int
-		}); ok {
-			data.Provider = res.Provider
-			data.Amount = res.Amount
-			data.RewardDebt = res.RewardDebt
-			if res.DelegatedAt != nil {
-				data.DelegatedAt = time.Unix(res.DelegatedAt.Int64(), 0)
-			}
-		}
+	data := &DelegationData{
+		Provider: out.Info.Provider,
+		Amount:   big.NewInt(0),
+		Active:   out.Info.Active,
+	}
+	if out.Info.Amount != nil {
+		data.Amount = out.Info.Amount
+	}
+	if out.Info.DelegatedAt != nil {
+		data.DelegatedAt = time.Unix(out.Info.DelegatedAt.Int64(), 0)
 	}
 	return data, nil
 }
@@ -274,29 +310,26 @@ func (dc *DelegationContract) GetProviderConfig(ctx context.Context, provider co
 		}, nil
 	}
 
-	var result []interface{}
-	err := dc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getProviderConfig", provider)
-	if err != nil {
+	// Same single-tuple-output decode pattern as GetDelegation: the tuple is the
+	// single field of an outer wrapper, mapped positionally via the bind.Call
+	// res[0] UnpackIntoInterface path (a raw []interface{} assertion would
+	// silently fail because the runtime tuple type is a reflect.StructOf).
+	var out struct {
+		Config providerConfigTuple
+	}
+	result := []interface{}{&out}
+	if err := dc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getProviderConfig", provider); err != nil {
 		return nil, fmt.Errorf("failed to get provider config: %w", err)
 	}
 
-	data := &ProviderDelegationConfigData{}
-	if len(result) > 0 {
-		if res, ok := result[0].(struct {
-			RewardCutBps         uint16
-			FeeShareBps          uint16
-			AcceptDelegations    bool
-			PendingRewardCutBps  uint16
-			RewardCutEffectiveAt *big.Int
-		}); ok {
-			data.RewardCutBps = res.RewardCutBps
-			data.FeeShareBps = res.FeeShareBps
-			data.AcceptDelegations = res.AcceptDelegations
-			data.PendingRewardCutBps = res.PendingRewardCutBps
-			if res.RewardCutEffectiveAt != nil {
-				data.RewardCutEffectiveAt = time.Unix(res.RewardCutEffectiveAt.Int64(), 0)
-			}
-		}
+	data := &ProviderDelegationConfigData{
+		RewardCutBps:        out.Config.RewardCutBps,
+		FeeShareBps:         out.Config.FeeShareBps,
+		AcceptDelegations:   out.Config.AcceptDelegations,
+		PendingRewardCutBps: out.Config.PendingRewardCutBps,
+	}
+	if out.Config.RewardCutEffectiveAt != nil {
+		data.RewardCutEffectiveAt = time.Unix(out.Config.RewardCutEffectiveAt.Int64(), 0)
 	}
 	return data, nil
 }

@@ -586,3 +586,110 @@ func TestBucketLimit(t *testing.T) {
 		t.Fatal("should fail when bucket limit exceeded")
 	}
 }
+
+// fakeMeter is a MeteringHook that records the calls it receives.
+type fakeMeter struct {
+	uploads []meterCall
+	deletes []meterCall
+}
+
+type meterCall struct {
+	wallet string
+	bytes  int64
+}
+
+func (f *fakeMeter) RecordStorageUpload(wallet string, bytes int64) {
+	f.uploads = append(f.uploads, meterCall{wallet, bytes})
+}
+
+func (f *fakeMeter) RecordStorageDelete(wallet string, bytes int64) {
+	f.deletes = append(f.deletes, meterCall{wallet, bytes})
+}
+
+func TestPutObject_MeterCalled(t *testing.T) {
+	ctx := context.Background()
+	e := newTestEngine(t)
+	meter := &fakeMeter{}
+	e.SetMeteringHook(meter)
+
+	if _, err := e.CreateBucket(ctx, "metered", testOwner); err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+
+	content := "metered payload"
+	if _, err := e.PutObject(ctx, &PutObjectInput{
+		Bucket: "metered",
+		Key:    "obj.txt",
+		Body:   strings.NewReader(content),
+		Owner:  testOwner,
+	}); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if len(meter.uploads) != 1 {
+		t.Fatalf("expected 1 upload metered, got %d", len(meter.uploads))
+	}
+	if meter.uploads[0].wallet != testOwner {
+		t.Errorf("upload wallet = %q, want %q", meter.uploads[0].wallet, testOwner)
+	}
+	if meter.uploads[0].bytes != int64(len(content)) {
+		t.Errorf("upload bytes = %d, want %d", meter.uploads[0].bytes, len(content))
+	}
+}
+
+func TestDeleteObject_MeterCalled(t *testing.T) {
+	ctx := context.Background()
+	e := newTestEngine(t)
+	meter := &fakeMeter{}
+	e.SetMeteringHook(meter)
+
+	if _, err := e.CreateBucket(ctx, "metered", testOwner); err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+
+	content := "to be deleted"
+	if _, err := e.PutObject(ctx, &PutObjectInput{
+		Bucket: "metered",
+		Key:    "gone.txt",
+		Body:   strings.NewReader(content),
+		Owner:  testOwner,
+	}); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+
+	if err := e.DeleteObject(ctx, "metered", "gone.txt", testOwner); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	if len(meter.deletes) != 1 {
+		t.Fatalf("expected 1 delete metered, got %d", len(meter.deletes))
+	}
+	if meter.deletes[0].wallet != testOwner {
+		t.Errorf("delete wallet = %q, want %q", meter.deletes[0].wallet, testOwner)
+	}
+	if meter.deletes[0].bytes != int64(len(content)) {
+		t.Errorf("delete bytes = %d, want %d", meter.deletes[0].bytes, len(content))
+	}
+}
+
+// TestStorageEngine_NoMeterHook verifies operations still succeed when no
+// metering hook is installed (the nil-safe path used by existing callers).
+func TestStorageEngine_NoMeterHook(t *testing.T) {
+	ctx := context.Background()
+	e := newTestEngine(t) // no SetMeteringHook
+
+	if _, err := e.CreateBucket(ctx, "plain", testOwner); err != nil {
+		t.Fatalf("create bucket: %v", err)
+	}
+	if _, err := e.PutObject(ctx, &PutObjectInput{
+		Bucket: "plain",
+		Key:    "k",
+		Body:   strings.NewReader("data"),
+		Owner:  testOwner,
+	}); err != nil {
+		t.Fatalf("put without meter: %v", err)
+	}
+	if err := e.DeleteObject(ctx, "plain", "k", testOwner); err != nil {
+		t.Fatalf("delete without meter: %v", err)
+	}
+}

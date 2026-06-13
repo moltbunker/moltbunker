@@ -13,6 +13,17 @@ import (
 	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
+// CrawlMeteringHook receives completed crawl job usage for billing. It is
+// defined locally (not imported from payment) so the crawl package does not
+// depend on payment, avoiding an import cycle. payment.PaymentService satisfies
+// it structurally via RecordCrawlJob.
+//
+// The hook is optional: when nil, the scheduler behaves exactly as before (no
+// metering), so existing callers and tests need no changes.
+type CrawlMeteringHook interface {
+	RecordCrawlJob(wallet string, pagesCrawled, resultBytes int64)
+}
+
 // Scheduler manages crawl jobs and distributes work.
 type Scheduler struct {
 	mu   sync.RWMutex
@@ -21,6 +32,14 @@ type Scheduler struct {
 	config    SchedulerConfig
 	rateLimit *DomainRateLimiter
 	dedup     *URLDedup
+	meter     CrawlMeteringHook // optional usage metering hook (nil = no metering)
+}
+
+// SetMeteringHook installs an optional crawl metering hook. Pass nil to disable.
+func (s *Scheduler) SetMeteringHook(h CrawlMeteringHook) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.meter = h
 }
 
 // SchedulerConfig configures the crawl scheduler.
@@ -161,15 +180,28 @@ func (s *Scheduler) AddResult(jobID string, result CrawlResult) error {
 // CompleteJob marks a job as completed.
 func (s *Scheduler) CompleteJob(jobID string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	job, ok := s.jobs[jobID]
 	if !ok {
+		s.mu.Unlock()
 		return fmt.Errorf("job %q not found", jobID)
 	}
 
 	job.Status = JobStatusCompleted
 	job.CompletedAt = time.Now()
+
+	// Snapshot under the lock for the (optional) metering call, which is made
+	// after the lock is released so the hook is not invoked while holding s.mu.
+	meter := s.meter
+	owner := job.Owner
+	pages := int64(job.PagesCrawled)
+	totalBytes := job.TotalBytes
+	s.mu.Unlock()
+
+	// Record usage for billing (optional, nil-safe).
+	if meter != nil {
+		meter.RecordCrawlJob(owner, pages, totalBytes)
+	}
 	return nil
 }
 

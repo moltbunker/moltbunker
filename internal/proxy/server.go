@@ -8,6 +8,17 @@ import (
 	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
+// ProxyMeteringHook receives proxy session usage for billing. It is defined
+// locally (not imported from payment) so the proxy package does not depend on
+// payment, avoiding an import cycle. payment.PaymentService satisfies it
+// structurally via RecordProxySession.
+//
+// The hook is optional: when nil, the proxy behaves exactly as before (no
+// metering), so existing callers and tests need no changes.
+type ProxyMeteringHook interface {
+	RecordProxySession(wallet string, bytesIn, bytesOut int64)
+}
+
 // Server manages the proxy server lifecycle (SOCKS5 + HTTP).
 type Server struct {
 	cfg     Config
@@ -15,12 +26,21 @@ type Server struct {
 	auth    Authenticator
 	tracker *SessionTracker
 	acl     *ACL
+	meter   ProxyMeteringHook // optional session metering hook (nil = no metering)
 
 	socks5 *SOCKS5Server
 	http   *HTTPProxyServer
 
 	mu      sync.Mutex
 	running bool
+}
+
+// SetMeteringHook installs an optional proxy metering hook. Pass nil to disable.
+// Must be called before Start so the hook propagates to the SOCKS5/HTTP servers.
+func (s *Server) SetMeteringHook(h ProxyMeteringHook) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.meter = h
 }
 
 // NewServer creates a new proxy server with the given configuration.
@@ -55,6 +75,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start SOCKS5 server
 	if s.cfg.SOCKS5Addr != "" {
 		s.socks5 = NewSOCKS5Server(s.dialer, s.auth, s.tracker, s.acl)
+		s.socks5.meter = s.meter
 		go func() {
 			if err := s.socks5.ListenAndServe(s.cfg.SOCKS5Addr); err != nil {
 				errCh <- fmt.Errorf("socks5: %w", err)
@@ -66,6 +87,7 @@ func (s *Server) Start(ctx context.Context) error {
 	// Start HTTP proxy server
 	if s.cfg.HTTPAddr != "" {
 		s.http = NewHTTPProxyServer(s.dialer, s.auth, s.tracker, s.acl)
+		s.http.meter = s.meter
 		go func() {
 			if err := s.http.ListenAndServe(s.cfg.HTTPAddr); err != nil {
 				errCh <- fmt.Errorf("http proxy: %w", err)

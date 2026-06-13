@@ -301,6 +301,14 @@ func NewContainerManager(ctx context.Context, config ContainerManagerConfig, nod
 		cm.reconcileOnStartup(ctx)
 	}
 
+	// Recover orphaned escrows: after a crash between Stop and FinalizeJob, a
+	// terminal-status originator deployment may still have an un-finalized
+	// on-chain escrow. Sweep them (non-blocking) right after the status
+	// reconcile so the freshly-synced statuses are used.
+	if cm.payment != nil {
+		cm.reconcileEscrowsOnStartup(ctx, cm.payment)
+	}
+
 	// Periodic cleanup of stale pending deployments (async deploys)
 	util.SafeGoWithName("pending-deployment-cleanup", func() {
 		cm.cleanStalePendingDeployments(ctx)
@@ -423,8 +431,12 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 		return nil, fmt.Errorf("resource validation failed: %w", err)
 	}
 
-	// Gate on escrow: either use user-provided reservation or create one
+	// Gate on escrow: either use user-provided reservation or create one.
+	// reservationIDStr is the decimal on-chain reservation ID bound to this
+	// deployment; it is persisted onto the Deployment record below so the
+	// startup reconciler can rehydrate the in-memory cache after a restart.
 	duration := parseDuration(req.Duration)
+	var reservationIDStr string
 	if cm.payment != nil {
 		jobID := payment.JobIDFromString(deploymentID)
 
@@ -436,6 +448,7 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 				return nil, fmt.Errorf("invalid reservation_id: %s", req.ReservationID)
 			}
 			cm.payment.RegisterExternalReservation(jobID, resID)
+			reservationIDStr = resID.String()
 			logging.Info("registered user-created escrow for deployment",
 				logging.ContainerID(deploymentID),
 				"reservation_id", req.ReservationID)
@@ -461,8 +474,16 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 				return nil, fmt.Errorf("failed to create escrow: %w", err)
 			}
 
+			// Capture the on-chain reservation ID assigned during creation so it
+			// can be persisted on the Deployment. After a restart the in-memory
+			// cache is empty; without this the orphan reconciler cannot finalize.
+			if resID, ok := cm.payment.ReservationIDForJob(jobID); ok {
+				reservationIDStr = resID.String()
+			}
+
 			logging.Info("escrow created for deployment",
 				logging.ContainerID(deploymentID),
+				"reservation_id", reservationIDStr,
 				"price", payment.FormatTokenAmount(price),
 				"duration", duration.String())
 		}
@@ -489,6 +510,7 @@ func (cm *ContainerManager) Deploy(ctx context.Context, req *DeployRequest) (*De
 		TorOnly:         req.TorOnly,
 		OriginatorID:    cm.node.nodeInfo.ID, // Local node is the originator
 		Owner:           req.Owner,
+		ReservationID:   reservationIDStr, // persisted so orphan reconciler can rehydrate after restart
 		MinProviderTier: types.ProviderTier(req.MinProviderTier),
 		Spot:            req.Spot,
 		// R3/R4/R13/R14: carry the per-deployment security policy onto the
@@ -1028,6 +1050,11 @@ func (cm *ContainerManager) Stop(ctx context.Context, containerID string) error 
 			logging.Warn("failed to finalize escrow on stop",
 				logging.ContainerID(containerID),
 				logging.Err(err))
+		} else {
+			// Mark finalized so the startup reconciler skips this deployment.
+			cm.mu.Lock()
+			deployment.EscrowFinalized = true
+			cm.mu.Unlock()
 		}
 	}
 
@@ -1133,6 +1160,8 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 				logging.Warn("failed to finalize escrow on delete",
 					logging.ContainerID(containerID),
 					logging.Err(err))
+			} else {
+				deployment.EscrowFinalized = true
 			}
 		} else {
 			// Early termination or never started: refund
@@ -1140,6 +1169,8 @@ func (cm *ContainerManager) Delete(ctx context.Context, containerID string) erro
 				logging.Warn("failed to refund escrow on delete",
 					logging.ContainerID(containerID),
 					logging.Err(err))
+			} else {
+				deployment.EscrowFinalized = true
 			}
 		}
 	}
@@ -1507,6 +1538,152 @@ func (cm *ContainerManager) reconcileOnStartup(ctx context.Context) {
 	logging.Info("startup reconciliation complete",
 		"deployments", len(entries),
 		"updated", changed)
+}
+
+// escrowFinalizer is the narrow payment dependency used by the startup escrow
+// reconciler. *payment.PaymentService satisfies it via FinalizeJob and
+// RegisterExternalReservation. Keeping it as an interface lets
+// reconcileEscrowsOnStartup be unit-tested while cm.payment stays a concrete
+// *payment.PaymentService elsewhere.
+//
+// RegisterExternalReservation is required because the in-memory
+// jobID→reservationID cache inside the escrow contract is lost on restart;
+// FinalizeJob resolves the reservation ID from that cache, so the reconciler
+// must rehydrate it from the persisted Deployment.ReservationID before calling
+// FinalizeJob — otherwise every orphan finalize fails with "no reservation ID
+// found".
+type escrowFinalizer interface {
+	FinalizeJob(ctx context.Context, jobID [32]byte) error
+	RegisterExternalReservation(jobID [32]byte, reservationID *big.Int)
+}
+
+// reconcileEscrowsOnStartup recovers from the crash-between-stop-and-finalize
+// gap. After a crash, a deployment may be in a terminal status
+// (Stopped/Failed/Deleted) yet its on-chain escrow was never finalized (no
+// FinalizeJob TX landed). This sweep finalizes those orphans.
+//
+// It is non-blocking: each FinalizeJob is issued in its own SafeGoWithName
+// goroutine so a slow RPC does not delay daemon startup. Idempotency is
+// guaranteed by the on-chain contract (finalizeReservation reverts if already
+// finalized) and by the persisted EscrowFinalized flag, which is set
+// optimistically on both success and an "already finalized" error so confirmed
+// terminal transactions are not re-issued on subsequent restarts.
+//
+// Only originator-owned deployments are swept; replicas (OriginatorID != nodeID)
+// never own the escrow and are skipped, matching FinalizeAllEscrows.
+func (cm *ContainerManager) reconcileEscrowsOnStartup(ctx context.Context, finalizer escrowFinalizer) {
+	if finalizer == nil {
+		return
+	}
+
+	nodeID := cm.node.nodeInfo.ID
+
+	type orphan struct {
+		id            string
+		reservationID string // persisted on-chain reservation ID (decimal); may be empty
+	}
+
+	cm.mu.RLock()
+	var orphans []orphan
+	for id, dep := range cm.deployments {
+		if dep.OriginatorID != nodeID {
+			continue
+		}
+		if dep.EscrowFinalized {
+			continue
+		}
+		// Terminal statuses whose escrow must be finalized. There is no
+		// "deleted" status in this codebase — Delete() removes the deployment
+		// from the map entirely (and already finalizes the escrow), so a
+		// persisted deployment in a terminal state means it was stopped/failed
+		// but the finalize TX may not have landed before a crash.
+		switch dep.Status {
+		case types.ContainerStatusStopped,
+			types.ContainerStatusFailed:
+			orphans = append(orphans, orphan{id: id, reservationID: dep.ReservationID})
+		}
+	}
+	cm.mu.RUnlock()
+
+	if len(orphans) == 0 {
+		return
+	}
+
+	// Rehydrate the in-memory jobID→reservationID cache from the persisted
+	// reservation IDs BEFORE sweeping. FinalizeJob resolves the reservation ID
+	// from this cache, which is empty after a restart; without rehydration every
+	// finalize fails with "no reservation ID found". Done synchronously (cheap,
+	// in-memory) so the cache is warm before the async finalize goroutines run.
+	for _, o := range orphans {
+		if o.reservationID == "" {
+			continue
+		}
+		resID := new(big.Int)
+		if _, ok := resID.SetString(o.reservationID, 10); !ok {
+			logging.Warn("escrow reconcile: skipping orphan with unparseable reservation ID",
+				logging.ContainerID(o.id), "reservation_id", o.reservationID)
+			continue
+		}
+		finalizer.RegisterExternalReservation(payment.JobIDFromString(o.id), resID)
+	}
+
+	logging.Info("escrow reconcile: finalizing orphan jobs",
+		"count", len(orphans))
+
+	for _, o := range orphans {
+		containerID := o.id
+		util.SafeGoWithName("escrow-reconcile-"+containerID, func() {
+			jobID := payment.JobIDFromString(containerID)
+			err := finalizer.FinalizeJob(ctx, jobID)
+			if err == nil {
+				cm.markEscrowFinalized(containerID)
+				logging.Info("escrow reconcile: finalized orphan job",
+					logging.ContainerID(containerID))
+				return
+			}
+			// The contract reverts re-finalization; treat that as already done
+			// so we stop retrying on every restart.
+			if isAlreadyFinalizedErr(err) {
+				cm.markEscrowFinalized(containerID)
+				logging.Info("escrow reconcile: job already finalized on-chain",
+					logging.ContainerID(containerID))
+				return
+			}
+			// Transient error: leave EscrowFinalized=false so a later restart
+			// retries.
+			logging.Warn("escrow reconcile: finalize failed, will retry next restart",
+				logging.ContainerID(containerID), logging.Err(err))
+		})
+	}
+}
+
+// markEscrowFinalized sets EscrowFinalized=true on the deployment (if it still
+// exists) and persists the change.
+func (cm *ContainerManager) markEscrowFinalized(containerID string) {
+	cm.mu.Lock()
+	dep, ok := cm.deployments[containerID]
+	if ok {
+		dep.EscrowFinalized = true
+	}
+	cm.mu.Unlock()
+	if ok {
+		cm.saveStateAsync()
+	}
+}
+
+// isAlreadyFinalizedErr reports whether an escrow finalize error indicates the
+// reservation is ALREADY in a terminal on-chain state (Completed/Refunded/
+// Disputed), so re-finalizing is a confirmed no-op and the reconciler may mark
+// the deployment done.
+//
+// Detection is delegated to payment.IsAlreadyTerminalEscrowErr, which prefers
+// decoding the contract's typed InvalidStatus custom-error data over substring
+// matching and never matches ambiguous transient phrasings. This is
+// deliberately NARROW: an error like "reservation not yet finalizable" (which
+// merely contains the substring "finalized") is treated as TRANSIENT, so a live
+// escrow is never abandoned.
+func isAlreadyFinalizedErr(err error) bool {
+	return payment.IsAlreadyTerminalEscrowErr(err)
 }
 
 // reconcileContainerStatus periodically checks containerd for actual container status

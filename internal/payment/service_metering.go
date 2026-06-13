@@ -6,6 +6,34 @@ import (
 	"time"
 )
 
+// StorageMeteringHook is the metering contract the storage engine depends on.
+// PaymentService satisfies it structurally via its RecordStorageUpload /
+// RecordStorageDelete methods. Defining it here (and mirroring it in the
+// storage package) lets storage call metering without importing payment,
+// avoiding an import cycle.
+type StorageMeteringHook interface {
+	RecordStorageUpload(wallet string, bytes int64)
+	RecordStorageDelete(wallet string, bytes int64)
+}
+
+// ProxyMeteringHook is the metering contract the proxy server depends on.
+// PaymentService satisfies it structurally via RecordProxySession.
+type ProxyMeteringHook interface {
+	RecordProxySession(wallet string, bytesIn, bytesOut int64)
+}
+
+// CrawlMeteringHook is the metering contract the crawl scheduler depends on.
+// PaymentService satisfies it structurally via RecordCrawlJob.
+type CrawlMeteringHook interface {
+	RecordCrawlJob(wallet string, pagesCrawled, resultBytes int64)
+}
+
+// AgentMeteringHook is the metering contract the agent REST handler depends on.
+// PaymentService satisfies it structurally via RecordAgentInvocation.
+type AgentMeteringHook interface {
+	RecordAgentInvocation(wallet string, tokensUsed int64)
+}
+
 // ServiceType identifies which P0 service generated usage.
 type ServiceType string
 

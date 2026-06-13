@@ -16,6 +16,19 @@ import (
 	"github.com/moltbunker/moltbunker/internal/state"
 )
 
+// MeteringHook receives storage usage events for billing. It is defined locally
+// (rather than imported from the payment package) so the storage package does
+// not depend on payment, avoiding an import cycle. The payment.PaymentService
+// satisfies this interface structurally via its RecordStorageUpload /
+// RecordStorageDelete methods.
+//
+// The hook is optional: when nil, the storage engine behaves exactly as before
+// (no metering), so existing callers and tests need no changes.
+type MeteringHook interface {
+	RecordStorageUpload(wallet string, bytes int64)
+	RecordStorageDelete(wallet string, bytes int64)
+}
+
 // StorageEngine is the main orchestrator for object storage operations.
 // Phase 1: local blob storage with bbolt metadata.
 // Phase 2 adds encryption and IPFS distribution.
@@ -23,6 +36,13 @@ type StorageEngine struct {
 	dataDir  string
 	metadata *MetadataStore
 	config   EngineConfig
+	meter    MeteringHook // optional usage metering hook (nil = no metering)
+}
+
+// SetMeteringHook installs an optional metering hook. Pass nil to disable.
+// Injected at startup so storage usage is recorded for billing.
+func (e *StorageEngine) SetMeteringHook(h MeteringHook) {
+	e.meter = h
 }
 
 // EngineConfig configures the storage engine.
@@ -249,6 +269,11 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 		return nil, fmt.Errorf("persist object metadata: %w", err)
 	}
 
+	// Record usage for billing (optional, nil-safe).
+	if e.meter != nil {
+		e.meter.RecordStorageUpload(input.Owner, n)
+	}
+
 	logging.Debug("object stored",
 		"bucket", input.Bucket,
 		"key", input.Key,
@@ -359,6 +384,11 @@ func (e *StorageEngine) DeleteObject(ctx context.Context, bucket, key, owner str
 	// Delete metadata
 	if err := e.metadata.DeleteObject(ctx, bucket, key); err != nil {
 		return fmt.Errorf("delete metadata: %w", err)
+	}
+
+	// Record usage for billing (optional, nil-safe).
+	if e.meter != nil {
+		e.meter.RecordStorageDelete(obj.Owner, obj.Size)
 	}
 
 	logging.Debug("object deleted",
