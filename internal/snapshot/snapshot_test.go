@@ -65,8 +65,8 @@ func TestNewManager(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewManager() error: %v", err)
 		}
-		if m.encryptionKey != nil {
-			t.Error("expected no encryption key when encryption disabled")
+		if m.keyProvider != nil {
+			t.Error("expected no key provider when encryption disabled")
 		}
 	})
 }

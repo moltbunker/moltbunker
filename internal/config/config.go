@@ -420,6 +420,13 @@ type SecurityConfig struct {
 	// ciphertext; decryption happens in-process just before unpack. See
 	// internal/runtime/image_encrypt.go for the threat model and boundaries.
 	ImageEncryptionEnabled bool `yaml:"image_encryption_enabled"`
+
+	// KEY-01 — at-rest state key rotation sweep. When true, the daemon runs an
+	// idempotent RotateKey pass over the bbolt store on startup, re-encrypting
+	// every value with the current state key and bumping the on-disk magic to
+	// MBENC2. Default false (lazy migration on next write). Use after a key
+	// change or to eagerly retag a legacy (MBENC1) database.
+	StateKeyRotationSweep bool `yaml:"state_key_rotation_sweep"`
 }
 
 // RedundancyConfig contains redundancy settings
@@ -526,6 +533,21 @@ type StorageConfig struct {
 	MaxObjectSize int64  `yaml:"max_object_size"` // Max single object size in bytes (default: 5GB)
 	S3Port        int    `yaml:"s3_port"`         // S3-compatible API port (default: 9300)
 	EnableS3      bool   `yaml:"enable_s3"`       // Enable S3-compatible endpoint
+
+	// KEY-01 — at-rest object encryption. When true (and the provider X25519
+	// key is available), object blobs are encrypted with a per-object DEK sealed
+	// to the provider's own X25519 key (self-recipient model, matching R5 image
+	// encryption). Default false: blobs are stored as plaintext. Objects written
+	// before this was enabled remain readable (back-compat read path).
+	EncryptionEnabled bool `yaml:"encryption_enabled"`
+
+	// KEY-01 — in-memory ceiling for the (non-streaming) encrypted object path.
+	// When EncryptionEnabled is true, encrypted PutObject/GetObject buffer the
+	// whole object in memory to seal/open it, so an object larger than this is
+	// rejected to avoid OOM. Only consulted when encryption is enabled. Zero
+	// falls back to the engine default (256MB). A streaming/chunked AEAD that
+	// removes this ceiling is a follow-up.
+	EncryptedMaxInMemoryBytes int64 `yaml:"encrypted_max_in_memory_bytes"`
 }
 
 // DefaultStorageConfig returns the default storage configuration.

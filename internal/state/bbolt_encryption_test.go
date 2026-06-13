@@ -92,8 +92,10 @@ func TestRawValueIsEncrypted(t *testing.T) {
 	if bytes.Contains(raw, []byte("do-not-leak")) {
 		t.Fatal("plaintext token leaked into raw on-disk value")
 	}
-	if !bytes.HasPrefix(raw, encMagic) {
-		t.Fatalf("raw value missing magic prefix: %x", raw)
+	// New writes carry the current-version magic (MBENC2). MBENC1 is still
+	// accepted on read for back-compat / partially-rotated databases.
+	if !bytes.HasPrefix(raw, encMagic2) {
+		t.Fatalf("raw value missing MBENC2 magic prefix: %x", raw)
 	}
 }
 
