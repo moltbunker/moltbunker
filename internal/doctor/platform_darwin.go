@@ -21,6 +21,12 @@ func (d *Doctor) registerPlatformCheckers() {
 		NewContainerdChecker(),
 		NewIPFSChecker(),
 		NewSocketPermissionChecker(),
+		// RUN-01: expose-to-internet security-gate tooling. trivy/cosign can be
+		// present on darwin dev machines; nft is Skipped on non-Linux but stays
+		// visible in `moltbunker doctor` output.
+		NewTrivyChecker(),                 // R4 image scanning
+		NewNftChecker(),                   // R13/R14 (Skipped on darwin)
+		NewImageSignatureToolingChecker(), // R3 image signature verification
 		// Optional services
 		NewTorChecker(),
 	}
