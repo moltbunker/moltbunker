@@ -30,6 +30,76 @@ type Config struct {
 	Proxy   ProxyConfig   `yaml:"proxy"`
 	Agent   AgentConfig   `yaml:"agent"`
 	Crawl   CrawlConfig   `yaml:"crawl"`
+
+	// Edge ingress L7 controls (WAF + per-tenant abuse limits). EDGE-01.
+	Ingress IngressConfig `yaml:"ingress"`
+}
+
+// IngressConfig configures the L7 edge controls that sit in the HTTP ingress
+// request path: an in-process WAF (Coraza + OWASP CRS) and per-tenant abuse
+// limits (rate limit, concurrency cap, request body size cap). These are
+// distinct from the L4 tunnel-layer limits in internal/tunnel. EDGE-01.
+//
+// Defaults are deliberately safe and non-breaking: the WAF runs in
+// detection-only mode (rules fire and are counted, but nothing is blocked)
+// and the rate limits are generous. An operator must explicitly set
+// WAF.Mode="blocking" to start enforcing.
+type IngressConfig struct {
+	WAF       WAFIngressConfig       `yaml:"waf"`
+	RateLimit IngressRateLimitConfig `yaml:"rate_limit"`
+}
+
+// WAFIngressConfig configures the in-process L7 Web Application Firewall.
+//
+// Memory note: a real Coraza engine with the full OWASP CRS loaded costs
+// roughly ~25MB of compiled pattern-matcher state (paid once per ingress
+// node — the engine is a singleton). When Enabled=false a zero-cost no-op
+// engine is used instead and no CRS is loaded.
+type WAFIngressConfig struct {
+	Enabled        bool   `yaml:"enabled"`          // Load the Coraza engine. Default true.
+	Mode           string `yaml:"mode"`             // "detection" (count only) or "blocking" (return 403). Default "detection".
+	BodyLimitBytes int    `yaml:"body_limit_bytes"` // Max request body bytes inspected by the WAF. Default 65536.
+	ExcludeRuleIDs []int  `yaml:"exclude_rule_ids"` // CRS rule IDs to disable (SecRuleRemoveById). Escape hatch for false positives.
+}
+
+// DefaultWAFIngressConfig returns the default WAF config: enabled, in
+// detection-only mode, with a 64KB body inspection limit.
+func DefaultWAFIngressConfig() WAFIngressConfig {
+	return WAFIngressConfig{
+		Enabled:        true,
+		Mode:           "detection",
+		BodyLimitBytes: 65536,
+	}
+}
+
+// IngressRateLimitConfig configures per-tenant (per-subdomain) HTTP abuse
+// limits at the ingress. These operate on HTTP request counts / concurrency /
+// body size, distinct from the L4 byte-stream throttling in internal/tunnel.
+type IngressRateLimitConfig struct {
+	DefaultRPS     int   `yaml:"default_rps"`     // Sustained requests/sec per tenant. Default 100.
+	DefaultBurst   int   `yaml:"default_burst"`   // Token-bucket burst per tenant. Default 200.
+	MaxConcurrency int   `yaml:"max_concurrency"` // Max concurrent in-flight requests per tenant. Default 50.
+	MaxBodyBytes   int64 `yaml:"max_body_bytes"`  // Hard request body cap (413 over limit). Default 10MiB.
+}
+
+// DefaultIngressRateLimitConfig returns generous defaults so out-of-box
+// behavior is non-breaking; operators tighten these per deployment.
+func DefaultIngressRateLimitConfig() IngressRateLimitConfig {
+	return IngressRateLimitConfig{
+		DefaultRPS:     100,
+		DefaultBurst:   200,
+		MaxConcurrency: 50,
+		MaxBodyBytes:   10 * 1024 * 1024,
+	}
+}
+
+// DefaultIngressConfig returns the default edge ingress config (safe:
+// detection-only WAF + generous limits).
+func DefaultIngressConfig() IngressConfig {
+	return IngressConfig{
+		WAF:       DefaultWAFIngressConfig(),
+		RateLimit: DefaultIngressRateLimitConfig(),
+	}
 }
 
 // DaemonConfig contains daemon settings
@@ -798,9 +868,10 @@ func DefaultConfig() *Config {
 			cfg.DataDir = filepath.Join(dataDir, "storage")
 			return cfg
 		}(),
-		Proxy: DefaultProxyConfig(),
-		Agent: DefaultAgentConfig(),
-		Crawl: DefaultCrawlConfig(),
+		Proxy:   DefaultProxyConfig(),
+		Agent:   DefaultAgentConfig(),
+		Crawl:   DefaultCrawlConfig(),
+		Ingress: DefaultIngressConfig(),
 	}
 }
 

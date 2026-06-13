@@ -28,11 +28,15 @@ type ReverseStreamOpener interface {
 // It supports both forward tunnels (ingress dials provider) and reverse tunnels
 // (provider dials ingress, traffic multiplexed via yamux).
 type Proxy struct {
-	resolver       *Resolver
-	tunnelClient   *tunnel.Client
-	reverseOpener  ReverseStreamOpener // reverse tunnel (optional)
-	domain         string              // e.g., "moltbunker.dev"
-	server         *http.Server
+	resolver      *Resolver
+	tunnelClient  *tunnel.Client
+	reverseOpener ReverseStreamOpener // reverse tunnel (optional)
+	domain        string              // e.g., "moltbunker.dev"
+	server        *http.Server
+
+	// middleware is the optional L7 edge chain (WAF + abuse limits + metrics).
+	// When nil the request path is unchanged (zero overhead). EDGE-01.
+	middleware *IngressMiddleware
 }
 
 // NewProxy creates a new ingress proxy.
@@ -63,6 +67,38 @@ func (p *Proxy) SetReverseStreamOpener(opener ReverseStreamOpener) {
 	p.reverseOpener = opener
 }
 
+// SetMiddleware installs the optional L7 edge middleware (WAF + per-tenant
+// abuse limits + edge metrics). When set, every non-WebSocket request is run
+// through the full chain before being dispatched to the upstream.
+//
+// WebSocket upgrade requests skip only the WAF body-buffering / ResponseWriter
+// wrapping steps (incompatible with the hijack-and-stream model), but they are
+// still subject to the per-tenant rate limit and concurrency cap via
+// acquireWebSocket — so a tenant subdomain cannot be used to open unbounded
+// concurrent long-lived connections. The concurrency slot is held for the
+// connection's lifetime and drives the active-tunnel-session gauge. L4
+// byte-stream limits in internal/tunnel also still apply to WebSocket traffic.
+//
+// When nil the request path is unchanged (zero overhead). EDGE-01.
+func (p *Proxy) SetMiddleware(m *IngressMiddleware) {
+	p.middleware = m
+}
+
+// acquireWebSocket applies the WebSocket-compatible abuse gates (per-tenant
+// rate + concurrency) via the installed middleware and returns a release
+// closure to hold for the connection's lifetime. When no middleware is
+// installed it is a no-op that always allows. On rejection the middleware has
+// already written the 429/503 response, so the caller must simply return.
+//
+// tunnelType is "forward" or "reverse"; the tier is not known at this layer
+// yet, so "default" is used for the active-session gauge label.
+func (p *Proxy) acquireWebSocket(subdomain, tunnelType string, w http.ResponseWriter) (release func(), ok bool) {
+	if p.middleware == nil {
+		return func() {}, true
+	}
+	return p.middleware.AllowWebSocket(subdomain, tunnelType, "default", w)
+}
+
 // Serve starts the proxy on the given listener. Blocks until stopped.
 func (p *Proxy) Serve(listener net.Listener) error {
 	logging.Info("ingress proxy started",
@@ -87,6 +123,26 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Run the L7 edge chain (WAF + per-tenant abuse limits + metrics) when
+	// installed. WebSocket upgrades bypass the WAF body buffering (frames are
+	// streamed, not request/response shaped) but still flow through dispatch —
+	// where they are independently rate-limited + concurrency-capped, see
+	// dispatchRequest.
+	if p.middleware != nil && !isWebSocketUpgrade(r) {
+		p.middleware.Wrap(subdomain, http.HandlerFunc(func(mw http.ResponseWriter, mr *http.Request) {
+			p.dispatchRequest(mw, mr, subdomain)
+		})).ServeHTTP(w, r)
+		return
+	}
+
+	p.dispatchRequest(w, r, subdomain)
+}
+
+// dispatchRequest resolves the service for subdomain and proxies the request to
+// the provider via a forward tunnel, falling back to the reverse tunnel
+// registry. This is the original handleRequest body, extracted so the edge
+// middleware can wrap it. Behavior is unchanged when middleware is nil.
+func (p *Proxy) dispatchRequest(w http.ResponseWriter, r *http.Request, subdomain string) {
 	// Resolve service location (prefix match or vanity name)
 	service, err := p.resolver.Resolve(subdomain)
 	if err != nil {
@@ -95,7 +151,14 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 			if stream, streamErr := p.reverseOpener.OpenStream(subdomain); streamErr == nil {
 				defer stream.Close()
 				if isWebSocketUpgrade(r) {
-					p.handleWebSocketViaStream(w, r, stream)
+					// Apply per-tenant abuse gates to the WebSocket upgrade
+					// (rate + concurrency; WAF/body-buffering is N/A for a
+					// hijacked stream). release is held for the connection's
+					// lifetime and also drives the active-session gauge.
+					if release, ok := p.acquireWebSocket(subdomain, "reverse", w); ok {
+						defer release()
+						p.handleWebSocketViaStream(w, r, stream)
+					}
 					return
 				}
 				p.proxyHTTPViaStream(w, r, stream, subdomain)
@@ -127,7 +190,14 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// For HTTP/1.1: write the original request through the tunnel and relay response.
 	// For WebSocket upgrades: hijack and proxy bidirectionally.
 	if isWebSocketUpgrade(r) {
-		p.handleWebSocket(w, r, tun)
+		// Apply per-tenant abuse gates to the WebSocket upgrade (rate +
+		// concurrency; WAF/body-buffering is N/A for a hijacked stream).
+		// release is held for the connection's lifetime and also drives the
+		// active-session gauge.
+		if release, ok := p.acquireWebSocket(subdomain, "forward", w); ok {
+			defer release()
+			p.handleWebSocket(w, r, tun)
+		}
 		return
 	}
 
@@ -366,8 +436,7 @@ var allowedResponseHeaders = map[string]bool{
 	"Accept-Ranges": true,
 
 	// Misc safe headers
-	"Date":          true,
-	"Retry-After":   true,
-	"X-Request-Id":  true,
+	"Date":         true,
+	"Retry-After":  true,
+	"X-Request-Id": true,
 }
-
