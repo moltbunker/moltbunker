@@ -66,8 +66,18 @@ type SnapshotConfig struct {
 	CompressionLevel int    `yaml:"compression_level"`  // 0-9, 0 = none
 
 	// Encryption settings
-	EncryptionEnabled bool   `yaml:"encryption_enabled"` // Enable encryption at rest
-	EncryptionKeyPath string `yaml:"encryption_key_path"` // Path to master encryption key
+	EncryptionEnabled bool   `yaml:"encryption_enabled"`  // Enable encryption at rest
+	EncryptionKeyPath string `yaml:"encryption_key_path"` // Deprecated: path to master key (file backend). Kept for back-compat; prefer KeyProviderBackend.
+
+	// KeyProviderBackend selects how the master key is sourced: "file" (default,
+	// 0600 file under DataDir), "keyring" (OS keychain), or "env"
+	// (MOLTBUNKER_SNAPSHOT_KEY hex). Empty defaults to "file" using
+	// EncryptionKeyPath for back-compat. There is NO ephemeral backend: a key
+	// the daemon cannot reproduce on restart would orphan every snapshot.
+	KeyProviderBackend string `yaml:"key_provider_backend"`
+	// KeyringServiceName overrides the OS-keyring service/collection name when
+	// KeyProviderBackend is "keyring". Empty uses the built-in default.
+	KeyringServiceName string `yaml:"keyring_service_name"`
 
 	// Retention
 	RetentionDays int `yaml:"retention_days"` // Days to keep snapshots
@@ -87,16 +97,24 @@ func DefaultSnapshotConfig() *SnapshotConfig {
 
 // Manager handles snapshot creation and lifecycle
 type Manager struct {
-	config        *SnapshotConfig
-	mu            sync.RWMutex
-	snapshots     map[string][]*Snapshot // containerID -> snapshots
-	totalSize     int64
-	encryptionKey []byte                          // Master encryption key (32 bytes for AES-256)
-	blockHashes   map[string]map[int64]string     // containerID -> offset -> hash (for incremental)
+	config      *SnapshotConfig
+	mu          sync.RWMutex
+	snapshots   map[string][]*Snapshot // containerID -> snapshots
+	totalSize   int64
+	keyProvider KeyProvider                 // sources the AES-256 master key (nil when encryption disabled)
+	blockHashes map[string]map[int64]string // containerID -> offset -> hash (for incremental)
 }
 
-// NewManager creates a new snapshot manager
-func NewManager(config *SnapshotConfig) (*Manager, error) {
+// NewManager creates a new snapshot manager.
+//
+// When EncryptionEnabled is true a KeyProvider MUST be supplied as the optional
+// second argument; passing none (or a nil provider) is a hard error rather than
+// the old silent-ephemeral fallback, so a misconfigured daemon fails closed
+// instead of writing snapshots that cannot be recovered after restart. The
+// provider is verified at construction (MasterKey is called once) so an
+// unreadable keyring/file fails startup rather than the first snapshot. When
+// EncryptionEnabled is false the provider argument is ignored.
+func NewManager(config *SnapshotConfig, keyProvider ...KeyProvider) (*Manager, error) {
 	if config == nil {
 		config = DefaultSnapshotConfig()
 	}
@@ -114,11 +132,21 @@ func NewManager(config *SnapshotConfig) (*Manager, error) {
 		blockHashes: make(map[string]map[int64]string),
 	}
 
-	// Initialize encryption if enabled
+	// Initialize encryption if enabled. The key provider is required and must
+	// produce a usable key now — no silent ephemeral fallback.
 	if config.EncryptionEnabled {
-		if err := m.initEncryption(); err != nil {
-			return nil, fmt.Errorf("failed to initialize encryption: %w", err)
+		var kp KeyProvider
+		if len(keyProvider) > 0 {
+			kp = keyProvider[0]
 		}
+		if kp == nil {
+			return nil, fmt.Errorf("snapshot encryption enabled but no key provider supplied (refusing to use an ephemeral key)")
+		}
+		// Fail closed if the key cannot be sourced.
+		if _, err := kp.MasterKey(); err != nil {
+			return nil, fmt.Errorf("snapshot key provider failed: %w", err)
+		}
+		m.keyProvider = kp
 	}
 
 	// Load existing snapshots
@@ -129,53 +157,6 @@ func NewManager(config *SnapshotConfig) (*Manager, error) {
 	}
 
 	return m, nil
-}
-
-// initEncryption initializes or loads the encryption key
-func (m *Manager) initEncryption() error {
-	keyPath := m.config.EncryptionKeyPath
-	if keyPath == "" && m.config.StoragePath != "" {
-		keyPath = filepath.Join(m.config.StoragePath, ".snapshot_key")
-	}
-
-	if keyPath == "" {
-		// Generate ephemeral key if no path specified
-		key, err := security.GenerateKey(32)
-		if err != nil {
-			return fmt.Errorf("failed to generate encryption key: %w", err)
-		}
-		m.encryptionKey = key
-		logging.Warn("using ephemeral encryption key - snapshots will not be recoverable after restart",
-			logging.Component("snapshot"))
-		return nil
-	}
-
-	// Try to load existing key
-	// #nosec G304 -- keyPath is from config (EncryptionKeyPath or StoragePath-derived), not request input
-	if data, err := os.ReadFile(keyPath); err == nil && len(data) == 32 {
-		m.encryptionKey = data
-		logging.Debug("loaded existing encryption key",
-			logging.Component("snapshot"))
-		return nil
-	}
-
-	// Generate new key
-	key, err := security.GenerateKey(32)
-	if err != nil {
-		return fmt.Errorf("failed to generate encryption key: %w", err)
-	}
-
-	// Save key with restrictive permissions
-	if err := os.WriteFile(keyPath, key, 0600); err != nil {
-		return fmt.Errorf("failed to save encryption key: %w", err)
-	}
-
-	m.encryptionKey = key
-	logging.Info("generated new encryption key",
-		"path", keyPath,
-		logging.Component("snapshot"))
-
-	return nil
 }
 
 // compressData compresses data using gzip
@@ -218,22 +199,28 @@ func (m *Manager) decompressData(data []byte) ([]byte, error) {
 	return decompressed, nil
 }
 
-// encryptData encrypts data using AES-256-GCM
+// encryptData encrypts data using AES-256-GCM with the provider's master key.
 func (m *Manager) encryptData(data []byte) ([]byte, error) {
-	if !m.config.EncryptionEnabled || m.encryptionKey == nil {
+	if !m.config.EncryptionEnabled || m.keyProvider == nil {
 		return data, nil
 	}
-
-	return security.EncryptAES256GCM(m.encryptionKey, data)
+	key, err := m.keyProvider.MasterKey()
+	if err != nil {
+		return nil, fmt.Errorf("snapshot master key: %w", err)
+	}
+	return security.EncryptAES256GCM(key, data)
 }
 
-// decryptData decrypts data using AES-256-GCM
+// decryptData decrypts data using AES-256-GCM with the provider's master key.
 func (m *Manager) decryptData(data []byte) ([]byte, error) {
-	if !m.config.EncryptionEnabled || m.encryptionKey == nil {
+	if !m.config.EncryptionEnabled || m.keyProvider == nil {
 		return data, nil
 	}
-
-	return security.DecryptAES256GCM(m.encryptionKey, data)
+	key, err := m.keyProvider.MasterKey()
+	if err != nil {
+		return nil, fmt.Errorf("snapshot master key: %w", err)
+	}
+	return security.DecryptAES256GCM(key, data)
 }
 
 // computeBlockHashes computes hashes for each block of data
@@ -457,7 +444,7 @@ func (m *Manager) CreateSnapshot(containerID string, data []byte, snapshotType S
 	// Encrypt data
 	encrypted := false
 	keyID := ""
-	if m.config.EncryptionEnabled && m.encryptionKey != nil {
+	if m.config.EncryptionEnabled && m.keyProvider != nil {
 		encryptedData, err := m.encryptData(dataToStore)
 		if err != nil {
 			return nil, fmt.Errorf("encryption failed: %w", err)
@@ -1064,22 +1051,39 @@ func readInt32(r io.Reader) (int32, error) {
 	return int32(buf[0])<<24 | int32(buf[1])<<16 | int32(buf[2])<<8 | int32(buf[3]), nil
 }
 
-// RotateEncryptionKey rotates the encryption key and re-encrypts all snapshots
-func (m *Manager) RotateEncryptionKey() error {
+// RotateEncryptionKey re-encrypts all snapshots from the current master key to
+// the key produced by newProvider, then swaps the manager's provider over.
+//
+// The caller owns the new key's persistence: newProvider must itself persist
+// the new key (FileKeyProvider/KeyringKeyProvider do this on first MasterKey),
+// so callers can rotate to a new keyring entry or a new file. Atomicity caveat:
+// snapshots are re-encrypted one file at a time and the provider swap happens
+// last, so a crash mid-rotation leaves some files on the old key and some on
+// the new key; the new provider's key must remain available to recover. This is
+// the same (non-atomic) guarantee as the previous implementation.
+func (m *Manager) RotateEncryptionKey(newProvider KeyProvider) error {
 	if !m.config.EncryptionEnabled {
 		return fmt.Errorf("encryption not enabled")
+	}
+	if newProvider == nil {
+		return fmt.Errorf("rotate snapshot key: nil key provider")
 	}
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Generate new key
-	newKey, err := security.GenerateKey(32)
-	if err != nil {
-		return fmt.Errorf("failed to generate new key: %w", err)
+	if m.keyProvider == nil {
+		return fmt.Errorf("rotate snapshot key: no current key provider")
 	}
 
-	oldKey := m.encryptionKey
+	oldKey, err := m.keyProvider.MasterKey()
+	if err != nil {
+		return fmt.Errorf("rotate snapshot key: read current key: %w", err)
+	}
+	newKey, err := newProvider.MasterKey()
+	if err != nil {
+		return fmt.Errorf("rotate snapshot key: read new key: %w", err)
+	}
 
 	// Re-encrypt all snapshots
 	for _, snaps := range m.snapshots {
@@ -1129,17 +1133,9 @@ func (m *Manager) RotateEncryptionKey() error {
 		}
 	}
 
-	// Save new key
-	m.encryptionKey = newKey
-	keyPath := m.config.EncryptionKeyPath
-	if keyPath == "" && m.config.StoragePath != "" {
-		keyPath = filepath.Join(m.config.StoragePath, ".snapshot_key")
-	}
-	if keyPath != "" {
-		if err := os.WriteFile(keyPath, newKey, 0600); err != nil {
-			return fmt.Errorf("failed to save new key: %w", err)
-		}
-	}
+	// Swap provider last so reads keep using the old key until every file is
+	// converted.
+	m.keyProvider = newProvider
 
 	logging.Info("encryption key rotated",
 		logging.Component("snapshot"))

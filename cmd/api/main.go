@@ -88,14 +88,28 @@ func main() {
 	detectorCfg := threat.DefaultDetectorConfig()
 	detector := threat.NewDetector(detectorCfg)
 
-	// Initialize snapshot manager
+	// Initialize snapshot manager. KEY-01: DefaultSnapshotConfig enables
+	// encryption, which now REQUIRES an explicit KeyProvider (no silent-ephemeral
+	// fallback). Build the same file/keyring/env provider cmd/daemon uses so the
+	// api binary's snapshots are encrypted with a stable, restart-survivable key
+	// rather than starting with snapshots silently disabled. Failure is fatal:
+	// continuing with a nil manager would disable snapshots without the operator
+	// noticing.
 	snapshotCfg := snapshot.DefaultSnapshotConfig()
-	snapshotCfg.StoragePath = cfg.Daemon.DataDir + "/snapshots"
-	snapshotMgr, err := snapshot.NewManager(snapshotCfg)
+	snapshotCfg.StoragePath = filepath.Join(cfg.Daemon.DataDir, "snapshots")
+	var snapshotKeyProvider snapshot.KeyProvider
+	if snapshotCfg.EncryptionEnabled {
+		kp, kpErr := snapshot.NewKeyProviderFromConfig(snapshotCfg, cfg.Daemon.DataDir)
+		if kpErr != nil {
+			fmt.Fprintf(os.Stderr, "Failed to build snapshot key provider: %v\n", kpErr)
+			os.Exit(1)
+		}
+		snapshotKeyProvider = kp
+	}
+	snapshotMgr, err := snapshot.NewManager(snapshotCfg, snapshotKeyProvider)
 	if err != nil {
-		logging.Warn("Failed to initialize snapshot manager",
-			"error", err.Error(),
-			logging.Component("api"))
+		fmt.Fprintf(os.Stderr, "Failed to initialize snapshot manager: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Initialize cloning manager
