@@ -165,6 +165,48 @@ jobs:
       - name: Run integration tests
         run: go test -v -tags=integration -timeout 15m ./tests/...
 
+  e2e-golden:
+    name: Golden-path E2E
+    # E2E-01: golden-path acceptance test. Non-required until proven stable on
+    # 3+ consecutive green runs, after which drop continue-on-error and add to
+    # branch protection. Uses the in-process mock containerd + MockEscrow/Staking
+    # contracts + an in-process loopback ingress, so no containerd, anvil, or
+    # external services are needed. Runs on every push and PR (no main-only guard).
+    runs-on: ubuntu-latest
+    needs: [build]
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Install DBus session helper
+        # testutil.NewTestHarness pulls in the keyring package whose KWallet
+        # backend init() opens a session bus at load time; provide a transient one.
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-golden-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-golden-
+            ${{ runner.os }}-go-
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Run golden-path E2E (mocked legs)
+        # MOLTBUNKER_ANVIL_RPC is intentionally unset, so the real-chain leg
+        # (TestGoldenPath_EscrowAnvilMode) skips and the mock-mode legs run.
+        run: dbus-run-session -- go test -v -tags e2e -timeout 120s -count=1 ./tests/e2e/golden/...
+
   runtime-e2e:
     name: Runtime E2E (Linux containerd)
     # R11: exercise the real ContainerdClient lifecycle against a live containerd
