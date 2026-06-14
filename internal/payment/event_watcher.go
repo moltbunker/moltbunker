@@ -22,8 +22,11 @@ const (
 )
 
 // EventWatcher manages WebSocket event subscriptions with automatic reconnection.
-// It watches for Staked/Unstaked, EscrowCreated, and Slashed events and forwards
-// them to consumer channels for cache invalidation and state sync.
+// It watches for Staked/Unstaked, the four escrow lifecycle events
+// (ReservationCreated, PaymentReleased, Refunded, ReservationFinalized), and
+// Slashed events, forwarding them to consumer channels for cache invalidation
+// and state sync. All four escrow events share the single escrowEvents channel
+// and are distinguished by EscrowEvent.Kind.
 type EventWatcher struct {
 	baseClient       *BaseClient
 	stakingContract  *StakingContract
@@ -31,7 +34,7 @@ type EventWatcher struct {
 	slashingContract *SlashingContract
 
 	stakeEvents  chan *StakeEvent
-	escrowEvents chan *EscrowCreatedEvent
+	escrowEvents chan *EscrowEvent
 	slashEvents  chan *SlashEvent
 
 	lastBlock atomic.Uint64
@@ -53,7 +56,7 @@ func NewEventWatcher(
 		escrowContract:   ec,
 		slashingContract: slc,
 		stakeEvents:      make(chan *StakeEvent, eventChannelBuffer),
-		escrowEvents:     make(chan *EscrowCreatedEvent, eventChannelBuffer),
+		escrowEvents:     make(chan *EscrowEvent, eventChannelBuffer),
 		slashEvents:      make(chan *SlashEvent, eventChannelBuffer),
 	}
 }
@@ -84,15 +87,29 @@ func (ew *EventWatcher) Start(ctx context.Context) error {
 	ctx, ew.cancel = context.WithCancel(ctx)
 	ew.running.Store(true)
 
-	// Launch one goroutine per event type
-	ew.wg.Add(3)
+	// Launch one goroutine per event subscription. The four escrow lifecycle
+	// events each get their own subscription (matching the stake/slash pattern)
+	// but all feed the single escrowEvents channel.
+	ew.wg.Add(6)
 	util.SafeGoWithName("event-watcher-stake", func() {
 		defer ew.wg.Done()
 		ew.watchStakeEvents(ctx)
 	})
-	util.SafeGoWithName("event-watcher-escrow", func() {
+	util.SafeGoWithName("event-watcher-escrow-created", func() {
 		defer ew.wg.Done()
-		ew.watchEscrowEvents(ctx)
+		ew.watchEscrowCreatedEvents(ctx)
+	})
+	util.SafeGoWithName("event-watcher-payment-released", func() {
+		defer ew.wg.Done()
+		ew.watchPaymentReleasedEvents(ctx)
+	})
+	util.SafeGoWithName("event-watcher-refunded", func() {
+		defer ew.wg.Done()
+		ew.watchRefundedEvents(ctx)
+	})
+	util.SafeGoWithName("event-watcher-finalized", func() {
+		defer ew.wg.Done()
+		ew.watchReservationFinalizedEvents(ctx)
 	})
 	util.SafeGoWithName("event-watcher-slash", func() {
 		defer ew.wg.Done()
@@ -128,8 +145,10 @@ func (ew *EventWatcher) StakeEvents() <-chan *StakeEvent {
 	return ew.stakeEvents
 }
 
-// EscrowEvents returns the channel for receiving escrow events.
-func (ew *EventWatcher) EscrowEvents() <-chan *EscrowCreatedEvent {
+// EscrowEvents returns the channel for receiving all escrow lifecycle events.
+// Consumers switch on EscrowEvent.Kind to handle Created/PaymentReleased/
+// Refunded/Finalized.
+func (ew *EventWatcher) EscrowEvents() <-chan *EscrowEvent {
 	return ew.escrowEvents
 }
 
@@ -170,11 +189,32 @@ func (ew *EventWatcher) watchStakeEvents(ctx context.Context) {
 	})
 }
 
-// watchEscrowEvents subscribes to ReservationCreated events with reconnection.
-func (ew *EventWatcher) watchEscrowEvents(ctx context.Context) {
-	ev, ok := ew.escrowContract.contractABI.Events["ReservationCreated"]
+// emitEscrowEvent forwards an escrow event to the shared channel, dropping it
+// (with a warning) if the consumer is too slow and the buffer is full.
+func (ew *EventWatcher) emitEscrowEvent(ev *EscrowEvent) {
+	select {
+	case ew.escrowEvents <- ev:
+	default:
+		logging.Warn("event watcher: escrow event channel full, dropping",
+			"kind", ev.Kind.String())
+	}
+}
+
+// watchSingleEvent resolves the topic ID for the named escrow event, builds a
+// filter query for the escrow contract, and subscribes with reconnection. The
+// handler is invoked for each matching log and is responsible for parsing and
+// emitting an EscrowEvent of the given kind. Centralizes the repetitive
+// topic-lookup + query-build + subscribe wiring shared by the four escrow
+// watchers.
+func (ew *EventWatcher) watchSingleEvent(
+	ctx context.Context,
+	name string,
+	kind EscrowEventKind,
+	handler func(ethtypes.Log) *EscrowEvent,
+) {
+	ev, ok := ew.escrowContract.contractABI.Events[name]
 	if !ok {
-		logging.Warn("event watcher: ReservationCreated event not found in ABI")
+		logging.Warn("event watcher: escrow event not found in ABI", "event", name)
 		return
 	}
 
@@ -183,22 +223,95 @@ func (ew *EventWatcher) watchEscrowEvents(ctx context.Context) {
 		Topics:    [][]common.Hash{{ev.ID}},
 	}
 
-	ew.subscribeWithReconnect(ctx, "escrow", query, func(log ethtypes.Log) {
-		event := &EscrowCreatedEvent{
-			Timestamp: time.Now(),
-		}
-		if len(log.Topics) > 1 {
-			event.Requester = common.HexToAddress(log.Topics[1].Hex())
-		}
-		if len(log.Data) >= 32 {
-			event.Amount = new(big.Int).SetBytes(log.Data[:32])
-		}
-		select {
-		case ew.escrowEvents <- event:
-		default:
-			logging.Warn("event watcher: escrow event channel full, dropping")
+	ew.subscribeWithReconnect(ctx, "escrow-"+kind.String(), query, func(log ethtypes.Log) {
+		if out := handler(log); out != nil {
+			ew.emitEscrowEvent(out)
 		}
 	})
+}
+
+// watchEscrowCreatedEvents subscribes to ReservationCreated events.
+func (ew *EventWatcher) watchEscrowCreatedEvents(ctx context.Context) {
+	ew.watchSingleEvent(ctx, "ReservationCreated", EscrowEventCreated, parseEscrowCreatedLog)
+}
+
+// watchPaymentReleasedEvents subscribes to PaymentReleased events.
+func (ew *EventWatcher) watchPaymentReleasedEvents(ctx context.Context) {
+	ew.watchSingleEvent(ctx, "PaymentReleased", EscrowEventPaymentReleased, parsePaymentReleasedLog)
+}
+
+// watchRefundedEvents subscribes to Refunded events.
+func (ew *EventWatcher) watchRefundedEvents(ctx context.Context) {
+	ew.watchSingleEvent(ctx, "Refunded", EscrowEventRefunded, parseRefundedLog)
+}
+
+// watchReservationFinalizedEvents subscribes to ReservationFinalized events.
+func (ew *EventWatcher) watchReservationFinalizedEvents(ctx context.Context) {
+	ew.watchSingleEvent(ctx, "ReservationFinalized", EscrowEventFinalized, parseReservationFinalizedLog)
+}
+
+// The four parse functions below own the topic-position → field mapping for the
+// escrow lifecycle events. They are package-level (not closures) so the mapping
+// can be locked by unit tests against synthetic logs. Each event's indexed
+// topics occupy log.Topics[1..] (Topics[0] is the event signature); non-indexed
+// fields are packed into 32-byte words in log.Data.
+
+// parseEscrowCreatedLog maps a ReservationCreated log:
+// ReservationCreated(uint256 indexed reservationId, address indexed requester,
+// uint256 amount, uint256 duration). amount is the first data word.
+func parseEscrowCreatedLog(log ethtypes.Log) *EscrowEvent {
+	event := &EscrowEvent{Kind: EscrowEventCreated, Timestamp: time.Now()}
+	if len(log.Topics) > 1 {
+		event.ReservationID = new(big.Int).SetBytes(log.Topics[1].Bytes())
+	}
+	if len(log.Topics) > 2 {
+		event.Requester = common.HexToAddress(log.Topics[2].Hex())
+	}
+	if len(log.Data) >= 32 {
+		event.Amount = new(big.Int).SetBytes(log.Data[:32])
+	}
+	return event
+}
+
+// parsePaymentReleasedLog maps a PaymentReleased log:
+// PaymentReleased(uint256 indexed reservationId, uint256 grossAmount, ...).
+// grossAmount is the first non-indexed data word.
+func parsePaymentReleasedLog(log ethtypes.Log) *EscrowEvent {
+	event := &EscrowEvent{Kind: EscrowEventPaymentReleased, Timestamp: time.Now()}
+	if len(log.Topics) > 1 {
+		event.ReservationID = new(big.Int).SetBytes(log.Topics[1].Bytes())
+	}
+	if len(log.Data) >= 32 {
+		event.Amount = new(big.Int).SetBytes(log.Data[:32])
+	}
+	return event
+}
+
+// parseRefundedLog maps a Refunded log:
+// Refunded(uint256 indexed reservationId, address indexed requester,
+// uint256 refundAmount). refundAmount is the first (only) non-indexed word.
+func parseRefundedLog(log ethtypes.Log) *EscrowEvent {
+	event := &EscrowEvent{Kind: EscrowEventRefunded, Timestamp: time.Now()}
+	if len(log.Topics) > 1 {
+		event.ReservationID = new(big.Int).SetBytes(log.Topics[1].Bytes())
+	}
+	if len(log.Topics) > 2 {
+		event.Requester = common.HexToAddress(log.Topics[2].Hex())
+	}
+	if len(log.Data) >= 32 {
+		event.Amount = new(big.Int).SetBytes(log.Data[:32])
+	}
+	return event
+}
+
+// parseReservationFinalizedLog maps a ReservationFinalized log:
+// ReservationFinalized(uint256 indexed reservationId). No data words.
+func parseReservationFinalizedLog(log ethtypes.Log) *EscrowEvent {
+	event := &EscrowEvent{Kind: EscrowEventFinalized, Timestamp: time.Now()}
+	if len(log.Topics) > 1 {
+		event.ReservationID = new(big.Int).SetBytes(log.Topics[1].Bytes())
+	}
+	return event
 }
 
 // watchSlashEvents subscribes to Slashed events with reconnection.

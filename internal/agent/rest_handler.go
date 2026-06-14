@@ -9,10 +9,22 @@ import (
 	"github.com/moltbunker/moltbunker/internal/logging"
 )
 
+// AgentMeteringHook receives agent invocation usage for billing. It is defined
+// locally (not imported from payment) so the agent package does not depend on
+// payment, avoiding an import cycle. payment.PaymentService satisfies it
+// structurally via RecordAgentInvocation.
+//
+// The hook is optional: when nil, the handler behaves exactly as before (no
+// metering), so existing callers and tests need no changes.
+type AgentMeteringHook interface {
+	RecordAgentInvocation(wallet string, tokensUsed int64)
+}
+
 // RESTHandler provides HTTP endpoints for agent management.
 type RESTHandler struct {
 	runtime *AgentRuntime
 	memory  *MemoryStore
+	meter   AgentMeteringHook // optional usage metering hook (nil = no metering)
 }
 
 // NewRESTHandler creates a new agent REST handler.
@@ -21,6 +33,11 @@ func NewRESTHandler(runtime *AgentRuntime, memory *MemoryStore) *RESTHandler {
 		runtime: runtime,
 		memory:  memory,
 	}
+}
+
+// SetMeteringHook installs an optional agent metering hook. Pass nil to disable.
+func (h *RESTHandler) SetMeteringHook(m AgentMeteringHook) {
+	h.meter = m
 }
 
 // RegisterRoutes registers agent routes on a mux.
@@ -188,6 +205,13 @@ func (h *RESTHandler) invokeAgent(w http.ResponseWriter, r *http.Request, agentI
 		AgentID:    agentID,
 		Response:   fmt.Sprintf("Agent %s received: %s", agentID, req.Message),
 		TokensUsed: 0,
+	}
+
+	// Record invocation for billing (optional, nil-safe). Wired now so that when
+	// the placeholder TokensUsed=0 is replaced with a real value, metering is
+	// already in place.
+	if h.meter != nil {
+		h.meter.RecordAgentInvocation(wallet, resp.TokensUsed)
 	}
 
 	writeJSON(w, http.StatusOK, resp)

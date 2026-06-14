@@ -100,10 +100,15 @@ func NewEscrowContract(baseClient *BaseClient, tokenContract *TokenContract, con
 	return ec, nil
 }
 
-// NewMockEscrowContract creates a mock escrow contract for testing
+// NewMockEscrowContract creates a mock escrow contract for testing.
+// The contract ABI is parsed so event topic lookups (used by the event
+// watcher) resolve even in mock mode; the parse error is ignored because the
+// ABI is a compile-time constant exercised by the contracts ABI tests.
 func NewMockEscrowContract() *EscrowContract {
+	parsedABI, _ := abi.JSON(strings.NewReader(EscrowContractABI))
 	return &EscrowContract{
-		mockMode:       true,
+		mockMode:         true,
+		contractABI:      parsedABI,
 		reservationIDs:   make(map[[32]byte]*big.Int),
 		reservationTimes: make(map[[32]byte]time.Time),
 		mockEscrows:      make(map[[32]byte]*EscrowData),
@@ -140,6 +145,20 @@ func (ec *EscrowContract) StoreExternalReservationID(jobID [32]byte, resID *big.
 	ec.storeReservationID(jobID, resID)
 }
 
+// ReservationIDForJob returns the on-chain reservation ID currently mapped to
+// jobID, or (nil, false) if none is cached. Used by the deploy path to persist
+// the reservation ID onto the Deployment record so it survives a daemon restart
+// (the in-memory cache does not).
+func (ec *EscrowContract) ReservationIDForJob(jobID [32]byte) (*big.Int, bool) {
+	ec.reservationMu.RLock()
+	defer ec.reservationMu.RUnlock()
+	resID, exists := ec.reservationIDs[jobID]
+	if !exists || resID == nil {
+		return nil, false
+	}
+	return new(big.Int).Set(resID), true
+}
+
 // removeReservationID removes the jobID→reservationID mapping when the escrow
 // reaches a terminal state (finalized, refunded) to prevent unbounded growth.
 func (ec *EscrowContract) removeReservationID(jobID [32]byte) {
@@ -147,6 +166,32 @@ func (ec *EscrowContract) removeReservationID(jobID [32]byte) {
 	defer ec.reservationMu.Unlock()
 	delete(ec.reservationIDs, jobID)
 	delete(ec.reservationTimes, jobID)
+}
+
+// InvalidateReservation removes the jobID→reservationID mapping under the lock.
+// Exposed so the daemon's escrow-event consumer can drop a stale reservation
+// when a Refunded/Finalized event arrives, without reaching into the unexported
+// cache directly.
+func (ec *EscrowContract) InvalidateReservation(jobID [32]byte) {
+	ec.removeReservationID(jobID)
+}
+
+// JobIDForReservationID reverse-resolves a job ID from an on-chain reservation
+// ID. The cache is keyed by jobID, so this scans for the matching value. Returns
+// the jobID and true if found. Used by the event consumer, which only receives
+// the reservationID in escrow lifecycle events.
+func (ec *EscrowContract) JobIDForReservationID(resID *big.Int) ([32]byte, bool) {
+	if resID == nil {
+		return [32]byte{}, false
+	}
+	ec.reservationMu.RLock()
+	defer ec.reservationMu.RUnlock()
+	for jobID, stored := range ec.reservationIDs {
+		if stored != nil && stored.Cmp(resID) == 0 {
+			return jobID, true
+		}
+	}
+	return [32]byte{}, false
 }
 
 // CleanupStaleReservations removes reservation mappings older than maxAge.

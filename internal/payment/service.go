@@ -365,6 +365,14 @@ func (ps *PaymentService) RegisterExternalReservation(jobID [32]byte, reservatio
 	ps.escrowContract.StoreExternalReservationID(jobID, reservationID)
 }
 
+// ReservationIDForJob returns the on-chain reservation ID mapped to jobID and a
+// bool indicating whether one is cached. The deploy path uses this immediately
+// after CreateJobEscrow to persist the reservation ID onto the Deployment so
+// the startup reconciler can rehydrate the cache after a restart.
+func (ps *PaymentService) ReservationIDForJob(jobID [32]byte) (*big.Int, bool) {
+	return ps.escrowContract.ReservationIDForJob(jobID)
+}
+
 // ReleaseJobPayment releases payment for a job based on uptime
 func (ps *PaymentService) ReleaseJobPayment(ctx context.Context, jobID [32]byte, uptime time.Duration) error {
 	uptimeSecs := big.NewInt(int64(uptime.Seconds()))
@@ -690,9 +698,19 @@ func (ps *PaymentService) SubscribeStakeEvents(ctx context.Context, ch chan<- *S
 	return ps.stakingContract.SubscribeStakeEvents(ctx, ch)
 }
 
-// SubscribeEscrowEvents subscribes to escrow events
-func (ps *PaymentService) SubscribeEscrowEvents(ctx context.Context, ch chan<- *EscrowCreatedEvent) error {
-	return ps.escrowContract.SubscribeEscrowEvents(ctx, ch)
+// InvalidateEscrowReservation drops the local jobID→reservationID cache entry
+// for a job. Used by the daemon's escrow-event consumer when a Refunded or
+// ReservationFinalized event arrives so a redeploy with the same jobID does not
+// reuse a stale on-chain reservation.
+func (ps *PaymentService) InvalidateEscrowReservation(jobID [32]byte) {
+	ps.escrowContract.InvalidateReservation(jobID)
+}
+
+// JobIDForReservationID reverse-resolves a job ID from an on-chain reservation
+// ID using the escrow contract's cache. Escrow lifecycle events only carry the
+// reservation ID, so the consumer maps it back to the jobID before invalidating.
+func (ps *PaymentService) JobIDForReservationID(resID *big.Int) ([32]byte, bool) {
+	return ps.escrowContract.JobIDForReservationID(resID)
 }
 
 // SubscribeSlashEvents subscribes to slashing events

@@ -51,6 +51,19 @@ type Deployment struct {
 	RuntimeType              types.RuntimeType  `json:"runtime_type,omitempty"`                // "container" (default) or "molt" for WASM workloads
 	MoltSpec                 *types.MoltSpec    `json:"molt_spec,omitempty"`                   // Molt spec for WASM deployments (nil for containers)
 
+	// EscrowFinalized records whether the terminal escrow call (FinalizeJob or
+	// RefundJob) completed successfully for this deployment. Persisted so the
+	// startup escrow reconciler can skip re-submitting confirmed on-chain
+	// terminal transactions after a crash/restart.
+	EscrowFinalized bool `json:"escrow_finalized,omitempty"`
+
+	// ReservationID is the decimal string of the on-chain escrow reservation ID
+	// bound to this deployment. Persisted at escrow-create time so the startup
+	// reconciler can rehydrate the in-memory jobID→reservationID cache (which is
+	// lost on restart) before finalizing orphaned escrows. Without this, every
+	// orphan finalize fails with "no reservation ID found" after a restart.
+	ReservationID string `json:"reservation_id,omitempty"`
+
 	// R3/R4/R13/R14 — optional per-deployment security policy. These gossip with
 	// the deployment so replica nodes apply the same gates as the originator.
 	// All nil/false => identical to legacy behavior (no verify, no scan, allow-all).

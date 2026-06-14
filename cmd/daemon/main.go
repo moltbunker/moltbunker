@@ -364,6 +364,28 @@ func main() {
 		cm.StartDiskEnforcer(ctx, 60*time.Second)
 	}
 
+	// Escrow event consumer: drive local reservation-ID cache invalidation off
+	// the on-chain escrow lifecycle. On Refunded/Finalized, the reservation has
+	// reached a terminal state, so the jobID→reservationID mapping must be
+	// dropped — otherwise a redeploy with the same jobID would reuse a stale
+	// on-chain reservation. The events only carry the reservationID, so we
+	// reverse-resolve the jobID from the payment service's cache.
+	if eventWatcher != nil {
+		util.SafeGoWithName("escrow-event-consumer", func() {
+			for ev := range eventWatcher.EscrowEvents() {
+				switch ev.Kind {
+				case payment.EscrowEventRefunded, payment.EscrowEventFinalized:
+					if jobID, ok := paymentSvc.JobIDForReservationID(ev.ReservationID); ok {
+						paymentSvc.InvalidateEscrowReservation(jobID)
+						logging.Debug("escrow event: invalidated reservation cache",
+							"kind", ev.Kind.String(),
+							logging.Component("daemon"))
+					}
+				}
+			}
+		})
+	}
+
 	// Start subdomain expiry cleanup (removes expired gossip entries hourly)
 	if cm := apiServer.GetContainerManager(); cm != nil && cm.GossipProtocol() != nil {
 		daemon.StartSubdomainCleanup(ctx, cm.GossipProtocol(), paymentSvc)
@@ -715,6 +737,9 @@ func main() {
 			if storageErr != nil {
 				log.Fatalf("Failed to create storage engine: %v", storageErr)
 			}
+			// Wire storage usage metering for billing (PaymentService satisfies
+			// storage.MeteringHook structurally).
+			storageEngine.SetMeteringHook(paymentSvc)
 			httpAPIServer.SetStorageHandler(storage.NewRESTHandler(storageEngine))
 			logging.Info("object storage service enabled", logging.Component("daemon"))
 		}
@@ -727,6 +752,9 @@ func main() {
 				UseTor:      cfg.Proxy.UseTor,
 				MaxSessions: cfg.Proxy.MaxSessions,
 			}, &proxy.DirectDialer{}, &proxy.AllowAllAuth{DefaultWallet: "system"})
+			// Wire proxy session metering before Start so it propagates to the
+			// SOCKS5/HTTP sub-servers (PaymentService satisfies proxy.ProxyMeteringHook).
+			proxyServer.SetMeteringHook(paymentSvc)
 			if proxyErr := proxyServer.Start(ctx); proxyErr != nil {
 				log.Fatalf("Failed to start proxy service: %v", proxyErr)
 			}
@@ -750,6 +778,8 @@ func main() {
 				MaxConcurrentJobs: cfg.Crawl.MaxConcurrent,
 				MaxPagesPerJob:    cfg.Crawl.MaxPages,
 			})
+			// Wire crawl job metering (PaymentService satisfies crawl.CrawlMeteringHook).
+			scheduler.SetMeteringHook(paymentSvc)
 			httpAPIServer.SetCrawlHandler(crawl.NewRESTHandler(scheduler, crawl.NewRobotsChecker()))
 			logging.Info("web crawling service enabled", logging.Component("daemon"))
 		}
@@ -759,7 +789,10 @@ func main() {
 			agentRuntime := agent.NewAgentRuntime(agent.RuntimeConfig{
 				MaxAgentsPerWallet: cfg.Agent.MaxAgentsPerWallet,
 			})
-			httpAPIServer.SetAgentHandler(agent.NewRESTHandler(agentRuntime, agent.NewMemoryStore()))
+			agentHandler := agent.NewRESTHandler(agentRuntime, agent.NewMemoryStore())
+			// Wire agent invocation metering (PaymentService satisfies agent.AgentMeteringHook).
+			agentHandler.SetMeteringHook(paymentSvc)
+			httpAPIServer.SetAgentHandler(agentHandler)
 			logging.Info("agent runtime service enabled", logging.Component("daemon"))
 		}
 

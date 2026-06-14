@@ -18,6 +18,7 @@ type HTTPProxyServer struct {
 	auth    Authenticator
 	tracker *SessionTracker
 	acl     *ACL
+	meter   ProxyMeteringHook // optional, set by Server.Start (nil = no metering)
 	server  *http.Server
 
 	ctx    context.Context
@@ -164,6 +165,11 @@ func (p *HTTPProxyServer) handleConnect(w http.ResponseWriter, r *http.Request, 
 
 	session.BytesIn = meter.BytesRead()
 	session.BytesOut = meter.BytesWritten()
+
+	// Record session usage for billing (optional, nil-safe).
+	if p.meter != nil {
+		p.meter.RecordProxySession(session.Wallet, session.BytesIn, session.BytesOut)
+	}
 }
 
 // Hop-by-hop headers that should not be forwarded.
@@ -223,6 +229,15 @@ func (p *HTTPProxyServer) handleForward(w http.ResponseWriter, r *http.Request, 
 	outReq := r.Clone(p.ctx)
 	outReq.RequestURI = ""
 
+	// Count request-body (upload) bytes as they are read by the transport so
+	// BytesIn reflects uploads. Without this, uploads are under-billed (only the
+	// response body was counted as BytesOut). nil body (e.g. GET) is left as-is.
+	var bodyCounter *countingReadCloser
+	if outReq.Body != nil {
+		bodyCounter = &countingReadCloser{rc: outReq.Body}
+		outReq.Body = bodyCounter
+	}
+
 	// Remove hop-by-hop headers
 	for _, h := range hopByHopHeaders {
 		outReq.Header.Del(h)
@@ -259,4 +274,33 @@ func (p *HTTPProxyServer) handleForward(w http.ResponseWriter, r *http.Request, 
 	w.WriteHeader(resp.StatusCode)
 	bytesWritten, _ := io.Copy(w, resp.Body)
 	session.BytesOut = bytesWritten
+
+	// Record uploaded request-body bytes (read by the transport above).
+	if bodyCounter != nil {
+		session.BytesIn = bodyCounter.count()
+	}
+
+	// Record session usage for billing (optional, nil-safe).
+	if p.meter != nil {
+		p.meter.RecordProxySession(session.Wallet, session.BytesIn, session.BytesOut)
+	}
 }
+
+// countingReadCloser wraps an io.ReadCloser and tallies bytes read. Used to
+// meter HTTP forward-proxy request-body (upload) bytes for billing. count() is
+// safe to call from the same goroutine after RoundTrip returns; the transport
+// fully consumes (or aborts) the body before RoundTrip returns.
+type countingReadCloser struct {
+	rc io.ReadCloser
+	n  int64
+}
+
+func (c *countingReadCloser) Read(p []byte) (int, error) {
+	n, err := c.rc.Read(p)
+	c.n += int64(n)
+	return n, err
+}
+
+func (c *countingReadCloser) Close() error { return c.rc.Close() }
+
+func (c *countingReadCloser) count() int64 { return c.n }

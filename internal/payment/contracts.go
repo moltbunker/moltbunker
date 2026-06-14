@@ -962,6 +962,20 @@ const EscrowContractABI = `[
 		],
 		"name": "FeeSplitUpdated",
 		"type": "event"
+	},
+	{
+		"inputs": [{"name": "reservationId", "type": "uint256"}],
+		"name": "InvalidReservation",
+		"type": "error"
+	},
+	{
+		"inputs": [
+			{"name": "reservationId", "type": "uint256"},
+			{"name": "expected", "type": "uint8"},
+			{"name": "actual", "type": "uint8"}
+		],
+		"name": "InvalidStatus",
+		"type": "error"
 	}
 ]`
 
@@ -1205,6 +1219,53 @@ func (s EscrowState) String() string {
 	}
 }
 
+// EscrowEventKind discriminates the on-chain escrow lifecycle event carried by
+// an EscrowEvent. The EventWatcher emits one EscrowEvent per matching log so a
+// single consumer can react to the full reservation lifecycle.
+type EscrowEventKind uint8
+
+const (
+	// EscrowEventCreated is a ReservationCreated event.
+	EscrowEventCreated EscrowEventKind = iota
+	// EscrowEventPaymentReleased is a PaymentReleased event.
+	EscrowEventPaymentReleased
+	// EscrowEventRefunded is a Refunded event.
+	EscrowEventRefunded
+	// EscrowEventFinalized is a ReservationFinalized event.
+	EscrowEventFinalized
+)
+
+// String returns a human-readable label for the event kind.
+func (k EscrowEventKind) String() string {
+	switch k {
+	case EscrowEventCreated:
+		return "created"
+	case EscrowEventPaymentReleased:
+		return "payment_released"
+	case EscrowEventRefunded:
+		return "refunded"
+	case EscrowEventFinalized:
+		return "finalized"
+	default:
+		return "unknown"
+	}
+}
+
+// EscrowEvent is a discriminated union over the four escrow lifecycle events
+// (ReservationCreated, PaymentReleased, Refunded, ReservationFinalized). The
+// Kind field selects which fields are populated:
+//   - Created:         ReservationID, Requester, Amount
+//   - PaymentReleased: ReservationID, Amount (grossAmount)
+//   - Refunded:        ReservationID, Requester, Amount (refundAmount)
+//   - Finalized:       ReservationID
+type EscrowEvent struct {
+	Kind          EscrowEventKind
+	ReservationID *big.Int
+	Amount        *big.Int
+	Requester     common.Address
+	Timestamp     time.Time
+}
+
 // DisputeState represents the state of a dispute
 type DisputeState uint8
 
@@ -1264,9 +1325,9 @@ const DelegationContractABI = `[
 		"outputs": [
 			{"name": "", "type": "tuple", "components": [
 				{"name": "provider", "type": "address"},
-				{"name": "amount", "type": "uint256"},
-				{"name": "rewardDebt", "type": "uint256"},
-				{"name": "delegatedAt", "type": "uint48"}
+				{"name": "amount", "type": "uint128"},
+				{"name": "delegatedAt", "type": "uint48"},
+				{"name": "active", "type": "bool"}
 			]}
 		],
 		"stateMutability": "view",
@@ -1814,11 +1875,16 @@ func (t ReputationTier) String() string {
 }
 
 // DelegationData represents a delegation record from BunkerDelegation.
+//
+// Mirrors the on-chain DelegationInfo struct
+// {address provider; uint128 amount; uint48 delegatedAt; bool active}.
+// There is no rewardDebt field in V1; reward accounting is added alongside
+// the abigen migration (ABIGEN-01).
 type DelegationData struct {
 	Provider    common.Address
 	Amount      *big.Int
-	RewardDebt  *big.Int
 	DelegatedAt time.Time
+	Active      bool
 }
 
 // ProviderDelegationConfigData represents a provider's delegation configuration.

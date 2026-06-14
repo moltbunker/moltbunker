@@ -80,6 +80,7 @@ type SOCKS5Server struct {
 	auth     Authenticator
 	tracker  *SessionTracker
 	acl      *ACL
+	meter    ProxyMeteringHook // optional, set by Server.Start (nil = no metering)
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -217,6 +218,11 @@ func (s *SOCKS5Server) handleConnection(clientConn net.Conn) {
 	// Update session with final byte counts
 	session.BytesIn = meter.BytesRead()
 	session.BytesOut = meter.BytesWritten()
+
+	// Record session usage for billing (optional, nil-safe).
+	if s.meter != nil {
+		s.meter.RecordProxySession(session.Wallet, session.BytesIn, session.BytesOut)
+	}
 }
 
 // handleGreeting processes the SOCKS5 greeting and authenticates the client.
