@@ -37,6 +37,19 @@ type Proxy struct {
 	// middleware is the optional L7 edge chain (WAF + abuse limits + metrics).
 	// When nil the request path is unchanged (zero overhead). EDGE-01.
 	middleware *IngressMiddleware
+
+	// customDomains, when set, routes verified BYO custom hostnames (e.g.
+	// app.customer.com) to their deployment alongside *.<domain> traffic.
+	// Nil = the original behavior (only *.<domain> Host headers are routed).
+	// EDGE-02.
+	customDomains *DomainOwnershipStore
+
+	// blocklist, when set, is the operator takedown kill-switch consulted on
+	// EVERY request before routing. It is checked at the ingress proxy itself
+	// (not only inside the reverse tunnel) so a takedown reliably severs a live
+	// deployment regardless of whether it is served via the forward or reverse
+	// path. EDGE-02.
+	blocklist tunnel.BlocklistChecker
 }
 
 // NewProxy creates a new ingress proxy.
@@ -84,6 +97,59 @@ func (p *Proxy) SetMiddleware(m *IngressMiddleware) {
 	p.middleware = m
 }
 
+// SetCustomDomains wires the verified-custom-domain store so the proxy will
+// route BYO hostnames (e.g. app.customer.com) to their mapped deployment.
+// When nil the routing path is unchanged (only *.<domain> Host headers are
+// served). EDGE-02.
+func (p *Proxy) SetCustomDomains(store *DomainOwnershipStore) {
+	p.customDomains = store
+}
+
+// SetBlocklist wires the operator takedown kill-switch. When set, every
+// incoming request is checked against the blocklist BEFORE routing — by both
+// the original Host header (the natural custom-domain takedown target) and the
+// resolved subdomain / deployment ID — and a blocked request gets a 403.
+//
+// This enforces the takedown at the ingress proxy itself, so the forward-tunnel
+// serving path (resolver -> tunnelClient.OpenTunnel) and verified custom hosts
+// are covered, not just the reverse-tunnel registration/stream-open path.
+// When nil, no takedown enforcement happens at the proxy layer. EDGE-02.
+func (p *Proxy) SetBlocklist(bl tunnel.BlocklistChecker) {
+	p.blocklist = bl
+}
+
+// isBlocked reports whether any of the given identifiers is on the takedown
+// blocklist, returning the first match's operator reason. Empty identifiers are
+// skipped. When no blocklist is wired it always returns false.
+func (p *Proxy) isBlocked(ids ...string) (bool, string) {
+	if p.blocklist == nil {
+		return false, ""
+	}
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if blocked, reason := p.blocklist.IsBlocked(id); blocked {
+			return true, reason
+		}
+	}
+	return false, ""
+}
+
+// resolveCustomDomain looks up a verified BYO host and returns its deployment
+// ID for routing. Returns "" when no custom-domain store is wired or the host
+// is not a verified custom domain.
+func (p *Proxy) resolveCustomDomain(host string) string {
+	if p.customDomains == nil {
+		return ""
+	}
+	rec, ok := p.customDomains.LookupByHost(host)
+	if !ok {
+		return ""
+	}
+	return rec.DeploymentID
+}
+
 // acquireWebSocket applies the WebSocket-compatible abuse gates (per-tenant
 // rate + concurrency) via the installed middleware and returns a release
 // closure to hold for the connection's lifetime. When no middleware is
@@ -116,10 +182,39 @@ func (p *Proxy) Shutdown(ctx context.Context) error {
 // It extracts the subdomain from the Host header, resolves the service
 // (by deployment ID prefix or vanity name), opens a tunnel, and proxies.
 func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
+	// Strip any client-supplied X-Moltbunker-* control headers before routing.
+	// These are proxy-internal signals; a client must never be able to forge
+	// them (e.g. spoof the "verified custom domain" marker) or leak them to a
+	// tenant backend. The trusted markers are derived below and passed down as
+	// typed arguments, never via the request header. EDGE-02.
+	stripInternalHeaders(r)
+
 	// Extract subdomain from Host header
+	customDomain := false
+	originalHost := r.Host
 	subdomain := p.extractSubdomain(r.Host)
 	if subdomain == "" {
-		http.Error(w, "invalid host", http.StatusBadRequest)
+		// Not a *.<domain> host. It may be a verified BYO custom domain
+		// (EDGE-02) whose Host header is the customer's own hostname; route it
+		// via its mapped deployment ID. The deployment ID resolves through the
+		// same forward-tunnel / reverse-tunnel path as a normal subdomain.
+		if depID := p.resolveCustomDomain(r.Host); depID != "" {
+			customDomain = true
+			subdomain = depID
+		} else {
+			http.Error(w, "invalid host", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Operator takedown kill-switch, enforced at the ingress proxy on EVERY
+	// request (forward AND reverse paths) before any routing. Check both the
+	// original Host header (the natural custom-domain takedown target,
+	// app.customer.com) and the resolved subdomain / deployment ID, so a
+	// takedown reliably severs the deployment no matter how it was addressed.
+	// EDGE-02.
+	if blocked, _ := p.isBlocked(originalHost, subdomain); blocked {
+		http.Error(w, "service unavailable", http.StatusForbidden)
 		return
 	}
 
@@ -130,19 +225,30 @@ func (p *Proxy) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// dispatchRequest.
 	if p.middleware != nil && !isWebSocketUpgrade(r) {
 		p.middleware.Wrap(subdomain, http.HandlerFunc(func(mw http.ResponseWriter, mr *http.Request) {
-			p.dispatchRequest(mw, mr, subdomain)
+			p.dispatchRequest(mw, mr, subdomain, customDomain)
 		})).ServeHTTP(w, r)
 		return
 	}
 
-	p.dispatchRequest(w, r, subdomain)
+	p.dispatchRequest(w, r, subdomain, customDomain)
+}
+
+// stripInternalHeaders removes any client-supplied X-Moltbunker-* control
+// headers from the inbound request so they cannot be forged or leaked to tenant
+// backends. The proxy sets its own response markers from trusted state. EDGE-02.
+func stripInternalHeaders(r *http.Request) {
+	for k := range r.Header {
+		if strings.HasPrefix(http.CanonicalHeaderKey(k), "X-Moltbunker-") {
+			r.Header.Del(k)
+		}
+	}
 }
 
 // dispatchRequest resolves the service for subdomain and proxies the request to
 // the provider via a forward tunnel, falling back to the reverse tunnel
 // registry. This is the original handleRequest body, extracted so the edge
 // middleware can wrap it. Behavior is unchanged when middleware is nil.
-func (p *Proxy) dispatchRequest(w http.ResponseWriter, r *http.Request, subdomain string) {
+func (p *Proxy) dispatchRequest(w http.ResponseWriter, r *http.Request, subdomain string, customDomain bool) {
 	// Resolve service location (prefix match or vanity name)
 	service, err := p.resolver.Resolve(subdomain)
 	if err != nil {
@@ -161,7 +267,7 @@ func (p *Proxy) dispatchRequest(w http.ResponseWriter, r *http.Request, subdomai
 					}
 					return
 				}
-				p.proxyHTTPViaStream(w, r, stream, subdomain)
+				p.proxyHTTPViaStream(w, r, stream, subdomain, customDomain)
 				return
 			}
 		}
@@ -201,7 +307,7 @@ func (p *Proxy) dispatchRequest(w http.ResponseWriter, r *http.Request, subdomai
 		return
 	}
 
-	p.proxyHTTP(w, r, tun, service)
+	p.proxyHTTP(w, r, tun, service, customDomain)
 }
 
 // extractSubdomain parses the deployment ID from the Host header.
@@ -227,7 +333,9 @@ func (p *Proxy) extractSubdomain(host string) string {
 }
 
 // proxyHTTP forwards an HTTP request through the tunnel and relays the response.
-func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tunnel, service *ServiceEntry) {
+// customDomain is the trusted "request arrived on a verified BYO host" signal,
+// derived from resolveCustomDomain (never from a client header). EDGE-02.
+func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tunnel, service *ServiceEntry, customDomain bool) {
 	// Write the HTTP request through the tunnel connection
 	if err := r.Write(tun); err != nil {
 		http.Error(w, "proxy write failed", http.StatusBadGateway)
@@ -264,6 +372,9 @@ func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tun
 	// Add proxy identification headers
 	w.Header().Set("X-Moltbunker-Provider", service.ProviderNodeID)
 	w.Header().Set("X-Moltbunker-Deployment", service.DeploymentID)
+	if customDomain {
+		w.Header().Set("X-Moltbunker-CustomDomain", "true")
+	}
 
 	w.WriteHeader(resp.StatusCode)
 
@@ -286,7 +397,9 @@ func (p *Proxy) proxyHTTP(w http.ResponseWriter, r *http.Request, tun tunnel.Tun
 }
 
 // proxyHTTPViaStream forwards an HTTP request through a reverse tunnel yamux stream.
-func (p *Proxy) proxyHTTPViaStream(w http.ResponseWriter, r *http.Request, stream net.Conn, subdomain string) {
+// customDomain is the trusted "request arrived on a verified BYO host" signal,
+// derived from resolveCustomDomain (never from a client header). EDGE-02.
+func (p *Proxy) proxyHTTPViaStream(w http.ResponseWriter, r *http.Request, stream net.Conn, subdomain string, customDomain bool) {
 	// Write the HTTP request through the stream
 	if err := r.Write(stream); err != nil {
 		http.Error(w, "proxy write failed", http.StatusBadGateway)
@@ -319,6 +432,9 @@ func (p *Proxy) proxyHTTPViaStream(w http.ResponseWriter, r *http.Request, strea
 	w.Header().Set("Strict-Transport-Security", "max-age=63072000; includeSubDomains")
 	w.Header().Set("X-Moltbunker-Tunnel", "reverse")
 	w.Header().Set("X-Moltbunker-Subdomain", subdomain)
+	if customDomain {
+		w.Header().Set("X-Moltbunker-CustomDomain", "true")
+	}
 
 	w.WriteHeader(resp.StatusCode)
 

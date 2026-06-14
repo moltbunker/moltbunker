@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
@@ -26,6 +27,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/config"
 	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/daemon"
+	"github.com/moltbunker/moltbunker/internal/edge"
 	"github.com/moltbunker/moltbunker/internal/identity"
 	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
@@ -39,6 +41,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/threat"
 	"github.com/moltbunker/moltbunker/internal/tunnel"
 	"github.com/moltbunker/moltbunker/internal/util"
+	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
 // Build-time version information (set via -ldflags)
@@ -462,6 +465,10 @@ func main() {
 	// Ingress nodes: start HTTP reverse proxy for subdomain routing
 	var ingressProxy *ingress.Proxy
 	var ingressHealthChecker *ingress.HealthChecker
+	// EDGE-02 operator surfaces, created in the ingress block and mounted on the
+	// HTTP API server below (declared here so both blocks can see them).
+	var customDomainAdmin *ingress.CustomDomainHandler
+	var takedownBlocklist *tunnel.Blocklist
 	if cfg.Node.Provider.IngressEnabled {
 		cm := apiServer.GetContainerManager()
 		if cm != nil && cm.GossipProtocol() != nil {
@@ -482,6 +489,15 @@ func main() {
 			tunnelClient := tunnel.NewClient(tunnelDialer)
 			resolver := ingress.NewResolver(gossipAdapter, gossipAdapter) // implements both GossipReader and SubdomainResolver
 			ingressProxy = ingress.NewProxy(resolver, tunnelClient, ingressDomain)
+
+			// EDGE-02: operator takedown kill-switch. Created here (not in the
+			// reverse-tunnel block) and wired into the ingress proxy itself so a
+			// takedown is enforced on EVERY request — the forward-tunnel serving
+			// path and verified custom hosts included — not just on reverse-tunnel
+			// registration/stream-open. The same instance is also handed to the
+			// reverse server below and exposed via the admin API.
+			takedownBlocklist = tunnel.NewBlocklist()
+			ingressProxy.SetBlocklist(takedownBlocklist)
 
 			// Wire the L7 edge middleware (WAF + per-tenant abuse limits + edge
 			// metrics) into the ingress request path. Default-safe: WAF in
@@ -522,6 +538,34 @@ func main() {
 				}
 				email := cfg.Node.Provider.IngressACMEEmail
 				autoTLS := ingress.NewAutoTLSConfig(certDir, ingressDomain, email, resolver)
+
+				// EDGE-02: BYO custom-hostname ACME. When enabled, build the
+				// ownership store + DNS verifier, let hostPolicy issue LE certs
+				// for verified custom hosts, and route them via the proxy. The
+				// verification HMAC secret is generated in memory (not persisted)
+				// — a restart invalidates outstanding challenges, which is fine
+				// since customers simply re-trigger verification.
+				if cfg.Node.Provider.CustomDomain.Enabled {
+					ttl := time.Duration(cfg.Node.Provider.CustomDomain.OwnershipTTLHours) * time.Hour
+					cdStore := ingress.NewDomainOwnershipStore(ttl)
+					cdSecret := make([]byte, 32)
+					if _, randErr := rand.Read(cdSecret); randErr != nil {
+						logging.Error("custom-domain HMAC secret generation failed",
+							logging.Err(randErr), logging.Component("ingress"))
+					} else {
+						method := ingress.VerifyMethod(cfg.Node.Provider.CustomDomain.VerifyMethod)
+						verifier := ingress.NewDomainVerifier(method, ingressDomain, cdSecret, nil)
+						autoTLS.SetCustomDomains(cdStore)
+						ingressProxy.SetCustomDomains(cdStore)
+						customDomainAdmin = ingress.NewDomainVerifyHandler(
+							verifier, cdStore, cdSecret, ingressDomain,
+							cfg.Node.Provider.CustomDomain.MaxDomainsPerDeployment)
+						logging.Info("BYO custom-domain ACME enabled",
+							"verify_method", string(verifier.Method()),
+							logging.Component("ingress"))
+					}
+				}
+
 				ingressTLSCfg = autoTLS.TLSConfig()
 				logging.Info("ingress auto-TLS enabled (Let's Encrypt)",
 					"cert_dir", certDir,
@@ -608,6 +652,58 @@ func main() {
 						if cfg.Node.Provider.ReverseTunnelMaxConns > 0 {
 							revOpts = append(revOpts, tunnel.WithMaxConns(cfg.Node.Provider.ReverseTunnelMaxConns))
 						}
+
+						// EDGE-02: hand the same operator takedown kill-switch
+						// (created with the ingress proxy above) to the reverse
+						// tunnel server, so a block is enforced on the reverse
+						// registration/stream-open path in addition to the
+						// proxy-level forward-path enforcement.
+						if takedownBlocklist == nil {
+							takedownBlocklist = tunnel.NewBlocklist()
+						}
+						revOpts = append(revOpts, tunnel.WithBlocklist(takedownBlocklist))
+
+						// EDGE-02: edge-provider role gate. Pluggable: "config"
+						// uses a NodeID allowlist (works with no contract); "onchain"
+						// uses the BunkerEdgeRegistry via the payment service. The
+						// gate only fires for nodes that declare EdgeCapabilities,
+						// so container providers are unaffected.
+						if cfg.Node.Provider.EdgeRole.Enabled {
+							edgeCfg := edge.Config{
+								Mode:           edge.Mode(cfg.Node.Provider.EdgeRole.Mode),
+								AllowedNodeIDs: cfg.Node.Provider.EdgeRole.AllowedNodeIDs,
+								MinTier:        cfg.Node.Provider.EdgeRole.MinStakeTier,
+							}
+							var edgeReader edge.EdgeRegistryReader
+							if edgeCfg.Mode == edge.ModeOnChain && cfg.Node.Provider.EdgeRole.RegistryAddr != "" {
+								if bc := paymentSvc.BaseClient(); bc != nil {
+									if reader, rErr := payment.NewEdgeRegistryContract(bc, common.HexToAddress(cfg.Node.Provider.EdgeRole.RegistryAddr)); rErr != nil {
+										logging.Warn("edge registry contract unavailable; falling back to config allowlist",
+											logging.Err(rErr), logging.Component("edge"))
+									} else {
+										edgeReader = reader
+									}
+								}
+							}
+							edgeChecker := edge.NewEdgeTierChecker(edgeCfg, edgeReader)
+							edgeRegistry := edge.NewEdgeRegistry()
+							revOpts = append(revOpts,
+								tunnel.WithEdgeRegistry(edgeRegistry),
+								tunnel.WithEdgeTierChecker(func(nodeID, walletAddr string) (bool, error) {
+									checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+									defer checkCancel()
+									var nid types.NodeID
+									if b, decErr := hex.DecodeString(nodeID); decErr == nil && len(b) == len(nid) {
+										copy(nid[:], b)
+									}
+									return edgeChecker.IsEdgeAuthorized(checkCtx, nid, common.HexToAddress(walletAddr))
+								}),
+							)
+							logging.Info("edge-provider role gate enabled",
+								"mode", cfg.Node.Provider.EdgeRole.Mode,
+								logging.Component("edge"))
+						}
+
 						reverseServer := tunnel.NewReverseServer(revListener, revOpts...)
 						ingressProxy.SetReverseStreamOpener(reverseServer)
 						util.SafeGoWithName("reverse-tunnel-server", func() {
@@ -782,6 +878,21 @@ func main() {
 		httpAPIServer.SetAdminStore(api.NewAdminMetadataStore(filepath.Join(cfg.Daemon.DataDir, "admin_metadata.json")))
 		httpAPIServer.SetPolicyStore(api.NewPolicyStore(filepath.Join(cfg.Daemon.DataDir, "admin_policies.json")))
 		httpAPIServer.SetCatalogStore(api.NewCatalogStore(filepath.Join(cfg.Daemon.DataDir, "catalog.json")))
+
+		// EDGE-02: mount the operator surfaces behind admin auth. The
+		// custom-domain verify API persists ownership proofs; the takedown
+		// blocklist lets an operator block an abusive subdomain at ingress.
+		if customDomainAdmin != nil {
+			httpAPIServer.SetExtraAdminHandler("/v1/ingress/custom-domain/", customDomainAdmin)
+			logging.Info("custom-domain verification API mounted",
+				"path", "/v1/ingress/custom-domain/", logging.Component("ingress"))
+		}
+		if takedownBlocklist != nil {
+			httpAPIServer.SetExtraAdminHandler("/v1/ingress/blocklist",
+				tunnel.NewBlocklistAdminHandler(takedownBlocklist))
+			logging.Info("takedown blocklist API mounted",
+				"path", "/v1/ingress/blocklist", logging.Component("ingress"))
+		}
 
 		// ── P0 Services ──
 

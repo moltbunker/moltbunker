@@ -15,11 +15,11 @@ import (
 
 // PaymentService provides a unified interface for all payment operations
 type PaymentService struct {
-	config          *PaymentServiceConfig
-	baseClient      *BaseClient
-	tokenContract   *TokenContract
-	stakingContract *StakingContract
-	escrowContract  *EscrowContract
+	config           *PaymentServiceConfig
+	baseClient       *BaseClient
+	tokenContract    *TokenContract
+	stakingContract  *StakingContract
+	escrowContract   *EscrowContract
 	slashingContract *SlashingContract
 
 	// Governance contracts
@@ -56,16 +56,16 @@ type PaymentServiceConfig struct {
 	BlockConfirmations int
 
 	// Contract addresses
-	TokenAddress              common.Address
-	RegistryAddress           common.Address
-	EscrowAddress             common.Address
-	StakingAddress            common.Address
-	SlashingAddress           common.Address
-	DelegationAddress         common.Address
-	ReputationAddress         common.Address
-	VerificationAddress       common.Address
-	PricingAddress            common.Address
-	SubdomainRegistryAddress  common.Address
+	TokenAddress             common.Address
+	RegistryAddress          common.Address
+	EscrowAddress            common.Address
+	StakingAddress           common.Address
+	SlashingAddress          common.Address
+	DelegationAddress        common.Address
+	ReputationAddress        common.Address
+	VerificationAddress      common.Address
+	PricingAddress           common.Address
+	SubdomainRegistryAddress common.Address
 
 	// Wallet (nil for read-only mode)
 	PrivateKey *ecdsa.PrivateKey
@@ -252,6 +252,13 @@ func (ps *PaymentService) IsConnected() bool {
 // IsMockMode returns true if running in mock mode
 func (ps *PaymentService) IsMockMode() bool {
 	return ps.config.MockMode
+}
+
+// BaseClient returns the underlying Base RPC client, or nil in mock mode / when
+// not connected. Used by EDGE-02 to construct the on-chain edge-registry reader
+// (NewEdgeRegistryContract) from the daemon's existing RPC connection.
+func (ps *PaymentService) BaseClient() *BaseClient {
+	return ps.baseClient
 }
 
 // GetWalletAddress returns the wallet address

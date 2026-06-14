@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestHostPolicy_ValidResolving(t *testing.T) {
@@ -60,7 +61,28 @@ func TestHostPolicy_WrongDomainSuffix(t *testing.T) {
 	if err == nil {
 		t.Error("expected wrong domain suffix to be rejected")
 	}
+	// No custom-domain store wired: original "not under" semantics preserved.
 	if !strings.Contains(err.Error(), "not under") {
 		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestHostPolicy_CustomDomainVerified(t *testing.T) {
+	a := NewAutoTLSConfig(t.TempDir(), "moltbunker.dev", "test@example.com", nil)
+	store := NewDomainOwnershipStore(time.Hour)
+	store.Store("app.customer.com", "dep-123", "", MethodCNAME)
+	a.SetCustomDomains(store)
+
+	if err := a.hostPolicy(context.Background(), "app.customer.com"); err != nil {
+		t.Errorf("expected verified custom domain to be accepted, got %v", err)
+	}
+}
+
+func TestHostPolicy_CustomDomainUnverified(t *testing.T) {
+	a := NewAutoTLSConfig(t.TempDir(), "moltbunker.dev", "test@example.com", nil)
+	a.SetCustomDomains(NewDomainOwnershipStore(time.Hour)) // empty store
+
+	if err := a.hostPolicy(context.Background(), "app.customer.com"); err == nil {
+		t.Error("expected unverified custom domain to be rejected")
 	}
 }

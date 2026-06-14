@@ -11,6 +11,19 @@ package types
 // tier enum.
 const StakingTierEdge StakingTier = "edge"
 
+// NodeRoleEdge is the edge-provider node role: a stake-gated node that
+// terminates TLS, runs the L7 WAF, and accepts reverse tunnels from container
+// hosts (Approach A). It is additive — NodeRole.IsValid() has a default false
+// branch, so adding this constant does not change validation of the existing
+// provider/requester/hybrid roles.
+const NodeRoleEdge NodeRole = "edge"
+
+// EdgeMinStakeTier documents the minimum staking tier an edge provider is
+// expected to hold. The on-chain BunkerEdgeRegistry enforces the actual stake;
+// this constant is the daemon-side default the config gate references when no
+// explicit minimum is configured.
+const EdgeMinStakeTier StakingTier = StakingTierBronze
+
 // IsEdgeTier reports whether the given staking tier is the edge-provider role.
 func IsEdgeTier(t StakingTier) bool {
 	return t == StakingTierEdge
