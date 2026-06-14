@@ -16,28 +16,28 @@ import (
 
 	"golang.org/x/time/rate"
 
+	"github.com/moltbunker/moltbunker/internal/agent"
 	"github.com/moltbunker/moltbunker/internal/client"
 	"github.com/moltbunker/moltbunker/internal/cloning"
 	"github.com/moltbunker/moltbunker/internal/config"
+	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/daemon"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/metrics"
-	"github.com/moltbunker/moltbunker/internal/snapshot"
-	"github.com/moltbunker/moltbunker/internal/agent"
-	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/proxy"
+	"github.com/moltbunker/moltbunker/internal/snapshot"
 	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
 )
 
 // Server is the external HTTP API server
 type Server struct {
-	config          *ServerConfig
-	fullConfig      *config.Config // Full app config for fallback values
-	httpServer      *http.Server
-	tlsServer       *http.Server
-	mu              sync.RWMutex
-	running         bool
+	config     *ServerConfig
+	fullConfig *config.Config // Full app config for fallback values
+	httpServer *http.Server
+	tlsServer  *http.Server
+	mu         sync.RWMutex
+	running    bool
 
 	// Core components
 	daemonAPI       *daemon.APIServer
@@ -46,19 +46,19 @@ type Server struct {
 	cloningManager  *cloning.Manager
 
 	// Daemon bridge for forwarding requests
-	daemonBridge    *DaemonBridge
+	daemonBridge *DaemonBridge
 
 	// API key manager
-	apiKeyManager   *APIKeyManager
+	apiKeyManager *APIKeyManager
 
 	// Wallet authentication manager (permissionless)
-	walletAuth      *WalletAuthManager
+	walletAuth *WalletAuthManager
 
 	// WebSocket hub
-	wsHub           *WebSocketHub
+	wsHub *WebSocketHub
 
 	// Exec session manager
-	execSessions    *ExecSessionManager
+	execSessions *ExecSessionManager
 
 	// Metrics collector
 	metricsCollector *metrics.Collector
@@ -74,8 +74,13 @@ type Server struct {
 	crawlHandler   *crawl.RESTHandler
 	agentHandler   *agent.RESTHandler
 
+	// Extra admin-gated handlers registered by the daemon at startup
+	// (e.g. EDGE-02 custom-domain verification + takedown blocklist). Each is
+	// mounted at its prefix behind the admin middleware in buildRouter.
+	extraAdminHandlers map[string]http.Handler
+
 	// Per-IP rate limiters
-	rateLimiters    sync.Map
+	rateLimiters sync.Map
 
 	// Rate limiter cleanup control
 	rateLimitCtx    context.Context
@@ -91,31 +96,31 @@ type rateLimiterEntry struct {
 // ServerConfig configures the HTTP API server
 type ServerConfig struct {
 	// HTTP settings
-	HTTPAddr        string `yaml:"http_addr"`        // e.g., ":8080"
-	HTTPSAddr       string `yaml:"https_addr"`       // e.g., ":8443"
-	EnableHTTPS     bool   `yaml:"enable_https"`
-	TLSCertFile     string `yaml:"tls_cert_file"`
-	TLSKeyFile      string `yaml:"tls_key_file"`
+	HTTPAddr    string `yaml:"http_addr"`  // e.g., ":8080"
+	HTTPSAddr   string `yaml:"https_addr"` // e.g., ":8443"
+	EnableHTTPS bool   `yaml:"enable_https"`
+	TLSCertFile string `yaml:"tls_cert_file"`
+	TLSKeyFile  string `yaml:"tls_key_file"`
 
 	// Daemon connection
 	DaemonSocketPath string `yaml:"daemon_socket_path"`
 	DaemonPoolSize   int    `yaml:"daemon_pool_size"`
 
 	// Rate limiting
-	RateLimit       int    `yaml:"rate_limit"`        // Requests per minute
-	RateLimitBurst  int    `yaml:"rate_limit_burst"`
+	RateLimit      int `yaml:"rate_limit"` // Requests per minute
+	RateLimitBurst int `yaml:"rate_limit_burst"`
 
 	// Authentication
 	EnableAuth      bool   `yaml:"enable_auth"`
-	APIKeyHeader    string `yaml:"api_key_header"`    // Default: X-API-Key
+	APIKeyHeader    string `yaml:"api_key_header"` // Default: X-API-Key
 	APIKeyStorePath string `yaml:"api_key_store_path"`
 
 	// Proxy trust (only enable behind a trusted reverse proxy like Cloudflare)
 	TrustProxy bool `yaml:"trust_proxy"`
 
 	// CORS
-	EnableCORS      bool     `yaml:"enable_cors"`
-	AllowedOrigins  []string `yaml:"allowed_origins"`
+	EnableCORS     bool     `yaml:"enable_cors"`
+	AllowedOrigins []string `yaml:"allowed_origins"`
 
 	// Timeouts
 	ReadTimeout       time.Duration `yaml:"read_timeout"`
@@ -258,6 +263,22 @@ func (s *Server) SetCrawlHandler(handler *crawl.RESTHandler) {
 // SetAgentHandler sets the agent REST handler for AI agent runtime API.
 func (s *Server) SetAgentHandler(handler *agent.RESTHandler) {
 	s.agentHandler = handler
+}
+
+// SetExtraAdminHandler registers an additional handler mounted at prefix and
+// served behind the admin auth middleware. Used by the daemon at startup to
+// expose operator surfaces that live in other packages (EDGE-02 custom-domain
+// verification and the takedown blocklist) without those packages depending on
+// internal/api. Must be called before Start. The prefix is matched with a
+// trailing-slash subtree (e.g. "/v1/ingress/custom-domain/").
+func (s *Server) SetExtraAdminHandler(prefix string, handler http.Handler) {
+	if handler == nil || prefix == "" {
+		return
+	}
+	if s.extraAdminHandlers == nil {
+		s.extraAdminHandlers = make(map[string]http.Handler)
+	}
+	s.extraAdminHandlers[prefix] = handler
 }
 
 // Start starts the HTTP API server
@@ -522,6 +543,16 @@ func (s *Server) buildRouter() http.Handler {
 			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "read") },
 			func(h http.HandlerFunc) http.HandlerFunc { return s.withPermissionMiddleware(h, "write") },
 		)
+	}
+
+	// Extra admin-gated handlers registered by the daemon (EDGE-02:
+	// custom-domain verification + takedown blocklist). Mounted behind admin
+	// auth so only operators can verify domains or take subdomains down.
+	for prefix, h := range s.extraAdminHandlers {
+		handler := h // capture
+		mux.HandleFunc(prefix, s.withAdminMiddleware(func(w http.ResponseWriter, r *http.Request) {
+			handler.ServeHTTP(w, r)
+		}))
 	}
 
 	// Health endpoints (no auth required)
