@@ -4,14 +4,16 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	goruntime "runtime"
 	"os"
+	"os/user"
+	goruntime "runtime"
 	"strings"
 
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/oci"
 	"github.com/opencontainers/runtime-spec/specs-go"
 
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/security"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
@@ -113,9 +115,18 @@ func (se *SecurityEnforcer) BuildOCISpecOpts() []oci.SpecOpts {
 		opts = append(opts, WithSeccompProfile(se.profile.SeccompProfile, se.profile.BlockedSyscalls, se.profile.AllowedSyscalls))
 	}
 
-	// AppArmor profile — only apply if running on Linux and profile is loaded
-	if se.profile.AppArmorProfile != "" && isAppArmorProfileLoaded(se.profile.AppArmorProfile) {
-		opts = append(opts, WithAppArmorProfile(se.profile.AppArmorProfile))
+	// AppArmor profile — only apply if running on Linux and profile is loaded.
+	// R9: when a profile is requested but NOT present in the kernel, log a Debug
+	// line so an operator can see the confinement gap (and run `moltbunker doctor`
+	// to load it) instead of the gate silently no-op'ing.
+	if se.profile.AppArmorProfile != "" {
+		if isAppArmorProfileLoaded(se.profile.AppArmorProfile) {
+			opts = append(opts, WithAppArmorProfile(se.profile.AppArmorProfile))
+		} else {
+			logging.Debug("AppArmor profile not loaded; container will run without AppArmor confinement — run `moltbunker node doctor` to load it",
+				"profile", se.profile.AppArmorProfile,
+				logging.Component("apparmor"))
+		}
 	}
 
 	// SELinux label
@@ -293,32 +304,77 @@ func WithUlimits(ulimits types.UlimitConfig) oci.SpecOpts {
 	}
 }
 
-// WithUserNamespace enables user namespace mapping
+// WithUserNamespace enables user-namespace isolation for tenant workloads.
+//
+// OPT-IN ONLY: DeploymentSecurityProfile leaves UserNamespace=false by default
+// (see pkg/types/security.go). This option emits the OCI UID/GID mappings but the
+// rootfs snapshot is NOT remapped — containers are created with a plain overlay
+// snapshot owned by host UID 0. With a userns active, container-UID-0 maps to host
+// UID <subStart>, so the host-UID-0 rootfs appears as nobody/overflow inside the
+// namespace and most real images fail to start. Enabling userns for real therefore
+// requires a REMAPPED snapshot — containerd's WithRemapperLabels
+// (containerd.io/snapshot/uidmapping + gidmapping) or an idmapped-mount-capable
+// snapshotter that ID-shifts the rootfs into the host subordinate range to match
+// these mappings. That snapshot-remap wiring is the R11-gated follow-up (needs real
+// Linux container-startup CI). Do NOT flip the profile default to ON until it lands.
+//
+// R12: This is gated by CheckUserNSCompat. The previous behavior mapped only a
+// single ID (container root -> host nobody 65534), which is too narrow to host a
+// real container (anything that runs as a non-zero UID inside the container had no
+// host UID to land on). When the host supports unprivileged user namespaces and the
+// daemon's user has a subordinate ID range, this emits the standard 65536-entry
+// mapping (container 0..65535 -> host <subStart>..<subStart+65535>), matching what
+// Docker/containerd's rootless support uses.
+//
+// On a host that disables unprivileged user namespaces (e.g. sysctl
+// kernel.unprivileged_userns_clone=0, or no /etc/subuid range), it degrades
+// gracefully: it logs a structured Warning and returns without touching the spec,
+// so the container still starts (without userns) rather than failing the deploy.
+// On non-Linux platforms CheckUserNSCompat always reports unsupported, so this is
+// a no-op there.
+//
+// NOTE(R16): when userns is active, XFS disk-quota project IDs are assigned to the
+// host UID range (hostStart), not to container UID 0 — quotactl/xfs_quota reports
+// bytes against the host subordinate user, so reports must be correlated back to
+// the container by project ID, not by the in-container UID.
 func WithUserNamespace() oci.SpecOpts {
 	return func(_ context.Context, _ oci.Client, _ *containers.Container, s *specs.Spec) error {
+		compat := CheckUserNSCompat()
+		if !compat.Supported {
+			logging.Warn("user namespace requested but not enabled on this host; container will run in the host user namespace",
+				"reason", compat.Reason,
+				logging.Component("userns"))
+			return nil
+		}
+
+		uname := "root"
+		if u, err := user.Current(); err == nil && u.Username != "" {
+			uname = u.Username
+		}
+		hostStart, size, err := ResolveSubUIDRange(uname)
+		if err != nil {
+			logging.Warn("user namespace requested but no usable subordinate ID range; running without userns",
+				"reason", err.Error(),
+				logging.Component("userns"))
+			return nil
+		}
+
 		if s.Linux == nil {
 			s.Linux = &specs.Linux{}
 		}
 
-		// Enable user namespace with default mapping
 		s.Linux.Namespaces = append(s.Linux.Namespaces, specs.LinuxNamespace{
 			Type: specs.UserNamespace,
 		})
 
-		// Map container root to unprivileged user on host
+		// Map the full container UID/GID space (0..65535) onto the host
+		// subordinate range so processes running as any in-container UID land on
+		// an unprivileged host UID.
 		s.Linux.UIDMappings = []specs.LinuxIDMapping{
-			{
-				ContainerID: 0,
-				HostID:      65534, // nobody
-				Size:        1,
-			},
+			{ContainerID: 0, HostID: hostStart, Size: size},
 		}
 		s.Linux.GIDMappings = []specs.LinuxIDMapping{
-			{
-				ContainerID: 0,
-				HostID:      65534, // nogroup
-				Size:        1,
-			},
+			{ContainerID: 0, HostID: hostStart, Size: size},
 		}
 
 		return nil

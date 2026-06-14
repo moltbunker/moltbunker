@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+
+	"github.com/moltbunker/moltbunker/internal/runtime"
 )
 
 // Doctor orchestrates health checks for the moltbunker system
@@ -49,6 +51,23 @@ func NewWithWriter(opts DoctorOptions, w io.Writer, useColors bool) *Doctor {
 // AddChecker adds a custom checker
 func (d *Doctor) AddChecker(c Checker) {
 	d.checkers = append(d.checkers, c)
+}
+
+// SetKataConfig replaces the nil-constructed KataPIDsChecker (registered by
+// default for standalone doctor runs) with one holding the real Kata config and
+// the daemon's effective OCI pids.limit, so the R17 PID-limit check is evaluated
+// against the actual in-guest PID ceiling (the kata-agent-enforced OCI pids.limit)
+// rather than only the inert hypervisor annotation. Callers that have loaded config
+// (e.g. the daemon) should call this after constructing the Doctor, passing
+// Runtime.DefaultResources.PIDLimit as ociPIDLimit. No-op if no KataPIDsChecker is
+// registered.
+func (d *Doctor) SetKataConfig(cfg *runtime.KataConfig, ociPIDLimit int) {
+	for i, c := range d.checkers {
+		if _, ok := c.(*KataPIDsChecker); ok {
+			d.checkers[i] = NewKataPIDsCheckerWithOCILimit(cfg, ociPIDLimit)
+			return
+		}
+	}
 }
 
 // Run executes all checks and returns a report

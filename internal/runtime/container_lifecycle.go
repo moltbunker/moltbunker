@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	goruntime "runtime"
@@ -17,6 +18,35 @@ import (
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/pkg/types"
 )
+
+// applyDiskQuota applies the configured XFS disk quota for a container and
+// surfaces failures as visible, structured warnings. The non-XFS case (R16) gets a
+// filesystem-specific message; all OTHER SetDiskQuota errors (xfs_quota CLI errors,
+// FS_IOC_FSSETXATTR ioctl errno, upperdir parse failures) are also logged at Warn
+// rather than swallowed — otherwise a misconfigured XFS host would silently run
+// containers with NO disk limit, which is exactly the silent-no-op class R16 set
+// out to eliminate. All cases remain non-fatal: container creation is never aborted
+// here (the disk_enforcer provides best-effort secondary enforcement).
+func (cc *ContainerdClient) applyDiskQuota(ctx context.Context, id string, limitBytes int64) {
+	err := cc.SetDiskQuota(ctx, id, limitBytes)
+	if err == nil {
+		return
+	}
+	var notXFS *DiskQuotaNotSupportedError
+	if errors.As(err, &notXFS) {
+		logging.Warn("disk quota unavailable on non-XFS filesystem; container disk usage will not be limited",
+			"filesystem_type", notXFS.FS,
+			logging.ContainerID(id),
+			logging.Component("disk_quota"))
+		return
+	}
+	// Other errors are non-fatal but must be visible (R16): a real XFS-host quota
+	// failure means the container runs with no disk limit, so log it at Warn.
+	logging.Warn("disk quota not applied; container disk usage will not be limited",
+		logging.ContainerID(id),
+		logging.Err(err),
+		logging.Component("disk_quota"))
+}
 
 // Note: runtime name is stored in ContainerdClient.runtimeName (set via NewContainerdClient).
 // Constants for runtime names are in runtime_detect.go.
@@ -72,6 +102,23 @@ func (cc *ContainerdClient) kataAnnotations() oci.SpecOpts {
 	}
 	if cc.kataConfig.ImagePath != "" {
 		annotations["io.katacontainers.config.hypervisor.image"] = cc.kataConfig.ImagePath
+	}
+	// R17: the EFFECTIVE PID ceiling for Kata VM workloads is the OCI
+	// linux.resources.pids.limit (wired in CreateContainer via oci.WithPidsLimit;
+	// defaults to 100 on the deploy path). The kata-agent enforces that cgroup
+	// pids.limit INSIDE the guest, so it is the mechanism that actually bounds
+	// process count for VM workloads — not this annotation.
+	//
+	// NOTE: io.katacontainers.config.hypervisor.default_pids is NOT a recognized
+	// Kata hypervisor annotation (Kata's hypervisor annotation set is
+	// default_memory/default_vcpus/kernel/image/initrd/machine_type/etc.), and Kata
+	// additionally drops any annotation not in the runtime TOML enable_annotations
+	// allow-list. So this is almost certainly INERT today. It is emitted only as a
+	// forward-looking hint and requires (a) an enable_annotations entry in the Kata
+	// runtime config and (b) validation against a real Kata shim under R11 before it
+	// can be relied on. Do not treat it as the PID ceiling — the OCI pids.limit is.
+	if cc.kataConfig.DefaultPIDs > 0 {
+		annotations["io.katacontainers.config.hypervisor.default_pids"] = strconv.Itoa(cc.kataConfig.DefaultPIDs)
 	}
 
 	if len(annotations) == 0 {
@@ -182,11 +229,8 @@ func (cc *ContainerdClient) CreateContainer(ctx context.Context, id string, imag
 	cc.containers[id] = managed
 	cc.mu.Unlock()
 
-	// Apply XFS disk quota if configured
-	if err := cc.SetDiskQuota(ctx, id, resources.DiskLimit); err != nil {
-		// Non-fatal: disk_enforcer provides secondary enforcement
-		_ = err
-	}
+	// Apply XFS disk quota if configured (R16: warns on non-XFS, non-fatal).
+	cc.applyDiskQuota(ctx, id, resources.DiskLimit)
 
 	return managed, nil
 }
@@ -240,10 +284,8 @@ func (cc *ContainerdClient) CreateContainerWithSpec(ctx context.Context, id stri
 	cc.containers[id] = managed
 	cc.mu.Unlock()
 
-	// Apply XFS disk quota if configured
-	if err := cc.SetDiskQuota(ctx, id, resources.DiskLimit); err != nil {
-		_ = err
-	}
+	// Apply XFS disk quota if configured (R16: warns on non-XFS, non-fatal).
+	cc.applyDiskQuota(ctx, id, resources.DiskLimit)
 
 	return managed, nil
 }
@@ -395,10 +437,8 @@ func (cc *ContainerdClient) CreateSecureContainer(ctx context.Context, config Se
 	cc.containers[config.ID] = managed
 	cc.mu.Unlock()
 
-	// Apply XFS disk quota if configured
-	if err := cc.SetDiskQuota(ctx, config.ID, config.Resources.DiskLimit); err != nil {
-		_ = err
-	}
+	// Apply XFS disk quota if configured (R16: warns on non-XFS, non-fatal).
+	cc.applyDiskQuota(ctx, config.ID, config.Resources.DiskLimit)
 
 	// R20 — persist the security profile so daemon restart can restore it
 	// instead of silently downgrading to the default. Non-fatal: a write

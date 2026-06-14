@@ -25,6 +25,44 @@ const (
 	snapshotterRootPath = "/var/lib/containerd/io.containerd.snapshotter.v1.overlayfs"
 )
 
+// Filesystem magic numbers from <linux/magic.h>, used by detectFilesystemType to
+// map statfs f_type into a human-readable name (R16).
+const (
+	magicXFS     = 0x58465342 // XFS_SUPER_MAGIC
+	magicEXT     = 0xEF53     // EXT2/3/4_SUPER_MAGIC
+	magicOverlay = 0x794C7630 // OVERLAYFS_SUPER_MAGIC
+	magicTmpfs   = 0x01021994 // TMPFS_MAGIC
+	magicBtrfs   = 0x9123683E // BTRFS_SUPER_MAGIC
+	magicZFS     = 0x2FC12FC1 // ZFS_SUPER_MAGIC
+)
+
+// detectFilesystemType returns a human-readable filesystem name for the
+// filesystem backing path, by inspecting statfs f_type. Unknown types are
+// reported as a hex magic string so the value is still actionable in logs.
+func detectFilesystemType(path string) (string, error) {
+	var st unix.Statfs_t
+	if err := unix.Statfs(path, &st); err != nil {
+		return "", fmt.Errorf("statfs %s: %w", path, err)
+	}
+	// #nosec G115 -- st.Type is a kernel-supplied filesystem magic; comparison only.
+	switch int64(st.Type) {
+	case magicXFS:
+		return "xfs", nil
+	case magicEXT:
+		return "ext4", nil
+	case magicOverlay:
+		return "overlay", nil
+	case magicTmpfs:
+		return "tmpfs", nil
+	case magicBtrfs:
+		return "btrfs", nil
+	case magicZFS:
+		return "zfs", nil
+	default:
+		return fmt.Sprintf("unknown(0x%x)", uint64(st.Type)), nil // #nosec G115 -- magic for display only
+	}
+}
+
 // fsxattr mirrors the Linux struct fsxattr used by FS_IOC_FS{GET,SET}XATTR.
 type fsxattr struct {
 	Xflags     uint32
@@ -39,8 +77,11 @@ type fsxattr struct {
 // It assigns a project ID (derived from the containerd snapshot number) and sets
 // a hard block limit. New files in the upper dir inherit the project ID automatically.
 //
-// On non-XFS filesystems or if xfs_quota is missing, it logs a warning and returns nil
-// (graceful degradation — the disk_enforcer provides secondary enforcement).
+// R16: on a non-XFS snapshotter filesystem it returns a typed
+// DiskQuotaNotSupportedError (instead of the old silent Warn+nil) so the caller can
+// surface a visible, structured warning that disk usage is NOT being limited. The
+// error is non-fatal by contract — the caller does not abort container creation;
+// the disk_enforcer provides best-effort secondary enforcement.
 func (cc *ContainerdClient) SetDiskQuota(ctx context.Context, containerID string, limitBytes int64) error {
 	if limitBytes <= 0 {
 		return nil
@@ -52,6 +93,22 @@ func (cc *ContainerdClient) SetDiskQuota(ctx context.Context, containerID string
 	}
 	if projectID < 0 {
 		return fmt.Errorf("invalid snapshot project ID %d", projectID)
+	}
+
+	// R16: fail-fast on a non-XFS snapshotter filesystem. XFS project quotas only
+	// work on XFS; on ext4/overlay/tmpfs the ioctl below would either error or
+	// silently no-op. Surface it as a typed error so the caller can warn visibly.
+	fsType, fsErr := detectFilesystemType(snapshotterRootPath)
+	if fsErr != nil {
+		// Could not stat the snapshotter root — fall through and let the ioctl
+		// report the concrete failure rather than guessing.
+		logging.Warn("disk quota: could not detect snapshotter filesystem type",
+			"container_id", containerID,
+			"path", snapshotterRootPath,
+			"error", fsErr.Error(),
+			logging.Component("disk_quota"))
+	} else if fsType != "xfs" {
+		return &DiskQuotaNotSupportedError{FS: fsType}
 	}
 
 	// Set XFS project ID + inheritance flag via ioctl

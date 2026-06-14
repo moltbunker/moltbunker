@@ -453,6 +453,10 @@ type KataConfig struct {
 	KernelPath string `yaml:"kernel_path,omitempty"`
 	// ImagePath overrides the Kata rootfs/initrd path (default: auto-detect)
 	ImagePath string `yaml:"image_path,omitempty"`
+	// DefaultPIDs is the R17 VM-level PID ceiling, emitted as the
+	// io.katacontainers.config.hypervisor.default_pids annotation for Kata VM
+	// workloads. 0 = Kata default (unbounded). Recommended: 1024.
+	DefaultPIDs int `yaml:"default_pids,omitempty"`
 }
 
 // SecurityConfig contains security and container opacity settings
@@ -498,6 +502,13 @@ type SecurityConfig struct {
 	// MBENC2. Default false (lazy migration on next write). Use after a key
 	// change or to eagerly retag a legacy (MBENC1) database.
 	StateKeyRotationSweep bool `yaml:"state_key_rotation_sweep"`
+
+	// R9 (HARDEN-01) — AppArmor profile auto-load. When true (the default set by
+	// DefaultConfig), the daemon loads the embedded moltbunker-container AppArmor
+	// profile into the kernel on startup (Linux only) so the AppArmor confinement
+	// gate fires on a fresh install instead of silently no-op'ing. Set to false to
+	// manage the profile out-of-band (e.g. via a packaged /etc/apparmor.d file).
+	AppArmorAutoLoad bool `yaml:"apparmor_auto_load"`
 }
 
 // RedundancyConfig contains redundancy settings
@@ -781,8 +792,9 @@ func DefaultConfig() *Config {
 			Namespace:        "moltbunker",
 			RuntimeName:      "auto",
 			Kata: KataConfig{
-				VMMemoryMB: 256,
-				VMCPUs:     1,
+				VMMemoryMB:  256,
+				VMCPUs:      1,
+				DefaultPIDs: 1024, // R17: bound Kata VM workloads to 1024 PIDs by default
 			},
 			Molt: MoltRuntimeConfig{
 				Enabled:         false, // Opt-in: provider must explicitly enable
@@ -821,8 +833,9 @@ func DefaultConfig() *Config {
 				"TLS_CHACHA20_POLY1305_SHA256",
 				"TLS_AES_128_GCM_SHA256",
 			},
-			CertPinning: true,
-			MutualTLS:   true,
+			CertPinning:      true,
+			MutualTLS:        true,
+			AppArmorAutoLoad: true, // R9: load the embedded AppArmor profile on startup (Linux)
 		},
 		Redundancy: RedundancyConfig{
 			ReplicaCount:        3,

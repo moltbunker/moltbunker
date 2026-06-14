@@ -73,6 +73,14 @@ func TestDefaultConfig(t *testing.T) {
 	if !cfg.Security.MutualTLS {
 		t.Error("expected mutual TLS enabled by default")
 	}
+
+	// HARDEN-01 defaults.
+	if !cfg.Security.AppArmorAutoLoad {
+		t.Error("R9: expected AppArmorAutoLoad enabled by default")
+	}
+	if cfg.Runtime.Kata.DefaultPIDs != 1024 {
+		t.Errorf("R17: expected Kata.DefaultPIDs default 1024, got %d", cfg.Runtime.Kata.DefaultPIDs)
+	}
 }
 
 func TestValidate(t *testing.T) {
@@ -197,9 +205,9 @@ func TestValidate(t *testing.T) {
 
 func TestIsProviderIsRequester(t *testing.T) {
 	tests := []struct {
-		role         types.NodeRole
-		isProvider   bool
-		isRequester  bool
+		role        types.NodeRole
+		isProvider  bool
+		isRequester bool
 	}{
 		{types.NodeRoleProvider, true, false},
 		{types.NodeRoleRequester, false, true},

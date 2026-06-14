@@ -42,7 +42,7 @@ func TestDeploymentSecurityProfile_Capabilities(t *testing.T) {
 		"CAP_SETFCAP":          true,
 		"CAP_SETPCAP":          true,
 		"CAP_NET_BIND_SERVICE": true,
-		"CAP_SYS_CHROOT":      true,
+		"CAP_SYS_CHROOT":       true,
 		"CAP_KILL":             true,
 		"CAP_AUDIT_WRITE":      true,
 	}
@@ -82,8 +82,10 @@ func TestDeploymentSecurityProfile_Capabilities(t *testing.T) {
 func TestDeploymentSecurityProfile_Namespaces(t *testing.T) {
 	profile := DeploymentSecurityProfile()
 
-	if profile.UserNamespace {
-		t.Error("user namespace should be disabled (breaks most images)")
+	// R12: user namespace is now enabled by default. The runtime degrades it
+	// gracefully via CheckUserNSCompat on hosts that disable unprivileged userns.
+	if !profile.UserNamespace {
+		t.Error("user namespace should be enabled (R12)")
 	}
 	if !profile.PIDNamespace {
 		t.Error("PID namespace should be enabled")
@@ -182,11 +184,15 @@ func TestDeploymentSecurityProfile_Ulimits(t *testing.T) {
 	}
 }
 
-func TestDeploymentSecurityProfile_NoAppArmor(t *testing.T) {
+func TestDeploymentSecurityProfile_AppArmor(t *testing.T) {
 	profile := DeploymentSecurityProfile()
 
-	if profile.AppArmorProfile != "" {
-		t.Errorf("deployment profile should have empty AppArmor profile, got %q", profile.AppArmorProfile)
+	// R9: the deployment profile now names the moltbunker-container AppArmor
+	// profile. The runtime applies it only when it is actually loaded in the
+	// kernel (BuildOCISpecOpts guards on isAppArmorProfileLoaded), so naming it
+	// here is safe even before the AppArmorLoader has loaded it.
+	if profile.AppArmorProfile != "moltbunker-container" {
+		t.Errorf("deployment profile should request moltbunker-container AppArmor profile, got %q", profile.AppArmorProfile)
 	}
 }
 
@@ -201,8 +207,11 @@ func TestDeploymentSecurityProfile_DiffersFromDefault(t *testing.T) {
 	if deploy.ReadOnlyRoot == def.ReadOnlyRoot {
 		t.Error("deployment profile should differ from default on read-only root")
 	}
-	if deploy.UserNamespace == def.UserNamespace {
-		t.Error("deployment profile should differ from default on user namespace")
+	// NOTE: as of R12 both profiles enable UserNamespace, so it is no longer a
+	// distinguishing field; DisableAttach remains a clear differentiator (default
+	// disables interactive access, deployment allows it).
+	if deploy.DisableAttach == def.DisableAttach {
+		t.Error("deployment profile should differ from default on attach access")
 	}
 	if deploy.SeccompProfile == def.SeccompProfile {
 		t.Error("deployment profile should use different seccomp mode than default")

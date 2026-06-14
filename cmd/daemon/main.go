@@ -32,6 +32,7 @@ import (
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/proxy"
+	"github.com/moltbunker/moltbunker/internal/runtime"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
 	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/internal/storage"
@@ -142,6 +143,22 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// R9 (HARDEN-01): load the embedded moltbunker-container AppArmor profile into
+	// the kernel so the runtime's AppArmor confinement gate fires on a fresh
+	// install instead of silently no-op'ing. Linux-only (the loader is a no-op on
+	// other platforms) and non-fatal: a failure (missing apparmor_parser, AppArmor
+	// not enabled) only logs a warning — the deploy still proceeds without AA
+	// confinement. Operators can also load it via `moltbunker doctor --fix`.
+	if cfg.Security.AppArmorAutoLoad && goruntime.GOOS == "linux" {
+		if aaErr := (&runtime.AppArmorLoader{}).EnsureProfile(ctx, runtime.AppArmorProfileName, ""); aaErr != nil {
+			logging.Warn("AppArmor profile auto-load failed; containers will run without AppArmor confinement until loaded",
+				logging.Err(aaErr), logging.Component("apparmor"))
+		} else {
+			logging.Info("AppArmor profile auto-loaded",
+				"profile", runtime.AppArmorProfileName, logging.Component("apparmor"))
+		}
+	}
 
 	// Run JSON → bbolt migration (no-op if already migrated or no JSON files)
 	if err := state.MigrateFromJSON(ctx, stateStore, cfg.Daemon.DataDir); err != nil {
