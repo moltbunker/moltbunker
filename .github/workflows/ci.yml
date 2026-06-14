@@ -27,6 +27,38 @@ jobs:
           version: latest
           args: --timeout=5m
 
+  release-lint:
+    name: Release Config Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      # Validate the GoReleaser config (schema + template syntax) without
+      # running a release. Catches misconfigured signs/sboms stanzas before a
+      # tag push ever reaches the keyless-signing path.
+      - name: GoReleaser check
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+          # Pin must match the version used in release.yml so `check` validates
+          # against the exact tool that will run the release.
+          version: '~> v2.4'
+          args: check
+
+      # ShellCheck the release-integrity shell scripts. Catches POSIX
+      # portability issues and common bash pitfalls in the installer and the
+      # standalone verifier.
+      - name: ShellCheck install + verify scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          scandir: ./scripts
+
   test:
     name: Test
     runs-on: ubuntu-latest
