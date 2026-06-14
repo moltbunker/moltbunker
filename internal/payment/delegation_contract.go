@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/moltbunker/moltbunker/internal/logging"
+	"github.com/moltbunker/moltbunker/internal/payment/bindings"
 )
 
 // DelegationContract provides interface to the BunkerDelegation smart contract.
@@ -22,6 +23,15 @@ type DelegationContract struct {
 	contractABI  abi.ABI
 	contractAddr common.Address
 	mockMode     bool
+
+	// caller is the abigen-generated, type-safe read binding (ABIGEN-01 Phase 1).
+	// Read paths (GetDelegation, GetProviderConfig) decode through this instead of
+	// the hand-typed DelegationContractABI + fragile struct assertions. The
+	// contract/contractABI fields above are still used by the Transact methods
+	// until Phase 2 migrates them to the generated Transactor.
+	// TODO(ABIGEN-01-phase2): move Transact methods onto the generated binding and
+	// drop the hand-typed DelegationContractABI + the dual ABI load.
+	caller *bindings.BunkerDelegationCaller
 
 	// Mock state
 	mockDelegations    map[common.Address]*DelegationData
@@ -58,6 +68,17 @@ func NewDelegationContract(baseClient *BaseClient, contractAddr common.Address) 
 
 	client := baseClient.Client()
 	dc.contract = bind.NewBoundContract(contractAddr, parsedABI, client, client, client)
+
+	// ABIGEN-01 Phase 1: build the generated, type-safe read binding. Its ABI
+	// is sourced from contracts/out/BunkerDelegation.sol (canonical), so the
+	// getDelegation/getProviderConfig tuple shapes always match the deployed
+	// contract — closing the silent-decode-mismatch class of bugs that PAY-01
+	// patched by hand.
+	caller, err := bindings.NewBunkerDelegationCaller(contractAddr, client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build delegation caller binding: %w", err)
+	}
+	dc.caller = caller
 
 	return dc, nil
 }
@@ -211,38 +232,6 @@ func (dc *DelegationContract) mockCompleteUndelegate(_ context.Context, index *b
 	return nil, nil
 }
 
-// delegationInfoTuple is the canonical Go shape that go-ethereum unpacks the
-// getDelegation() return tuple into. It must match the on-chain DelegationInfo
-// struct field-for-field, in declaration order:
-//
-//	struct DelegationInfo { address provider; uint128 amount; uint48 delegatedAt; bool active; }
-//
-// go-ethereum decodes uint128/uint48 into *big.Int. Field names (capitalized)
-// map to ABI component names by case-insensitive match. Keeping this as a named
-// type (rather than an inline anonymous struct) makes the decode path stable and
-// grep-able, and is the seam the abigen migration (ABIGEN-01) will replace.
-//
-// TODO(ABIGEN-01): replace with abigen-generated binding.
-type delegationInfoTuple struct {
-	Provider    common.Address
-	Amount      *big.Int
-	DelegatedAt *big.Int
-	Active      bool
-}
-
-// providerConfigTuple is the canonical Go shape getProviderConfig() unpacks
-// into, matching the Go-side ABI tuple declared in DelegationContractABI.
-// rewardCutEffectiveAt is uint48 on-chain and decodes as *big.Int (seconds).
-//
-// TODO(ABIGEN-01): replace with abigen-generated binding.
-type providerConfigTuple struct {
-	RewardCutBps         uint16
-	FeeShareBps          uint16
-	AcceptDelegations    bool
-	PendingRewardCutBps  uint16
-	RewardCutEffectiveAt *big.Int
-}
-
 // GetDelegation returns the delegation data for a delegator.
 func (dc *DelegationContract) GetDelegation(ctx context.Context, delegator common.Address) (*DelegationData, error) {
 	if dc.mockMode {
@@ -260,31 +249,26 @@ func (dc *DelegationContract) GetDelegation(ctx context.Context, delegator commo
 		}, nil
 	}
 
-	// go-ethereum decodes a single tuple return by mapping the output argument
-	// positionally onto the fields of the destination struct. The tuple is
-	// therefore the single field of an outer wrapper, decoded via
-	// UnpackIntoInterface (the bind.Call res[0] path). Asserting on the raw
-	// []interface{} fails because the runtime tuple type is a reflect.StructOf
-	// (with json tags) that is not identical to any named Go type — that
-	// mismatch is exactly the silent-zero bug this PR fixes.
-	var out struct {
-		Info delegationInfoTuple
-	}
-	result := []interface{}{&out}
-	if err := dc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getDelegation", delegator); err != nil {
+	// ABIGEN-01 Phase 1: decode through the generated, type-safe caller. The
+	// returned BunkerDelegationDelegationInfo mirrors the on-chain DelegationInfo
+	// struct exactly (provider address, amount uint128->*big.Int,
+	// delegatedAt uint48->*big.Int, active bool), so there is no positional
+	// struct-assertion to silently mismatch.
+	info, err := dc.caller.GetDelegation(&bind.CallOpts{Context: ctx}, delegator)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get delegation: %w", err)
 	}
 
 	data := &DelegationData{
-		Provider: out.Info.Provider,
+		Provider: info.Provider,
 		Amount:   big.NewInt(0),
-		Active:   out.Info.Active,
+		Active:   info.Active,
 	}
-	if out.Info.Amount != nil {
-		data.Amount = out.Info.Amount
+	if info.Amount != nil {
+		data.Amount = info.Amount
 	}
-	if out.Info.DelegatedAt != nil {
-		data.DelegatedAt = time.Unix(out.Info.DelegatedAt.Int64(), 0)
+	if info.DelegatedAt != nil {
+		data.DelegatedAt = time.Unix(info.DelegatedAt.Int64(), 0)
 	}
 	return data, nil
 }
@@ -310,26 +294,32 @@ func (dc *DelegationContract) GetProviderConfig(ctx context.Context, provider co
 		}, nil
 	}
 
-	// Same single-tuple-output decode pattern as GetDelegation: the tuple is the
-	// single field of an outer wrapper, mapped positionally via the bind.Call
-	// res[0] UnpackIntoInterface path (a raw []interface{} assertion would
-	// silently fail because the runtime tuple type is a reflect.StructOf).
-	var out struct {
-		Config providerConfigTuple
-	}
-	result := []interface{}{&out}
-	if err := dc.contract.Call(&bind.CallOpts{Context: ctx}, &result, "getProviderConfig", provider); err != nil {
+	// ABIGEN-01 Phase 1: decode through the generated caller. The on-chain
+	// ProviderDelegationConfig tuple is
+	//   {rewardCutBps, pendingRewardCutBps, rewardCutEffectiveAt, feeShareBps,
+	//    totalDelegated, acceptingDelegations}
+	// — which the hand-typed DelegationContractABI got wrong (only five fields,
+	// in the wrong order, with acceptDelegations instead of acceptingDelegations
+	// and no totalDelegated). The generated binding always matches the deployed
+	// contract.
+	//
+	// NOTE: cfg.TotalDelegated is decoded by the binding but not carried on the
+	// domain ProviderDelegationConfigData yet; GetTotalDelegatedTo already serves
+	// that value. Surfacing it here (and feeding determineTier in
+	// staking_contract.go) is the C4 follow-up.
+	cfg, err := dc.caller.GetProviderConfig(&bind.CallOpts{Context: ctx}, provider)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get provider config: %w", err)
 	}
 
 	data := &ProviderDelegationConfigData{
-		RewardCutBps:        out.Config.RewardCutBps,
-		FeeShareBps:         out.Config.FeeShareBps,
-		AcceptDelegations:   out.Config.AcceptDelegations,
-		PendingRewardCutBps: out.Config.PendingRewardCutBps,
+		RewardCutBps:        cfg.RewardCutBps,
+		FeeShareBps:         cfg.FeeShareBps,
+		AcceptDelegations:   cfg.AcceptingDelegations,
+		PendingRewardCutBps: cfg.PendingRewardCutBps,
 	}
-	if out.Config.RewardCutEffectiveAt != nil {
-		data.RewardCutEffectiveAt = time.Unix(out.Config.RewardCutEffectiveAt.Int64(), 0)
+	if cfg.RewardCutEffectiveAt != nil {
+		data.RewardCutEffectiveAt = time.Unix(cfg.RewardCutEffectiveAt.Int64(), 0)
 	}
 	return data, nil
 }

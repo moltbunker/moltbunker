@@ -3,7 +3,7 @@
        test-production-verbose clean install lint vet coverage doctor setup setup-linux \
        dev localnet localnet-stop localnet-status localnet-logs localnet-clean \
        docker docker-dev docker-up docker-down release release-snapshot tidy check help \
-       gen-addresses gen-addresses-check
+       gen-addresses gen-addresses-check gen-bindings bindings-check
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -128,6 +128,25 @@ tidy:
 
 check: tidy vet lint test
 	@echo "All checks passed"
+
+# ─── Contract Bindings (codegen) ────────────────────────────────────────────────
+# The generated Go bindings in internal/payment/bindings/ are COMMITTED, so a
+# normal `make build` needs only the Go toolchain. Run gen-bindings only when the
+# Solidity contracts change; it requires forge, jq, and abigen on PATH.
+
+gen-bindings:
+	@command -v jq >/dev/null 2>&1 || { echo "error: 'jq' not on PATH (macOS: brew install jq)"; exit 1; }
+	@command -v abigen >/dev/null 2>&1 || { echo "error: 'abigen' not on PATH (go install github.com/ethereum/go-ethereum/cmd/abigen@latest)"; exit 1; }
+	@command -v forge >/dev/null 2>&1 || [ -x "$(FOUNDRY_BIN)/forge" ] || { echo "error: 'forge' not on PATH (https://getfoundry.sh)"; exit 1; }
+	@echo "Generating contract bindings (forge build -> abigen -> internal/payment/bindings/)..."
+	@PATH="$(FOUNDRY_BIN):$$PATH" go generate ./internal/payment/...
+	@echo "Bindings generated. Review the diff before committing."
+
+bindings-check: gen-bindings
+	@echo "Checking committed bindings match a fresh generation..."
+	@git diff --exit-code -- internal/payment/bindings/ \
+		|| { echo "error: committed bindings differ from generated output; run 'make gen-bindings' and commit."; exit 1; }
+	@echo "Bindings are up to date."
 
 # ─── Localnet ─────────────────────────────────────────────────────────────────
 
@@ -274,6 +293,9 @@ help:
 	@echo "                       (in-repo YAML by default; set ADDR_OUT_WEB/ADDR_OUT_ADMIN/ADDR_OUT_ADMIN_ENV"
 	@echo "                        to also emit the web/web-admin TS + .env.example)"
 	@echo "  gen-addresses-check  Fail if generated address artifacts are stale (CI lint)"
+	@echo "Generate:"
+	@echo "  gen-bindings         Regenerate Go contract bindings (needs forge, jq, abigen)"
+	@echo "  bindings-check       Verify committed bindings match a fresh generation (drift)"
 	@echo ""
 	@echo "Localnet:"
 	@echo "  localnet             Build and start local network (Anvil + contracts + daemon + API)"

@@ -182,11 +182,12 @@ TODO.local.md
 
 # Deploy scripts and keys (contain private keys). Ignore the *contents* of
 # scripts/ (so deploy scripts + keys stay out), but allow-list the public
-# release-integrity scripts below (no secrets — keyless OIDC only).
+# release-integrity + codegen scripts below (no secrets — keyless OIDC only).
 scripts/*
 !scripts/install.sh
 !scripts/install.ps1
 !scripts/verify-release.sh
+!scripts/gen-bindings.sh
 secrets/
 
 # Deployment config (local/generated, do not commit).
