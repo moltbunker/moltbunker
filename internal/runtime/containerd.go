@@ -21,6 +21,12 @@ type KataConfig struct {
 	VMCPUs     int    // VM vCPU count (Kata default applies if 0)
 	KernelPath string // Custom kernel image path
 	ImagePath  string // Custom rootfs/initrd path
+	// DefaultPIDs is the VM-level PID limit surfaced via the
+	// io.katacontainers.config.hypervisor.default_pids annotation (R17). It bounds
+	// the number of processes a Kata VM workload may spawn — host-side pids.max
+	// cannot bound processes inside the guest, so this annotation is the correct
+	// mechanism. 0 = Kata default (unbounded).
+	DefaultPIDs int
 }
 
 // ContainerdClient wraps containerd client with full lifecycle management

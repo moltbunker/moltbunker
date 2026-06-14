@@ -209,6 +209,12 @@ configs/*
 # addresses-fragment.yaml is a deliberately committed codegen artifact
 # (human-readable reference generated from deployments/addresses.json). See ADDR-01.
 !configs/addresses-fragment.yaml
+# configs/apparmor/ holds the committed moltbunker-container AppArmor profile and
+# its SELinux note — shipped in-repo and embedded into the daemon binary. Re-include
+# the dir (so git can traverse it) and its non-secret policy text files. See HARDEN-01.
+!configs/apparmor/
+!configs/apparmor/moltbunker-container
+!configs/apparmor/moltbunker-container.selinux-note
 
 # Ignore docs/ contents (local notes), but allow-list committed user-facing docs.
 docs/*

@@ -112,79 +112,79 @@ func TestSecurityEnforcerCanShell(t *testing.T) {
 
 func TestValidateExecCommand(t *testing.T) {
 	tests := []struct {
-		name         string
-		execDisabled bool
+		name          string
+		execDisabled  bool
 		shellDisabled bool
-		cmd          []string
-		expectError  bool
-		errorType    error
+		cmd           []string
+		expectError   bool
+		errorType     error
 	}{
 		{
-			name:        "exec disabled blocks all commands",
+			name:         "exec disabled blocks all commands",
 			execDisabled: true,
-			cmd:         []string{"ls", "-la"},
-			expectError: true,
-			errorType:   ErrExecDisabled,
-		},
-		{
-			name:         "exec enabled allows non-shell commands",
-			execDisabled: false,
-			shellDisabled: true,
 			cmd:          []string{"ls", "-la"},
-			expectError:  false,
-		},
-		{
-			name:         "shell disabled blocks /bin/sh",
-			execDisabled: false,
-			shellDisabled: true,
-			cmd:          []string{"/bin/sh"},
 			expectError:  true,
-			errorType:    ErrShellDisabled,
+			errorType:    ErrExecDisabled,
 		},
 		{
-			name:         "shell disabled blocks /bin/bash",
-			execDisabled: false,
+			name:          "exec enabled allows non-shell commands",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"/bin/bash"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"ls", "-la"},
+			expectError:   false,
 		},
 		{
-			name:         "shell disabled blocks sh",
-			execDisabled: false,
+			name:          "shell disabled blocks /bin/sh",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"sh"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"/bin/sh"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
 		},
 		{
-			name:         "shell disabled blocks bash",
-			execDisabled: false,
+			name:          "shell disabled blocks /bin/bash",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"bash"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"/bin/bash"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
 		},
 		{
-			name:         "shell disabled blocks zsh",
-			execDisabled: false,
+			name:          "shell disabled blocks sh",
+			execDisabled:  false,
 			shellDisabled: true,
-			cmd:          []string{"zsh"},
-			expectError:  true,
-			errorType:    ErrShellDisabled,
+			cmd:           []string{"sh"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
 		},
 		{
-			name:         "shell enabled allows shells",
-			execDisabled: false,
+			name:          "shell disabled blocks bash",
+			execDisabled:  false,
+			shellDisabled: true,
+			cmd:           []string{"bash"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
+		},
+		{
+			name:          "shell disabled blocks zsh",
+			execDisabled:  false,
+			shellDisabled: true,
+			cmd:           []string{"zsh"},
+			expectError:   true,
+			errorType:     ErrShellDisabled,
+		},
+		{
+			name:          "shell enabled allows shells",
+			execDisabled:  false,
 			shellDisabled: false,
-			cmd:          []string{"/bin/bash"},
-			expectError:  false,
+			cmd:           []string{"/bin/bash"},
+			expectError:   false,
 		},
 		{
-			name:        "empty command returns error",
+			name:         "empty command returns error",
 			execDisabled: false,
-			cmd:         []string{},
-			expectError: true,
+			cmd:          []string{},
+			expectError:  true,
 		},
 	}
 
@@ -398,5 +398,66 @@ func TestSecurityProfileError(t *testing.T) {
 	expected := "security policy violation: exec - disabled by policy"
 	if err.Error() != expected {
 		t.Errorf("Error() = %q, want %q", err.Error(), expected)
+	}
+}
+
+// TestWithUserNamespace_CompatGuard exercises the R12 compat guard. On darwin
+// (and Linux hosts that disable unprivileged userns) CheckUserNSCompat reports
+// unsupported, so WithUserNamespace must be a no-op (the spec's namespaces and
+// ID maps are left unchanged). On a Linux host that supports it, a UserNamespace
+// must be added with a full-range mapping. The assertion is keyed off the live
+// compat result so it is deterministic on every platform.
+func TestWithUserNamespace_CompatGuard(t *testing.T) {
+	opt := WithUserNamespace()
+
+	s := &specs.Spec{Linux: &specs.Linux{}}
+	if err := opt(context.Background(), nil, nil, s); err != nil {
+		t.Fatalf("WithUserNamespace returned error: %v", err)
+	}
+
+	hasUserNS := false
+	for _, ns := range s.Linux.Namespaces {
+		if ns.Type == specs.UserNamespace {
+			hasUserNS = true
+		}
+	}
+
+	if CheckUserNSCompat().Supported {
+		if !hasUserNS {
+			t.Error("on a userns-capable host, WithUserNamespace should add a UserNamespace")
+		}
+		if len(s.Linux.UIDMappings) != 1 || s.Linux.UIDMappings[0].Size < minUserNSMappingSize {
+			t.Errorf("expected a full-range UID mapping, got %+v", s.Linux.UIDMappings)
+		}
+	} else {
+		// Compat guard fired: spec must be untouched (no-op).
+		if hasUserNS {
+			t.Error("on a non-userns host, WithUserNamespace must not add a UserNamespace")
+		}
+		if len(s.Linux.UIDMappings) != 0 || len(s.Linux.GIDMappings) != 0 {
+			t.Error("on a non-userns host, WithUserNamespace must not set ID mappings")
+		}
+	}
+}
+
+// minUserNSMappingSize is the smallest mapping size the test accepts as a
+// "full range" — kept loose so it passes regardless of the host's subuid size.
+const minUserNSMappingSize = 1024
+
+// TestDeploymentSecurityProfile_UserNSDefaultOff guards the R12 correction:
+// userns is wired + opt-in but MUST default OFF, because nothing remaps the
+// rootfs snapshot yet (WithRemapperLabels / idmapped mount is the R11-gated
+// follow-up). Defaulting it ON regresses real container startup on capable
+// Linux hosts (container-UID-0 -> host subStart can't own its host-UID-0 rootfs).
+func TestDeploymentSecurityProfile_UserNSDefaultOff(t *testing.T) {
+	if types.DeploymentSecurityProfile().UserNamespace {
+		t.Error("R12: DeploymentSecurityProfile().UserNamespace must default OFF until the " +
+			"rootfs snapshot-remap path lands (R11); shipping it on regresses container startup")
+	}
+}
+
+func TestDeploymentSecurityProfile_AppArmorProfileSet(t *testing.T) {
+	if got := types.DeploymentSecurityProfile().AppArmorProfile; got != "moltbunker-container" {
+		t.Errorf("R9 regression: DeploymentSecurityProfile().AppArmorProfile = %q, want %q", got, "moltbunker-container")
 	}
 }

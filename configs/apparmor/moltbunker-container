@@ -1,0 +1,75 @@
+# moltbunker-container — canonical AppArmor profile for moltbunker tenant workloads
+#
+# Shipped in-repo and loaded into the kernel on first daemon start by
+# internal/runtime/apparmor_loader_linux.go (HARDEN-01, R9). Before this
+# profile existed and was auto-loaded, the gate in security_profile.go
+# (isAppArmorProfileLoaded) always fell through on a fresh install, so the
+# AppArmor branch silently no-op'd. This profile makes that gate fire.
+#
+# Structure intentionally mirrors Docker/moby's default container profile
+# (docker-default) so real-world base images (alpine, ubuntu, nginx) run
+# unmodified. It denies the dangerous classes the runtime should never need:
+# raw kernel memory, firmware, kernel module loading, mount/pivot_root, and
+# ptrace of processes outside the container's own peer group.
+#
+# See HARDEN-01 PR for rationale. SELinux hosts: see the companion
+# moltbunker-container.selinux-note file (we delegate to the OS vendor policy).
+
+#include <tunables/global>
+
+profile moltbunker-container flags=(attach_disconnected,mediate_deleted) {
+  #include <abstractions/base>
+
+  network,
+  capability,
+  file,
+  umount,
+
+  # Allow signalling and ptrace within the same profile peer group only
+  # (containers may manage their own processes; cannot reach the host).
+  signal (receive) peer=moltbunker-container,
+  signal (send) peer=moltbunker-container,
+  ptrace (trace,read,tracedby,readby) peer=moltbunker-container,
+
+  # Host-side runtime control paths must remain off-limits to the container.
+  deny @{PROC}/* w,                          # deny write to all files in /proc not otherwise allowed
+  deny @{PROC}/{[^1-9],[^1-9][^0-9],[^1-9s][^0-9y][^0-9s],[^1-9][^0-9][^0-9][^0-9]*}/** wkx,
+  deny @{PROC}/sys/[^k]** w,                  # deny /proc/sys except /proc/sys/k* (kernel.shm*)
+  deny @{PROC}/sys/kernel/{?,??,[^s][^h][^m]**} w,  # deny everything except shm tunables
+  deny @{PROC}/sysrq-trigger rwklx,
+  deny @{PROC}/kcore rwklx,
+  deny @{PROC}/kmem rwklx,
+  deny @{PROC}/mem rwklx,
+
+  deny mount,
+  deny pivot_root,
+
+  # Block kernel module loading and raw firmware access.
+  deny /sys/[^f]*/** wklx,
+  deny /sys/f[^s]*/** wklx,
+  deny /sys/fs/[^c]*/** wklx,
+  deny /sys/fs/c[^g]*/** wklx,
+  deny /sys/fs/cg[^r]*/** wklx,
+  deny /sys/firmware/** rwklx,
+  deny /sys/kernel/security/** rwklx,
+
+  # Read-only access to the kernel-config surface the runtime needs.
+  @{PROC}/sys/kernel/shm* r,
+  /sys/fs/cgroup/** r,
+
+  # Allow normal filesystem layout used by base images.
+  /etc/** rk,
+  /lib/** rmix,
+  /lib64/** rmix,
+  /usr/** rmix,
+  /bin/** rmix,
+  /sbin/** rmix,
+  /tmp/** rwmix,
+  /var/** rwk,
+  /run/** rwk,
+  /home/** rwk,
+  /root/** rwk,
+
+  # deny write to the standard library/binary directories (immutable rootfs intent).
+  deny /lib/modules/** wklx,
+}
