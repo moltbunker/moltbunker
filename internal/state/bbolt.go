@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
 
+	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/security"
 )
 
@@ -25,7 +27,12 @@ import (
 // stolen-disk / leaked-backup / casual filesystem access, not a live host-root
 // attacker who can also read state.key.
 type BboltStore struct {
-	db     *bolt.DB
+	db *bolt.DB
+
+	// keyMu guards encKey so RotateKey can atomically swap the active key while
+	// concurrent put/get/list calls read it. A read lock is held for the brief
+	// encode/decode call; RotateKey holds the write lock for the whole sweep.
+	keyMu  sync.RWMutex
 	encKey []byte // nil => encryption disabled (plaintext)
 }
 
@@ -33,7 +40,14 @@ type BboltStore struct {
 // Plaintext state values are JSON or short ASCII (schema version, timestamps),
 // none of which begin with these bytes, so the prefix unambiguously
 // distinguishes encrypted blobs from legacy plaintext during lazy migration.
-var encMagic = []byte{0x4D, 0x42, 0x45, 0x4E, 0x43, 0x31, 0x00} // "MBENC1\x00"
+//
+// encMagic (MBENC1) tags values written before key rotation; encMagic2 (MBENC2)
+// tags values written by the current code (and values re-encrypted by
+// RotateKey). Both decrypt with the active encKey; the version byte lets a
+// partially-rotated database be read safely and makes rotation progress visible
+// in the raw bytes. New writes always use MBENC2.
+var encMagic = []byte{0x4D, 0x42, 0x45, 0x4E, 0x43, 0x31, 0x00}  // "MBENC1\x00"
+var encMagic2 = []byte{0x4D, 0x42, 0x45, 0x4E, 0x43, 0x32, 0x00} // "MBENC2\x00"
 
 // allBuckets is the list of buckets created on database open.
 var allBuckets = []string{
@@ -92,50 +106,202 @@ func (s *BboltStore) Close() error {
 	return s.db.Close()
 }
 
+// RotateKeyMetrics summarizes a RotateKey sweep for logging.
+type RotateKeyMetrics struct {
+	Buckets       int // buckets visited
+	ValuesRotated int // values decrypted-with-old / re-encrypted-with-new
+	ValuesSkipped int // plaintext/unencrypted values left untouched
+}
+
+// GetEncKey returns a copy of the current at-rest encryption key (nil if
+// encryption is disabled). Exposed so callers (e.g. cmd/daemon) can drive a
+// rotation flow without reaching into the unexported field.
+func (s *BboltStore) GetEncKey() []byte {
+	s.keyMu.RLock()
+	defer s.keyMu.RUnlock()
+	if s.encKey == nil {
+		return nil
+	}
+	out := make([]byte, len(s.encKey))
+	copy(out, s.encKey)
+	return out
+}
+
+// RotateKey re-encrypts every value in every bucket from the current key to
+// newKey, tagging rewritten values with the MBENC2 magic, then atomically swaps
+// the active key. It is concurrency-safe: the write lock is held for the whole
+// sweep, so concurrent put/get/list calls block until rotation completes (this
+// can pause client requests for a large database — iteration is per-bucket via
+// db.Batch to coalesce fsyncs and keep individual stalls bounded).
+//
+// Rotation is idempotent for the no-key-change case: passing the current key
+// simply re-tags any lingering MBENC1 values to MBENC2. Encryption must be
+// enabled (a non-nil current key); rotating a plaintext store is an error.
+func (s *BboltStore) RotateKey(ctx context.Context, newKey []byte) (RotateKeyMetrics, error) {
+	var m RotateKeyMetrics
+
+	if len(newKey) != 32 {
+		return m, fmt.Errorf("rotate state key: new key must be 32 bytes, got %d", len(newKey))
+	}
+
+	s.keyMu.Lock()
+	defer s.keyMu.Unlock()
+
+	if s.encKey == nil {
+		return m, fmt.Errorf("rotate state key: encryption is disabled (no current key)")
+	}
+	oldKey := s.encKey
+
+	for _, bucket := range allBuckets {
+		if err := ctx.Err(); err != nil {
+			return m, fmt.Errorf("rotate state key: cancelled: %w", err)
+		}
+		m.Buckets++
+
+		// Collect keys+rewritten values in a read pass to keep the write batch
+		// small and avoid mutating while iterating.
+		type kv struct {
+			key []byte
+			val []byte
+		}
+		var rewrites []kv
+
+		err := s.db.View(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte(bucket))
+			if b == nil {
+				return nil // bucket may not exist on older schemas
+			}
+			return b.ForEach(func(k, v []byte) error {
+				// Only rewrite values that are actually encrypted; plaintext /
+				// unencrypted values are left as-is (they predate encryption).
+				if _, ok := encPrefixLen(v); !ok {
+					m.ValuesSkipped++
+					return nil
+				}
+				plain, derr := decodeWithKey(oldKey, v)
+				if derr != nil {
+					return fmt.Errorf("decrypt %s/%s: %w", bucket, string(k), derr)
+				}
+				reenc, eerr := encodeWithKey(newKey, plain)
+				if eerr != nil {
+					return fmt.Errorf("re-encrypt %s/%s: %w", bucket, string(k), eerr)
+				}
+				kc := make([]byte, len(k))
+				copy(kc, k)
+				rewrites = append(rewrites, kv{key: kc, val: reenc})
+				return nil
+			})
+		})
+		if err != nil {
+			return m, fmt.Errorf("rotate state key: read bucket %s: %w", bucket, err)
+		}
+
+		if len(rewrites) == 0 {
+			continue
+		}
+
+		// Write the re-encrypted values back. db.Batch coalesces concurrent
+		// batches into fewer fsyncs.
+		berr := s.db.Batch(func(tx *bolt.Tx) error {
+			b := tx.Bucket([]byte(bucket))
+			if b == nil {
+				return fmt.Errorf("bucket %s disappeared during rotation", bucket)
+			}
+			for _, r := range rewrites {
+				if perr := b.Put(r.key, r.val); perr != nil {
+					return perr
+				}
+			}
+			return nil
+		})
+		if berr != nil {
+			return m, fmt.Errorf("rotate state key: write bucket %s: %w", bucket, berr)
+		}
+		m.ValuesRotated += len(rewrites)
+	}
+
+	// Swap the active key last: until now every read used oldKey, and the just-
+	// written MBENC2 values are readable with newKey, so the switch is safe.
+	swapped := make([]byte, len(newKey))
+	copy(swapped, newKey)
+	s.encKey = swapped
+
+	logging.Info("state at-rest key rotated",
+		"buckets", m.Buckets,
+		"values_rotated", m.ValuesRotated,
+		"values_skipped", m.ValuesSkipped,
+		logging.Component("state"))
+
+	return m, nil
+}
+
 // --- encryption helpers ---
 
-// encode returns the bytes to store on disk for a value. With encryption enabled
-// it produces encMagic || AES-256-GCM(data); otherwise data is returned as-is.
-func (s *BboltStore) encode(data []byte) ([]byte, error) {
-	if s.encKey == nil {
+// encodeWithKey produces the on-disk bytes for a value with the given key. With
+// a non-nil key it produces encMagic2 || AES-256-GCM(data); otherwise data is
+// returned as-is. New writes always use the MBENC2 prefix. It is lock-free: the
+// caller holds keyMu so the key cannot be swapped mid-write.
+func encodeWithKey(key, data []byte) ([]byte, error) {
+	if key == nil {
 		return data, nil
 	}
-	ct, err := security.EncryptAES256GCM(s.encKey, data)
+	ct, err := security.EncryptAES256GCM(key, data)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt state value: %w", err)
 	}
-	out := make([]byte, 0, len(encMagic)+len(ct))
-	out = append(out, encMagic...)
+	out := make([]byte, 0, len(encMagic2)+len(ct))
+	out = append(out, encMagic2...)
 	out = append(out, ct...)
 	return out, nil
 }
 
-// decode reverses encode for a value read from disk. A value carrying encMagic
-// is decrypted (and a decrypt failure is a hard error — ciphertext is never
-// returned). A value without the magic prefix is returned verbatim: this is the
-// back-compat / lazy-migration path (legacy plaintext, or values written while
-// encryption was disabled). With encryption disabled, values are returned as-is.
-func (s *BboltStore) decode(stored []byte) ([]byte, error) {
+// decodeWithKey reverses encodeWithKey for a value read from disk. A value
+// carrying an encrypted prefix (MBENC1 or MBENC2) is decrypted (a decrypt
+// failure is a hard error — ciphertext is never returned). A value without a
+// magic prefix is returned verbatim: the back-compat / lazy-migration path
+// (legacy plaintext, or values written while encryption was disabled). With a
+// nil key, values are returned as-is. Lock-free: the caller holds keyMu.
+func decodeWithKey(key, stored []byte) ([]byte, error) {
 	if stored == nil {
 		return nil, nil
 	}
-	if s.encKey == nil {
+	if key == nil {
 		return stored, nil
 	}
-	if !bytes.HasPrefix(stored, encMagic) {
-		return stored, nil
+	if prefix, ok := encPrefixLen(stored); ok {
+		pt, err := security.DecryptAES256GCM(key, stored[prefix:])
+		if err != nil {
+			return nil, fmt.Errorf("decrypt state value: %w", err)
+		}
+		return pt, nil
 	}
-	pt, err := security.DecryptAES256GCM(s.encKey, stored[len(encMagic):])
-	if err != nil {
-		return nil, fmt.Errorf("decrypt state value: %w", err)
+	return stored, nil
+}
+
+// encPrefixLen reports the length of the recognized encrypted magic prefix
+// (MBENC1 or MBENC2) on stored, or (0, false) if none is present.
+func encPrefixLen(stored []byte) (int, bool) {
+	switch {
+	case bytes.HasPrefix(stored, encMagic2):
+		return len(encMagic2), true
+	case bytes.HasPrefix(stored, encMagic):
+		return len(encMagic), true
+	default:
+		return 0, false
 	}
-	return pt, nil
 }
 
 // --- internal helpers ---
 
+// put encrypts and stores a value. The keyMu read lock is held for the WHOLE
+// operation (encode + bbolt write) so RotateKey's exclusive lock fully
+// serializes against it: a value can never be written with the old key after
+// the rotation read pass but before the key swap.
 func (s *BboltStore) put(bucket, key string, data []byte) error {
-	stored, err := s.encode(data)
+	s.keyMu.RLock()
+	defer s.keyMu.RUnlock()
+
+	stored, err := encodeWithKey(s.encKey, data)
 	if err != nil {
 		return err
 	}
@@ -148,7 +314,12 @@ func (s *BboltStore) put(bucket, key string, data []byte) error {
 	})
 }
 
+// get reads and decrypts a value. The keyMu read lock is held for the whole
+// operation so the active key matches the on-disk value (see put).
 func (s *BboltStore) get(bucket, key string) ([]byte, error) {
+	s.keyMu.RLock()
+	defer s.keyMu.RUnlock()
+
 	var stored []byte
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
@@ -165,10 +336,19 @@ func (s *BboltStore) get(bucket, key string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.decode(stored)
+	return decodeWithKey(s.encKey, stored)
 }
 
+// del removes a value. It holds keyMu.RLock for the whole operation — like
+// put/get/list — even though delete itself touches no key material. This
+// serializes deletes against RotateKey's exclusive lock: without it, a Delete
+// landing between RotateKey's read pass and its batch write-back could be
+// silently undone (the batch re-Puts the re-encrypted, still-valid value,
+// resurrecting the deleted key). Taking the read lock closes that window.
 func (s *BboltStore) del(bucket, key string) error {
+	s.keyMu.RLock()
+	defer s.keyMu.RUnlock()
+
 	return s.db.Update(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
 		if b == nil {
@@ -179,6 +359,9 @@ func (s *BboltStore) del(bucket, key string) error {
 }
 
 func (s *BboltStore) list(bucket string) (map[string][]byte, error) {
+	s.keyMu.RLock()
+	defer s.keyMu.RUnlock()
+
 	result := make(map[string][]byte)
 	err := s.db.View(func(tx *bolt.Tx) error {
 		b := tx.Bucket([]byte(bucket))
@@ -188,7 +371,7 @@ func (s *BboltStore) list(bucket string) (map[string][]byte, error) {
 		return b.ForEach(func(k, v []byte) error {
 			cp := make([]byte, len(v))
 			copy(cp, v)
-			plain, derr := s.decode(cp)
+			plain, derr := decodeWithKey(s.encKey, cp)
 			if derr != nil {
 				return fmt.Errorf("decode value for key %q: %w", string(k), derr)
 			}

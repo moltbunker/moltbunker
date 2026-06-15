@@ -96,3 +96,13 @@ func (pm *ProviderKeyManager) privateKey() []byte {
 	copy(out, pm.privKey)
 	return out
 }
+
+// PrivateKey returns a COPY of the 32-byte X25519 private key for daemon-internal
+// at-rest decryption (e.g. storage DEK unwrapping in the self-recipient model).
+// It is a thin exported wrapper over privateKey() so other in-process packages
+// (storage) can unwrap DEKs sealed to this provider; the secret still never
+// leaves the daemon process and is never logged or serialized. Each call returns
+// a fresh copy so the live key slice is never aliased.
+func (pm *ProviderKeyManager) PrivateKey() []byte {
+	return pm.privateKey()
+}

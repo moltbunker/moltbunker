@@ -149,6 +149,23 @@ func main() {
 			logging.Err(err), logging.Component("daemon"))
 	}
 
+	// KEY-01: optional eager state-key rotation sweep. Re-encrypts every value
+	// with the current key and bumps the on-disk magic to MBENC2 (idempotent;
+	// retags legacy MBENC1 values). Off by default — lazy migration on next
+	// write is the norm.
+	if stateEncKey != nil && cfg.Security.StateKeyRotationSweep {
+		if m, rerr := stateStore.RotateKey(ctx, stateEncKey); rerr != nil {
+			logging.Warn("state key rotation sweep failed, continuing",
+				logging.Err(rerr), logging.Component("daemon"))
+		} else {
+			logging.Info("state key rotation sweep complete",
+				"buckets", m.Buckets,
+				"values_rotated", m.ValuesRotated,
+				"values_skipped", m.ValuesSkipped,
+				logging.Component("daemon"))
+		}
+	}
+
 	// Handle signals
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
@@ -661,12 +678,23 @@ func main() {
 		logging.Warn("failed to start threat detector", logging.Err(err), logging.Component("daemon"))
 	}
 
-	// Initialize snapshot manager
+	// Initialize snapshot manager. KEY-01: the master encryption key is sourced
+	// via an explicit KeyProvider (file/keyring/env) — never a silent ephemeral
+	// key that would orphan snapshots on restart. When encryption is enabled and
+	// the provider cannot be built/read, startup fails closed.
 	snapshotCfg := snapshot.DefaultSnapshotConfig()
 	snapshotCfg.StoragePath = filepath.Join(cfg.Daemon.DataDir, "snapshots")
-	snapshotMgr, err := snapshot.NewManager(snapshotCfg)
+	var snapshotKeyProvider snapshot.KeyProvider
+	if snapshotCfg.EncryptionEnabled {
+		kp, kpErr := snapshot.NewKeyProviderFromConfig(snapshotCfg, cfg.Daemon.DataDir)
+		if kpErr != nil {
+			log.Fatalf("Failed to build snapshot key provider: %v", kpErr)
+		}
+		snapshotKeyProvider = kp
+	}
+	snapshotMgr, err := snapshot.NewManager(snapshotCfg, snapshotKeyProvider)
 	if err != nil {
-		logging.Warn("failed to initialize snapshot manager", logging.Err(err), logging.Component("daemon"))
+		log.Fatalf("Failed to initialize snapshot manager: %v", err)
 	}
 
 	// Initialize checkpoint system
@@ -731,11 +759,41 @@ func main() {
 				storageDataDir = filepath.Join(cfg.Daemon.DataDir, "storage")
 			}
 			storageEngine, storageErr := storage.NewStorageEngine(storageDataDir, stateStore, storage.EngineConfig{
-				MaxBuckets:    cfg.Storage.MaxBuckets,
-				MaxObjectSize: cfg.Storage.MaxObjectSize,
+				MaxBuckets:                cfg.Storage.MaxBuckets,
+				MaxObjectSize:             cfg.Storage.MaxObjectSize,
+				EncryptedMaxInMemoryBytes: cfg.Storage.EncryptedMaxInMemoryBytes,
 			})
 			if storageErr != nil {
 				log.Fatalf("Failed to create storage engine: %v", storageErr)
+			}
+			// KEY-01: opt-in at-rest object encryption. Each object's DEK is
+			// sealed to the provider's own stable X25519 key (self-recipient
+			// model, same key file as exec/R5). LoadOrCreateProviderKey reads the
+			// same persisted DataDir/provider_x25519.key the ContainerManager uses,
+			// so the keys match.
+			if cfg.Storage.EncryptionEnabled {
+				pk, pkErr := daemon.LoadOrCreateProviderKey(cfg.Daemon.DataDir)
+				if pkErr != nil {
+					log.Fatalf("Failed to load provider key for storage encryption: %v", pkErr)
+				}
+				ks, ksErr := storage.NewProviderKeyStore(pk)
+				if ksErr != nil {
+					log.Fatalf("Failed to build storage owner key store: %v", ksErr)
+				}
+				storageEngine.WithOwnerKeyStore(ks)
+				// KEY-01 (operator caveat): objects are sealed to the provider's own
+				// X25519 key at DataDir/provider_x25519.key (self-recipient model,
+				// same limitation as R5 image encryption). There is currently NO key
+				// rotation and NO recovery path: if that key file is lost or
+				// regenerated, every previously-encrypted object becomes permanently
+				// undecryptable (a GetObject would fail at decrypt time, not at
+				// startup). Surface this loudly at startup so the key file is backed
+				// up alongside other daemon secrets.
+				logging.Warn("object storage at-rest encryption enabled — KEY LOSS IS DATA LOSS: "+
+					"objects are sealed to provider_x25519.key with no rotation/recovery path; "+
+					"back up DataDir/provider_x25519.key",
+					"key_file", filepath.Join(cfg.Daemon.DataDir, "provider_x25519.key"),
+					logging.Component("daemon"))
 			}
 			// Wire storage usage metering for billing (PaymentService satisfies
 			// storage.MeteringHook structurally).
