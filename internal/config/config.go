@@ -253,6 +253,40 @@ type ProviderNodeConfig struct {
 	// Reverse tunnel server (ingress-side — accepts incoming reverse tunnels from providers)
 	ReverseTunnelPort     int `yaml:"reverse_tunnel_port,omitempty"`      // Listen port (default: 9443)
 	ReverseTunnelMaxConns int `yaml:"reverse_tunnel_max_conns,omitempty"` // Global max connections (default: 10000)
+
+	// Edge-provider role (EDGE-02). When enabled the ingress-side reverse
+	// tunnel server additionally gates provider registration on edge-tier
+	// authorization. Zero-value = disabled, so existing configs are unaffected.
+	EdgeRole EdgeRoleConfig `yaml:"edge_role,omitempty"`
+
+	// BYO custom-hostname ACME (EDGE-02). When enabled, customers can point
+	// their own domain at this ingress after proving ownership via a CNAME/TXT
+	// DNS record. Zero-value = disabled.
+	CustomDomain CustomDomainConfig `yaml:"custom_domain,omitempty"`
+}
+
+// EdgeRoleConfig gates the stake-gated edge-provider role (EDGE-02). The actual
+// edge-tier check is pluggable: "config" uses AllowedNodeIDs (works with no
+// contract deployed, the default), "onchain" uses the BunkerEdgeRegistry via
+// the payment service. AllowedNodeIDs holds NodeID hex strings (public SHA256
+// hashes), not secrets.
+type EdgeRoleConfig struct {
+	Enabled        bool     `yaml:"enabled,omitempty"`          // Gate reverse-tunnel registration on edge tier
+	Mode           string   `yaml:"mode,omitempty"`             // "config" (allowlist, default) or "onchain"
+	MinStakeTier   string   `yaml:"min_stake_tier,omitempty"`   // Minimum tier for onchain mode (default: bronze)
+	AllowedNodeIDs []string `yaml:"allowed_node_ids,omitempty"` // NodeID hex allowlist for "config" mode
+	RegistryAddr   string   `yaml:"registry_addr,omitempty"`    // BunkerEdgeRegistry address for "onchain" mode (public)
+}
+
+// CustomDomainConfig configures BYO custom-hostname verification (EDGE-02).
+// VerifyMethod selects the DNS proof: "cname" (CNAME to <token>.<domain>) or
+// "txt" (TXT moltbunker-verify=<token> on _moltbunker.<host>). No secret fields
+// — the verification HMAC secret is generated in memory at startup.
+type CustomDomainConfig struct {
+	Enabled                 bool   `yaml:"enabled,omitempty"`                    // Accept BYO custom hostnames
+	VerifyMethod            string `yaml:"verify_method,omitempty"`              // "cname" (default) or "txt"
+	MaxDomainsPerDeployment int    `yaml:"max_domains_per_deployment,omitempty"` // 0 = unlimited
+	OwnershipTTLHours       int    `yaml:"ownership_ttl_hours,omitempty"`        // Verification validity (default: 72)
 }
 
 // RequesterNodeConfig contains requester-specific configuration
