@@ -181,7 +181,8 @@ research/
 TODO.local.md
 
 # Deploy scripts and keys (contain private keys)
-scripts/
+scripts/*
+!scripts/gen-bindings.sh
 secrets/
 
 # Deployment config (local/generated, do not commit)
