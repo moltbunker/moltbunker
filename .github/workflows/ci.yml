@@ -222,3 +222,21 @@ jobs:
           # point it at the Linux runner's system containerd socket.
           COLIMA_CONTAINERD_SOCKET: /run/containerd/containerd.sock
         run: go test -tags colima -v -timeout 12m ./tests/e2e/colima/...
+
+      - name: Install nftables
+        # R13/R14: the nftables enforcer generates `nft -f -` scripts that the
+        # unit tests only validate against a fake exec. Install the real nft
+        # binary so the smoke test below pipes the real scripts to real nft and
+        # catches chain-name rejections and the delete-chain EBUSY teardown bug.
+        run: sudo apt-get update && sudo apt-get install -y nftables
+
+      - name: Run nftables enforcer smoke test (real nft, root)
+        # Needs CAP_NET_ADMIN; run as root via sudo. `-tags nftsmoke` selects the
+        # gated smoke test (skipped from the default suite, which has no nft).
+        # `go env GOFLAGS` are not inherited under sudo, so pass GOPATH/HOME so
+        # the module cache and toolchain resolve under the runner's user.
+        run: |
+          set -euxo pipefail
+          sudo env "PATH=$PATH" "HOME=$HOME" "GOPATH=$(go env GOPATH)" \
+            go test -tags nftsmoke -v -run TestSmoke_ApplyRemoveAgainstRealNft \
+            ./internal/networking/...

@@ -37,9 +37,9 @@ type APIResponse struct {
 
 // AggregatedCapacity contains aggregated node resource capacity
 type AggregatedCapacity struct {
-	CPUTotal       int     `json:"cpu_total"`
-	MemoryTotalGB  int     `json:"memory_total_gb"`
-	StorageTotalGB int     `json:"storage_total_gb"`
+	CPUTotal       int `json:"cpu_total"`
+	MemoryTotalGB  int `json:"memory_total_gb"`
+	StorageTotalGB int `json:"storage_total_gb"`
 
 	CPUUsed       int     `json:"cpu_used"`
 	MemoryUsedGB  float64 `json:"memory_used_gb"`
@@ -67,21 +67,21 @@ type SecurityStatus struct {
 
 // NodeProfile represents a known node in the network
 type NodeProfile struct {
-	NodeID           string    `json:"node_id"`
-	Address          string    `json:"address,omitempty"`
-	WalletAddress    string    `json:"wallet_address,omitempty"`
-	Region           string    `json:"region"`
-	Country          string    `json:"country,omitempty"`
-	Online           bool      `json:"online"`
-	LastSeen         time.Time `json:"last_seen"`
+	NodeID           string          `json:"node_id"`
+	Address          string          `json:"address,omitempty"`
+	WalletAddress    string          `json:"wallet_address,omitempty"`
+	Region           string          `json:"region"`
+	Country          string          `json:"country,omitempty"`
+	Online           bool            `json:"online"`
+	LastSeen         time.Time       `json:"last_seen"`
 	Capacity         CapacityProfile `json:"capacity"`
-	Tier             string    `json:"tier"`
-	Role             string    `json:"role"`
-	ReputationScore  int       `json:"reputation_score"`
-	StakingAmount    uint64    `json:"staking_amount"`
-	ActiveContainers int       `json:"active_containers"`
-	EncryptedCount   int       `json:"encrypted_containers"`
-	Version          string    `json:"version,omitempty"`
+	Tier             string          `json:"tier"`
+	Role             string          `json:"role"`
+	ReputationScore  int             `json:"reputation_score"`
+	StakingAmount    uint64          `json:"staking_amount"`
+	ActiveContainers int             `json:"active_containers"`
+	EncryptedCount   int             `json:"encrypted_containers"`
+	Version          string          `json:"version,omitempty"`
 
 	// Admin-assigned metadata
 	Badges  []string `json:"badges,omitempty"`
@@ -171,7 +171,7 @@ type DeployRequest struct {
 	WaitForReplicas bool            `json:"wait_for_replicas,omitempty"` // If true, wait for at least 1 replica ack before returning
 	ReservationID   string          `json:"reservation_id,omitempty"`    // On-chain escrow reservation ID (user-created)
 	Owner           string          `json:"owner,omitempty"`             // Wallet address of the deployer
-	MinProviderTier  string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
+	MinProviderTier string          `json:"min_provider_tier,omitempty"` // Minimum provider tier ("confidential", "standard", "dev")
 	// E2E exec encryption (optional). The exec_key is sealed to the provider's
 	// stable X25519 public key via ECIES (ephemeral-static X25519 -> HKDF-SHA256
 	// -> AES-256-GCM). The fields below carry the resulting envelope.
@@ -193,6 +193,13 @@ type DeployResponse struct {
 	ReplicaCount    int       `json:"replica_count"` // Number of successful replica acks received
 	PublicURLs      []string  `json:"public_urls,omitempty"`
 	CreatedAt       time.Time `json:"created_at,omitempty"`
+	// ExecAgentEnabled reports whether the deploy carried a valid E2E exec
+	// envelope and the exec-agent was injected. Callers use this to decide
+	// whether the exec session must perform the KEY_INIT/KEY_ACK handshake.
+	ExecAgentEnabled bool `json:"exec_agent_enabled,omitempty"`
+	// DeployNonce is the hex-encoded HKDF salt used to derive the exec_key.
+	// Required to re-derive the key for the E2E exec handshake. Non-secret.
+	DeployNonce string `json:"deploy_nonce,omitempty"`
 }
 
 // ContainerInfo contains container information
@@ -213,7 +220,7 @@ type ContainerInfo struct {
 
 // HealthResponse contains health information
 type HealthResponse struct {
-	Healthy             bool           `json:"healthy"`
+	Healthy             bool             `json:"healthy"`
 	UnhealthyContainers map[string][]int `json:"unhealthy_containers,omitempty"`
 }
 

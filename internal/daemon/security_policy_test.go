@@ -182,3 +182,70 @@ func TestApplyNetworkPolicy_RecordsSuppliedPolicy(t *testing.T) {
 		t.Error("removeNetworkPolicy should drop the recorded policy")
 	}
 }
+
+// TestEnforceDeployNetworkPolicy_NoPortDeploy verifies the no-port / replica
+// path: enforceDeployNetworkPolicy allocates a port-less network to obtain a
+// container IP and then applies the policy, so a container with no exposed
+// ports still gets R13/R14 enforcement.
+func TestEnforceDeployNetworkPolicy_NoPortDeploy(t *testing.T) {
+	store := networking.NewPolicyStore()
+	enf := networking.NewNftPolicyEnforcer(store)
+	cm := &ContainerManager{
+		policyStore:    store,
+		policyEnforcer: enf,
+		networkManager: networking.NewNetworkManager(),
+	}
+
+	spec := &NetworkPolicySpec{EgressDeny: true}
+	cm.enforceDeployNetworkPolicy("dep-noport", spec)
+
+	got, ok := store.Get("dep-noport")
+	if !ok {
+		t.Fatal("no-port deploy should still have its policy recorded in the store")
+	}
+	if got.EgressMode != networking.EgressDefaultDeny {
+		t.Errorf("recorded EgressMode = %v, want EgressDefaultDeny", got.EgressMode)
+	}
+	// A port-less network must have been provisioned so the policy has an IP.
+	if _, ok := cm.networkManager.GetNetwork("dep-noport"); !ok {
+		t.Error("enforceDeployNetworkPolicy should provision a network for a no-port deploy")
+	}
+}
+
+// TestEnforceDeployNetworkPolicy_NilPolicyNoNetwork verifies that a deploy with
+// no policy does NOT provision a port-less network (no extra IP consumption)
+// and records nothing — identical to legacy allow-all behavior.
+func TestEnforceDeployNetworkPolicy_NilPolicyNoNetwork(t *testing.T) {
+	store := networking.NewPolicyStore()
+	enf := networking.NewNftPolicyEnforcer(store)
+	cm := &ContainerManager{
+		policyStore:    store,
+		policyEnforcer: enf,
+		networkManager: networking.NewNetworkManager(),
+	}
+
+	cm.enforceDeployNetworkPolicy("dep-nopolicy", nil)
+
+	if _, ok := cm.networkManager.GetNetwork("dep-nopolicy"); ok {
+		t.Error("a nil policy must not provision a network (no extra IP allocation)")
+	}
+	if _, ok := store.Get("dep-nopolicy"); ok {
+		t.Error("a nil policy must not be recorded")
+	}
+}
+
+// TestResolveContainerIP_ReusesExistingNetwork verifies that when a network
+// already exists (port-exposing deploy) resolveContainerIP returns its IP
+// rather than provisioning a second one.
+func TestResolveContainerIP_ReusesExistingNetwork(t *testing.T) {
+	cm := &ContainerManager{networkManager: networking.NewNetworkManager()}
+
+	first, err := cm.networkManager.SetupNetwork("dep-existing", []networking.ExposedPort{{ContainerPort: 80}})
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	got := cm.resolveContainerIP("dep-existing")
+	if got != first.ContainerIP() {
+		t.Errorf("resolveContainerIP = %q, want existing network IP %q", got, first.ContainerIP())
+	}
+}

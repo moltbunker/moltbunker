@@ -386,6 +386,14 @@ func (cm *ContainerManager) deployReplica(ctx context.Context, deployment *Deplo
 	deployment.StartedAt = time.Now()
 	cm.mu.Unlock()
 
+	// R13/R14: replicas get the same per-deployment network/egress policy the
+	// originator chose (it gossips on the Deployment struct). Previously replicas
+	// received zero enforcement because they expose no ports and never called
+	// SetupNetwork. enforceDeployNetworkPolicy provisions a port-less network to
+	// allocate an intra-host IP, then applies the policy. A nil policy is a no-op
+	// (allow-all), so this incurs no extra work for deployments without a policy.
+	cm.enforceDeployNetworkPolicy(deployment.ID, deployment.NetworkPolicy)
+
 	logging.Info("replica container started successfully",
 		logging.ContainerID(deployment.ID))
 
