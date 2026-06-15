@@ -19,6 +19,10 @@ func (d *Doctor) registerPlatformCheckers() {
 		NewTrivyChecker(),                 // R4 image scanning
 		NewNftChecker(),                   // R13/R14 nftables enforcement
 		NewImageSignatureToolingChecker(), // R3 image signature verification
+		// HARDEN-01: runtime isolation hardening checks.
+		NewAppArmorChecker(),    // R9 AppArmor profile loaded
+		NewUserNSChecker(),      // R12 user namespace support
+		NewKataPIDsChecker(nil), // R17 Kata VM PID limit (real config injected via SetKataConfig)
 	}
 }
 
