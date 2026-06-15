@@ -24,6 +24,10 @@ gas_reports = ["BunkerToken", "BunkerStaking", "BunkerEscrow", "BunkerPricing", 
 
 [profile.ci]
 fuzz.runs = 1024
+# Several fuzz tests constrain inputs to a narrow window via vm.assume, so the
+# rejection budget must scale with the higher CI run count to avoid spurious
+# "rejected too many inputs" failures. Scaled ~proportionally to fuzz.runs.
+fuzz.max_test_rejects = 1_048_576
 invariant.runs = 512
 invariant.depth = 100
 
