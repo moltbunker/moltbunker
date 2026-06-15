@@ -2,7 +2,8 @@
        test-containerd-linux test-integration test-localnet test-fuzz test-contracts test-all test-production \
        test-production-verbose clean install lint vet coverage doctor setup setup-linux \
        dev localnet localnet-stop localnet-status localnet-logs localnet-clean \
-       docker docker-dev docker-up docker-down release release-snapshot tidy check help
+       docker docker-dev docker-up docker-down release release-snapshot tidy check help \
+       gen-addresses gen-addresses-check
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -163,6 +164,36 @@ docker-down:
 	@echo "Stopping Docker Compose stack..."
 	@docker compose down
 
+# ─── Codegen ──────────────────────────────────────────────────────────────────
+
+# Canonical contract-address manifest. Single source of truth; mainnet cutover
+# = edit this file then `make gen-addresses` and commit the diff.
+ADDR_MANIFEST    ?= deployments/addresses.json
+ADDR_OUT_YAML    ?= configs/addresses-fragment.yaml
+# Cross-repo TS / env emitters are OPT-IN (scope: this repo by default). Point
+# these at the sibling web/, web-admin/ checkouts to regenerate those consumers,
+# e.g. `make gen-addresses ADDR_OUT_WEB=../web/src/lib/generated-addresses.ts`.
+ADDR_OUT_WEB     ?=
+ADDR_OUT_ADMIN   ?=
+ADDR_OUT_ADMIN_ENV ?=
+
+gen-addresses:
+	@echo "Generating contract-address artifacts from $(ADDR_MANIFEST)..."
+	@go run ./tools/gen-addresses \
+		--manifest $(ADDR_MANIFEST) \
+		--out-yaml $(ADDR_OUT_YAML) \
+		--out-web "$(ADDR_OUT_WEB)" \
+		--out-admin "$(ADDR_OUT_ADMIN)" \
+		--out-admin-env "$(ADDR_OUT_ADMIN_ENV)"
+	@echo "Wrote $(ADDR_OUT_YAML)"
+
+# gen-addresses-check regenerates the in-repo artifacts and fails if they are
+# stale relative to deployments/addresses.json. Intended for CI once stable.
+gen-addresses-check: gen-addresses
+	@git diff --quiet -- $(ADDR_OUT_YAML) $(ADDR_MANIFEST) || \
+		{ echo "ERROR: generated address artifacts are stale. Run 'make gen-addresses' and commit."; exit 1; }
+	@echo "Generated address artifacts are up to date"
+
 # ─── Release ──────────────────────────────────────────────────────────────────
 
 release:
@@ -237,6 +268,12 @@ help:
 	@echo "  vet                  Run go vet"
 	@echo "  tidy                 go mod tidy + verify"
 	@echo "  check                tidy + vet + lint + test (pre-commit)"
+	@echo ""
+	@echo "Codegen:"
+	@echo "  gen-addresses        Regenerate contract-address artifacts from deployments/addresses.json"
+	@echo "                       (in-repo YAML by default; set ADDR_OUT_WEB/ADDR_OUT_ADMIN/ADDR_OUT_ADMIN_ENV"
+	@echo "                        to also emit the web/web-admin TS + .env.example)"
+	@echo "  gen-addresses-check  Fail if generated address artifacts are stale (CI lint)"
 	@echo ""
 	@echo "Localnet:"
 	@echo "  localnet             Build and start local network (Anvil + contracts + daemon + API)"
