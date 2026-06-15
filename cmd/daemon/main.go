@@ -466,6 +466,22 @@ func main() {
 			resolver := ingress.NewResolver(gossipAdapter, gossipAdapter) // implements both GossipReader and SubdomainResolver
 			ingressProxy = ingress.NewProxy(resolver, tunnelClient, ingressDomain)
 
+			// Wire the L7 edge middleware (WAF + per-tenant abuse limits + edge
+			// metrics) into the ingress request path. Default-safe: WAF in
+			// detection-only mode, generous rate limits, nothing blocked until
+			// an operator opts in via config.Ingress.WAF.Mode="blocking". EDGE-01.
+			if edgeMW, mwErr := ingress.NewIngressMiddlewareFromConfig(cfg.Ingress, nil); mwErr != nil {
+				logging.Warn("edge ingress middleware disabled (init failed)",
+					logging.Err(mwErr),
+					logging.Component("ingress"))
+			} else if edgeMW != nil {
+				ingressProxy.SetMiddleware(edgeMW)
+				logging.Info("edge ingress middleware enabled",
+					"waf_enabled", cfg.Ingress.WAF.Enabled,
+					"waf_mode", cfg.Ingress.WAF.Mode,
+					logging.Component("ingress"))
+			}
+
 			// Wire Cloudflare DNS sync if configured
 			if cfg.Node.Provider.CloudflareAPIToken != "" && cfg.Node.Provider.CloudflareZoneID != "" && cfg.Node.Provider.IngressIP != "" {
 				dnsSync := ingress.NewDNSSync(
