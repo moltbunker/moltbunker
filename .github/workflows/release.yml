@@ -15,6 +15,13 @@ jobs:
   release:
     name: Release
     runs-on: ubuntu-latest
+    # id-token: write lets the runner mint a short-lived OIDC token, which
+    # cosign exchanges for an ephemeral Fulcio signing certificate (keyless
+    # signing — no private key is stored anywhere). contents: write is needed
+    # for GoReleaser to upload the release artifacts.
+    permissions:
+      contents: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -25,14 +32,34 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
 
+      # Installs the cosign CLI onto the runner PATH so the .goreleaser.yml
+      # `signs` stanza can keyless-sign checksums.txt.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      # Installs the syft CLI onto the runner PATH so the .goreleaser.yml
+      # `sboms` stanza can generate a CycloneDX SBOM per archive.
+      - name: Install syft
+        uses: anchore/sbom-action/download-syft@v0
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
           distribution: goreleaser
-          version: latest
+          # Pinned for reproducible releases. The config (incl. the brews and
+          # dockers stanzas) validates cleanly on this v2 line; floating on
+          # `latest` would break the release when upstream hard-removes a
+          # currently-deprecated property. Bump deliberately, re-running
+          # `goreleaser check` first.
+          version: '~> v2.4'
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # NOTE: cosign v2 (installed by cosign-installer@v3) does keyless
+          # signing and Rekor transparency-log upload by DEFAULT — the old
+          # COSIGN_EXPERIMENTAL=1 toggle was a cosign v1 flag and is a no-op on
+          # v2, so it is intentionally not set here. `sign-blob --bundle` records
+          # the Rekor inclusion proof in the bundle out of the box.
 
   docker:
     name: Docker

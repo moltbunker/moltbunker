@@ -180,8 +180,13 @@ notes/
 research/
 TODO.local.md
 
-# Deploy scripts and keys (contain private keys)
-scripts/
+# Deploy scripts and keys (contain private keys). Ignore the *contents* of
+# scripts/ (so deploy scripts + keys stay out), but allow-list the public
+# release-integrity scripts below (no secrets — keyless OIDC only).
+scripts/*
+!scripts/install.sh
+!scripts/install.ps1
+!scripts/verify-release.sh
 secrets/
 
 # Deployment config (local/generated, do not commit)
@@ -197,7 +202,9 @@ management/
 
 configs/
 
-docs/
+# Ignore docs/ contents (local notes), but allow-list committed user-facing docs.
+docs/*
+!docs/release-integrity.md
 
 # Bruno API collection (local testing only).
 # Scoped to the collection dir: a bare "api/" also ignored internal/api/ (Go

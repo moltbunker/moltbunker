@@ -1,6 +1,13 @@
 version: 2
 project_name: moltbunker
 
+# NOTE (release-toolchain debt): the `archives.format`, `brews`, and `dockers`
+# stanzas below use properties deprecated upstream (slated for hard removal in a
+# later v2). This is why release.yml + the release-lint CI job pin GoReleaser to
+# `~> v2.4`. Migration path (archives.format -> formats, brews ->
+# homebrew_casks, dockers -> dockers_v2) and the Windows-archive blocker are
+# tracked in docs/release-integrity.md ("Known release-toolchain debt").
+
 before:
   hooks:
     - go mod tidy
@@ -99,8 +106,46 @@ checksum:
   name_template: 'checksums.txt'
   algorithm: sha256
 
+# Software Bill of Materials. syft generates a CycloneDX JSON SBOM per archive
+# artifact (the format mandated by most enterprise/government supply-chain
+# policies, e.g. CISA / EO 14028). Requires `syft` on PATH; goreleaser skips
+# this stanza in `--snapshot` builds when syft is absent.
+sboms:
+  - id: archive
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.cdx.json"
+    cmd: syft
+    args:
+      - "$artifact"
+      - "--output"
+      - "cyclonedx-json=$document"
+
+# Keyless (Sigstore OIDC) signing of the checksums file. No private key is
+# created or stored: cosign requests a short-lived OIDC token from the GitHub
+# Actions runner (requires `id-token: write` in release.yml), exchanges it for
+# an ephemeral Fulcio certificate, signs, and records the event in the Rekor
+# transparency log. The resulting `checksums.txt.sigstore.json` bundle is a
+# fully public artifact containing the cert + Rekor inclusion proof — no secret.
+#
+# Only `checksums.txt` is signed (not every archive): the checksum file pins
+# every archive via SHA-256, so one bundle anchors the whole release. This is
+# the pattern used by Helm, kubectl, and ko. Requires `cosign` on PATH;
+# goreleaser skips this stanza in `--snapshot` builds when cosign is absent.
+signs:
+  - id: checksum
+    cmd: cosign
+    signature: "${artifact}.sigstore.json"
+    artifacts: checksum
+    output: true
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--bundle=${signature}"
+      - "${artifact}"
+
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 changelog:
   sort: asc
