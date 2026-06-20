@@ -21,10 +21,10 @@ import (
 
 // ReserveRequest matches POST /reserve
 type ReserveRequest struct {
-	Tier         string `json:"tier"`          // minimal, standard, performance, enterprise
-	DurationHours int   `json:"duration_hours"`
-	Region       string `json:"region,omitempty"`
-	TorOnly      bool   `json:"tor_only,omitempty"`
+	Tier          string `json:"tier"` // minimal, standard, performance, enterprise
+	DurationHours int    `json:"duration_hours"`
+	Region        string `json:"region,omitempty"`
+	TorOnly       bool   `json:"tor_only,omitempty"`
 }
 
 // ReserveResponse is the response for POST /reserve
@@ -49,6 +49,22 @@ type DeployRequest struct {
 	ReservationID   string               `json:"reservation_id,omitempty"`
 	MinProviderTier string               `json:"min_provider_tier,omitempty"`
 	Spot            bool                 `json:"spot,omitempty"`
+
+	// E2E exec encryption (optional). When the browser wants encrypted exec it
+	// fetches the provider's stable X25519 public key, generates a fresh 32-byte
+	// exec_key, ECIES-seals it to that key, and sends the resulting envelope
+	// below. When these are omitted the daemon injects no exec-agent and exec
+	// falls back to the legacy plaintext PTY — identical to prior behavior. This
+	// mirrors the CLI (unix-socket) path post-SEC-10 so browser-exec is E2E
+	// encrypted too.
+	EncryptedExecKey         []byte `json:"encrypted_exec_key,omitempty"`          // ECIES envelope ciphertext
+	ExecKeyNonce             []byte `json:"exec_key_nonce,omitempty"`              // GCM nonce (also prefixed in ciphertext)
+	RequesterEphemeralPubKey []byte `json:"requester_ephemeral_pub_key,omitempty"` // Sender's ephemeral X25519 public key (32 bytes)
+	DeployNonce              string `json:"deploy_nonce,omitempty"`                // Hex-encoded deploy nonce for exec_key derivation
+
+	// ExposePorts lists container ports to expose publicly via ingress. Required
+	// so a browser deploy can request HTTP exposure the same way the CLI can.
+	ExposePorts []client.ExposedPort `json:"expose_ports,omitempty"`
 }
 
 // DeployResponse is the response for POST /deploy
@@ -59,6 +75,12 @@ type DeployResponse struct {
 	Regions      []string  `json:"regions"`
 	ReplicaCount int       `json:"replica_count"`
 	CreatedAt    time.Time `json:"created_at"`
+	// ExecAgentEnabled tells the browser whether the container has an E2E exec
+	// agent (and thus whether the exec WebSocket must do the KEY_INIT/KEY_ACK
+	// handshake). DeployNonce is the HKDF salt the browser stores to re-derive
+	// the exec_key for that handshake. Both are echoed straight from the daemon.
+	ExecAgentEnabled bool   `json:"exec_agent_enabled,omitempty"`
+	DeployNonce      string `json:"deploy_nonce,omitempty"`
 }
 
 // CloneRequest matches POST /clone
@@ -139,11 +161,11 @@ type RestoreResponse struct {
 
 // ThreatResponse matches GET /threat
 type ThreatResponse struct {
-	Score          float64         `json:"score"`
-	Level          string          `json:"level"`
-	ActiveSignals  []SignalInfo    `json:"active_signals"`
-	Recommendation string          `json:"recommendation"`
-	Timestamp      time.Time       `json:"timestamp"`
+	Score          float64      `json:"score"`
+	Level          string       `json:"level"`
+	ActiveSignals  []SignalInfo `json:"active_signals"`
+	Recommendation string       `json:"recommendation"`
+	Timestamp      time.Time    `json:"timestamp"`
 }
 
 // SignalInfo is a simplified signal for API response
@@ -156,9 +178,9 @@ type SignalInfo struct {
 
 // AggregatedCapacity contains aggregated node resource capacity
 type AggregatedCapacity struct {
-	CPUTotal       int     `json:"cpu_total"`
-	MemoryTotalGB  int     `json:"memory_total_gb"`
-	StorageTotalGB int     `json:"storage_total_gb"`
+	CPUTotal       int `json:"cpu_total"`
+	MemoryTotalGB  int `json:"memory_total_gb"`
+	StorageTotalGB int `json:"storage_total_gb"`
 
 	CPUUsed       int     `json:"cpu_used"`
 	MemoryUsedGB  float64 `json:"memory_used_gb"`
@@ -186,21 +208,21 @@ type SecurityStatus struct {
 
 // NodeProfile represents a known node in the network
 type NodeProfile struct {
-	NodeID           string    `json:"node_id"`
-	Address          string    `json:"address,omitempty"`
-	WalletAddress    string    `json:"wallet_address,omitempty"`
-	Region           string    `json:"region"`
-	Country          string    `json:"country,omitempty"`
-	Online           bool      `json:"online"`
-	LastSeen         time.Time `json:"last_seen"`
+	NodeID           string          `json:"node_id"`
+	Address          string          `json:"address,omitempty"`
+	WalletAddress    string          `json:"wallet_address,omitempty"`
+	Region           string          `json:"region"`
+	Country          string          `json:"country,omitempty"`
+	Online           bool            `json:"online"`
+	LastSeen         time.Time       `json:"last_seen"`
 	Capacity         CapacityProfile `json:"capacity"`
-	Tier             string    `json:"tier"`
-	Role             string    `json:"role"`
-	ReputationScore  int       `json:"reputation_score"`
-	StakingAmount    uint64    `json:"staking_amount"`
-	ActiveContainers int       `json:"active_containers"`
-	EncryptedCount   int       `json:"encrypted_containers"`
-	Version          string    `json:"version,omitempty"`
+	Tier             string          `json:"tier"`
+	Role             string          `json:"role"`
+	ReputationScore  int             `json:"reputation_score"`
+	StakingAmount    uint64          `json:"staking_amount"`
+	ActiveContainers int             `json:"active_containers"`
+	EncryptedCount   int             `json:"encrypted_containers"`
+	Version          string          `json:"version,omitempty"`
 
 	// Admin-assigned metadata
 	Badges  []string `json:"badges,omitempty"`
@@ -430,12 +452,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			TotalNodes:     1,
 		}
 		response.Security = &SecurityStatus{
-			TLSVersion:          "1.3",
-			EncryptionAlgo:      "AES-256-GCM",
-			SeccompEnabled:      true,
-			TorEnabled:          cfg.Tor.Enabled,
-			SEVSNPSupported:     cfg.Node.Provider.Hardware.SEVSNPSupported,
-			SEVSNPActive:        cfg.Node.Provider.Hardware.SEVSNPLevel == "snp",
+			TLSVersion:      "1.3",
+			EncryptionAlgo:  "AES-256-GCM",
+			SeccompEnabled:  true,
+			TorEnabled:      cfg.Tor.Enabled,
+			SEVSNPSupported: cfg.Node.Provider.Hardware.SEVSNPSupported,
+			SEVSNPActive:    cfg.Node.Provider.Hardware.SEVSNPLevel == "snp",
 		}
 		// Map config hardware to API hardware profile
 		cfgHW := cfg.Node.Provider.Hardware
@@ -513,24 +535,7 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 
 	// Forward to daemon via bridge
 	if s.daemonBridge != nil {
-		daemonReq := &client.DeployRequest{
-			Image:           req.Image,
-			CodeHash:        req.CodeHash,
-			TorOnly:         req.TorOnly,
-			OnionService:    req.OnionService,
-			ReservationID:   req.ReservationID,
-			Owner:           wallet,
-			MinProviderTier: req.MinProviderTier,
-			Spot:            req.Spot,
-		}
-		if req.Resources.CPUQuota > 0 || req.Resources.MemoryLimit > 0 {
-			daemonReq.Resources = &client.ResourceLimits{
-				CPUShares:   req.Resources.CPUQuota,
-				MemoryMB:    req.Resources.MemoryLimit / (1024 * 1024), // Convert bytes to MB
-				StorageMB:   req.Resources.DiskLimit / (1024 * 1024),   // Convert bytes to MB
-				NetworkMbps: int(req.Resources.NetworkBW / 125000),     // Convert bytes/sec to Mbps
-			}
-		}
+		daemonReq := buildDaemonDeployRequest(&req, wallet)
 
 		result, err := s.daemonBridge.Deploy(daemonReq)
 		if err != nil {
@@ -541,20 +546,65 @@ func (s *Server) handleDeploy(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		response := DeployResponse{
-			ContainerID:  result.ContainerID,
-			Status:       result.Status,
-			OnionAddress: result.OnionAddress,
-			Regions:      result.Regions,
-			ReplicaCount: result.ReplicaCount,
-			CreatedAt:    result.CreatedAt,
-		}
-		s.writeJSON(w, http.StatusCreated, response)
+		s.writeJSON(w, http.StatusCreated, buildDeployResponse(result))
 		return
 	}
 
 	// Daemon bridge not available — cannot deploy
 	s.writeError(w, http.StatusServiceUnavailable, "daemon not connected: cannot process deployment")
+}
+
+// buildDaemonDeployRequest maps the public REST DeployRequest onto the daemon
+// client DeployRequest. It is a pure function (no I/O) so the field mapping —
+// in particular the E2E exec envelope and the exposed-ports plumbing — can be
+// unit-tested without a live daemon. The exec envelope fields carry only
+// ECIES-sealed ciphertext / public material; when the caller omits them the
+// daemon injects no exec-agent (legacy plaintext-exec behavior).
+func buildDaemonDeployRequest(req *DeployRequest, wallet string) *client.DeployRequest {
+	daemonReq := &client.DeployRequest{
+		Image:           req.Image,
+		CodeHash:        req.CodeHash,
+		TorOnly:         req.TorOnly,
+		OnionService:    req.OnionService,
+		ReservationID:   req.ReservationID,
+		Owner:           wallet,
+		MinProviderTier: req.MinProviderTier,
+		Spot:            req.Spot,
+		// E2E exec envelope: forward the sealed exec_key so a container deployed
+		// through the REST API gets the SAME E2E-encrypted exec the CLI path
+		// provides (post-SEC-10).
+		EncryptedExecKey:         req.EncryptedExecKey,
+		ExecKeyNonce:             req.ExecKeyNonce,
+		RequesterEphemeralPubKey: req.RequesterEphemeralPubKey,
+		DeployNonce:              req.DeployNonce,
+		ExposePorts:              req.ExposePorts,
+	}
+	if req.Resources.CPUQuota > 0 || req.Resources.MemoryLimit > 0 {
+		daemonReq.Resources = &client.ResourceLimits{
+			CPUShares:   req.Resources.CPUQuota,
+			MemoryMB:    req.Resources.MemoryLimit / (1024 * 1024), // Convert bytes to MB
+			StorageMB:   req.Resources.DiskLimit / (1024 * 1024),   // Convert bytes to MB
+			NetworkMbps: int(req.Resources.NetworkBW / 125000),     // Convert bytes/sec to Mbps
+		}
+	}
+	return daemonReq
+}
+
+// buildDeployResponse maps the daemon client DeployResponse back onto the public
+// REST DeployResponse, echoing ExecAgentEnabled + DeployNonce so the browser can
+// decide whether the exec WebSocket must perform the KEY_INIT/KEY_ACK handshake
+// and store the nonce needed to re-derive the exec_key.
+func buildDeployResponse(result *client.DeployResponse) DeployResponse {
+	return DeployResponse{
+		ContainerID:      result.ContainerID,
+		Status:           result.Status,
+		OnionAddress:     result.OnionAddress,
+		Regions:          result.Regions,
+		ReplicaCount:     result.ReplicaCount,
+		CreatedAt:        result.CreatedAt,
+		ExecAgentEnabled: result.ExecAgentEnabled,
+		DeployNonce:      result.DeployNonce,
+	}
 }
 
 // handleReserve handles POST /v1/reserve
@@ -1168,9 +1218,9 @@ type BotRequest struct {
 
 // ResourceRequest is resource configuration in requests
 type ResourceRequest struct {
-	CPUShares  int `json:"cpu_shares,omitempty"`
-	MemoryMB   int `json:"memory_mb,omitempty"`
-	StorageMB  int `json:"storage_mb,omitempty"`
+	CPUShares   int `json:"cpu_shares,omitempty"`
+	MemoryMB    int `json:"memory_mb,omitempty"`
+	StorageMB   int `json:"storage_mb,omitempty"`
 	NetworkMbps int `json:"network_mbps,omitempty"`
 }
 
@@ -1457,8 +1507,8 @@ func (s *Server) handleRuntimeReserve(w http.ResponseWriter, r *http.Request) {
 		Region:    req.Region,
 		ExpiresAt: time.Now().Add(time.Duration(durationHours) * time.Hour),
 		Resources: &ResourceRequest{
-			CPUShares:  req.MinCPUShares,
-			MemoryMB:   req.MinMemoryMB,
+			CPUShares: req.MinCPUShares,
+			MemoryMB:  req.MinMemoryMB,
 		},
 	}
 
@@ -1541,15 +1591,15 @@ type DeploymentRequest struct {
 
 // DeploymentResponse is the response for deployment operations
 type DeploymentResponse struct {
-	ID           string    `json:"id"`
-	BotID        string    `json:"bot_id"`
-	RuntimeID    string    `json:"runtime_id"`
-	ContainerID  string    `json:"container_id"`
-	Status       string    `json:"status"`
-	Region       string    `json:"region"`
-	NodeID       string    `json:"node_id"`
-	OnionAddress string    `json:"onion_address,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID           string     `json:"id"`
+	BotID        string     `json:"bot_id"`
+	RuntimeID    string     `json:"runtime_id"`
+	ContainerID  string     `json:"container_id"`
+	Status       string     `json:"status"`
+	Region       string     `json:"region"`
+	NodeID       string     `json:"node_id"`
+	OnionAddress string     `json:"onion_address,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 }
 

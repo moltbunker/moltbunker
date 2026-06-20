@@ -1,0 +1,38 @@
+SELinux note for moltbunker-container (HARDEN-01, R9)
+=====================================================
+
+There is intentionally no separate SELinux policy module shipped in this repo.
+
+On SELinux-enabled hosts (RHEL, CentOS Stream, Fedora, Rocky, Alma), container
+isolation is provided by the `container-selinux` policy package, which is already
+installed and loaded as a dependency of the container runtime stack (runc,
+containerd, Kata). That policy defines the canonical `container_t` domain and the
+`container_file_t` type used to confine container processes and their files.
+
+Rather than ship and maintain a parallel, distro-specific .te/.pp policy module
+(which would drift from the OS vendor's and risk denials on policy upgrades), we
+delegate to the OS vendor policy and select its standard container context.
+
+How moltbunker uses it
+----------------------
+
+On a host where SELinux is enforcing, set:
+
+    ContainerSecurityProfile.SELinuxLabel = "system_u:system_r:container_t:s0"
+
+(see pkg/types/security.go). The runtime then emits this label into the OCI spec
+(WithSELinuxLabel in internal/runtime/security_profile.go), and the kernel's LSM
+confines the container to the vendor `container_t` domain — the SELinux analogue
+of the AppArmor `moltbunker-container` profile loaded on AppArmor hosts.
+
+AppArmor and SELinux are mutually exclusive at the kernel level: a given host
+runs at most one major LSM. The daemon loads the AppArmor profile only on
+AppArmor hosts (Ubuntu/Debian/SUSE) and relies on container-selinux on SELinux
+hosts; the disk-quota and user-namespace hardening (R12/R16) apply on both.
+
+Verifying on an SELinux host
+----------------------------
+
+    getenforce                              # should print "Enforcing"
+    sesearch -A -s container_t | head       # confirm the policy is present
+    ps -eZ | grep container_t               # running containers carry the label

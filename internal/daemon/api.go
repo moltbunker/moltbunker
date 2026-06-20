@@ -225,12 +225,13 @@ func (s *APIServer) Start(ctx context.Context) error {
 	var kataConfig *runtime.KataConfig
 	if s.config != nil {
 		kata := s.config.Runtime.Kata
-		if kata.VMMemoryMB > 0 || kata.VMCPUs > 0 || kata.KernelPath != "" || kata.ImagePath != "" {
+		if kata.VMMemoryMB > 0 || kata.VMCPUs > 0 || kata.KernelPath != "" || kata.ImagePath != "" || kata.DefaultPIDs > 0 {
 			kataConfig = &runtime.KataConfig{
-				VMMemoryMB: kata.VMMemoryMB,
-				VMCPUs:     kata.VMCPUs,
-				KernelPath: kata.KernelPath,
-				ImagePath:  kata.ImagePath,
+				VMMemoryMB:  kata.VMMemoryMB,
+				VMCPUs:      kata.VMCPUs,
+				KernelPath:  kata.KernelPath,
+				ImagePath:   kata.ImagePath,
+				DefaultPIDs: kata.DefaultPIDs, // R17: VM PID ceiling annotation
 			}
 		}
 	}

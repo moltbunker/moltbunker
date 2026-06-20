@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/moltbunker/moltbunker/internal/deployment"
 	"github.com/moltbunker/moltbunker/pkg/types"
 	"gopkg.in/yaml.v3"
 )
@@ -30,6 +31,76 @@ type Config struct {
 	Proxy   ProxyConfig   `yaml:"proxy"`
 	Agent   AgentConfig   `yaml:"agent"`
 	Crawl   CrawlConfig   `yaml:"crawl"`
+
+	// Edge ingress L7 controls (WAF + per-tenant abuse limits). EDGE-01.
+	Ingress IngressConfig `yaml:"ingress"`
+}
+
+// IngressConfig configures the L7 edge controls that sit in the HTTP ingress
+// request path: an in-process WAF (Coraza + OWASP CRS) and per-tenant abuse
+// limits (rate limit, concurrency cap, request body size cap). These are
+// distinct from the L4 tunnel-layer limits in internal/tunnel. EDGE-01.
+//
+// Defaults are deliberately safe and non-breaking: the WAF runs in
+// detection-only mode (rules fire and are counted, but nothing is blocked)
+// and the rate limits are generous. An operator must explicitly set
+// WAF.Mode="blocking" to start enforcing.
+type IngressConfig struct {
+	WAF       WAFIngressConfig       `yaml:"waf"`
+	RateLimit IngressRateLimitConfig `yaml:"rate_limit"`
+}
+
+// WAFIngressConfig configures the in-process L7 Web Application Firewall.
+//
+// Memory note: a real Coraza engine with the full OWASP CRS loaded costs
+// roughly ~25MB of compiled pattern-matcher state (paid once per ingress
+// node — the engine is a singleton). When Enabled=false a zero-cost no-op
+// engine is used instead and no CRS is loaded.
+type WAFIngressConfig struct {
+	Enabled        bool   `yaml:"enabled"`          // Load the Coraza engine. Default true.
+	Mode           string `yaml:"mode"`             // "detection" (count only) or "blocking" (return 403). Default "detection".
+	BodyLimitBytes int    `yaml:"body_limit_bytes"` // Max request body bytes inspected by the WAF. Default 65536.
+	ExcludeRuleIDs []int  `yaml:"exclude_rule_ids"` // CRS rule IDs to disable (SecRuleRemoveById). Escape hatch for false positives.
+}
+
+// DefaultWAFIngressConfig returns the default WAF config: enabled, in
+// detection-only mode, with a 64KB body inspection limit.
+func DefaultWAFIngressConfig() WAFIngressConfig {
+	return WAFIngressConfig{
+		Enabled:        true,
+		Mode:           "detection",
+		BodyLimitBytes: 65536,
+	}
+}
+
+// IngressRateLimitConfig configures per-tenant (per-subdomain) HTTP abuse
+// limits at the ingress. These operate on HTTP request counts / concurrency /
+// body size, distinct from the L4 byte-stream throttling in internal/tunnel.
+type IngressRateLimitConfig struct {
+	DefaultRPS     int   `yaml:"default_rps"`     // Sustained requests/sec per tenant. Default 100.
+	DefaultBurst   int   `yaml:"default_burst"`   // Token-bucket burst per tenant. Default 200.
+	MaxConcurrency int   `yaml:"max_concurrency"` // Max concurrent in-flight requests per tenant. Default 50.
+	MaxBodyBytes   int64 `yaml:"max_body_bytes"`  // Hard request body cap (413 over limit). Default 10MiB.
+}
+
+// DefaultIngressRateLimitConfig returns generous defaults so out-of-box
+// behavior is non-breaking; operators tighten these per deployment.
+func DefaultIngressRateLimitConfig() IngressRateLimitConfig {
+	return IngressRateLimitConfig{
+		DefaultRPS:     100,
+		DefaultBurst:   200,
+		MaxConcurrency: 50,
+		MaxBodyBytes:   10 * 1024 * 1024,
+	}
+}
+
+// DefaultIngressConfig returns the default edge ingress config (safe:
+// detection-only WAF + generous limits).
+func DefaultIngressConfig() IngressConfig {
+	return IngressConfig{
+		WAF:       DefaultWAFIngressConfig(),
+		RateLimit: DefaultIngressRateLimitConfig(),
+	}
 }
 
 // DaemonConfig contains daemon settings
@@ -182,6 +253,40 @@ type ProviderNodeConfig struct {
 	// Reverse tunnel server (ingress-side — accepts incoming reverse tunnels from providers)
 	ReverseTunnelPort     int `yaml:"reverse_tunnel_port,omitempty"`      // Listen port (default: 9443)
 	ReverseTunnelMaxConns int `yaml:"reverse_tunnel_max_conns,omitempty"` // Global max connections (default: 10000)
+
+	// Edge-provider role (EDGE-02). When enabled the ingress-side reverse
+	// tunnel server additionally gates provider registration on edge-tier
+	// authorization. Zero-value = disabled, so existing configs are unaffected.
+	EdgeRole EdgeRoleConfig `yaml:"edge_role,omitempty"`
+
+	// BYO custom-hostname ACME (EDGE-02). When enabled, customers can point
+	// their own domain at this ingress after proving ownership via a CNAME/TXT
+	// DNS record. Zero-value = disabled.
+	CustomDomain CustomDomainConfig `yaml:"custom_domain,omitempty"`
+}
+
+// EdgeRoleConfig gates the stake-gated edge-provider role (EDGE-02). The actual
+// edge-tier check is pluggable: "config" uses AllowedNodeIDs (works with no
+// contract deployed, the default), "onchain" uses the BunkerEdgeRegistry via
+// the payment service. AllowedNodeIDs holds NodeID hex strings (public SHA256
+// hashes), not secrets.
+type EdgeRoleConfig struct {
+	Enabled        bool     `yaml:"enabled,omitempty"`          // Gate reverse-tunnel registration on edge tier
+	Mode           string   `yaml:"mode,omitempty"`             // "config" (allowlist, default) or "onchain"
+	MinStakeTier   string   `yaml:"min_stake_tier,omitempty"`   // Minimum tier for onchain mode (default: bronze)
+	AllowedNodeIDs []string `yaml:"allowed_node_ids,omitempty"` // NodeID hex allowlist for "config" mode
+	RegistryAddr   string   `yaml:"registry_addr,omitempty"`    // BunkerEdgeRegistry address for "onchain" mode (public)
+}
+
+// CustomDomainConfig configures BYO custom-hostname verification (EDGE-02).
+// VerifyMethod selects the DNS proof: "cname" (CNAME to <token>.<domain>) or
+// "txt" (TXT moltbunker-verify=<token> on _moltbunker.<host>). No secret fields
+// — the verification HMAC secret is generated in memory at startup.
+type CustomDomainConfig struct {
+	Enabled                 bool   `yaml:"enabled,omitempty"`                    // Accept BYO custom hostnames
+	VerifyMethod            string `yaml:"verify_method,omitempty"`              // "cname" (default) or "txt"
+	MaxDomainsPerDeployment int    `yaml:"max_domains_per_deployment,omitempty"` // 0 = unlimited
+	OwnershipTTLHours       int    `yaml:"ownership_ttl_hours,omitempty"`        // Verification validity (default: 72)
 }
 
 // RequesterNodeConfig contains requester-specific configuration
@@ -382,6 +487,10 @@ type KataConfig struct {
 	KernelPath string `yaml:"kernel_path,omitempty"`
 	// ImagePath overrides the Kata rootfs/initrd path (default: auto-detect)
 	ImagePath string `yaml:"image_path,omitempty"`
+	// DefaultPIDs is the R17 VM-level PID ceiling, emitted as the
+	// io.katacontainers.config.hypervisor.default_pids annotation for Kata VM
+	// workloads. 0 = Kata default (unbounded). Recommended: 1024.
+	DefaultPIDs int `yaml:"default_pids,omitempty"`
 }
 
 // SecurityConfig contains security and container opacity settings
@@ -420,6 +529,20 @@ type SecurityConfig struct {
 	// ciphertext; decryption happens in-process just before unpack. See
 	// internal/runtime/image_encrypt.go for the threat model and boundaries.
 	ImageEncryptionEnabled bool `yaml:"image_encryption_enabled"`
+
+	// KEY-01 — at-rest state key rotation sweep. When true, the daemon runs an
+	// idempotent RotateKey pass over the bbolt store on startup, re-encrypting
+	// every value with the current state key and bumping the on-disk magic to
+	// MBENC2. Default false (lazy migration on next write). Use after a key
+	// change or to eagerly retag a legacy (MBENC1) database.
+	StateKeyRotationSweep bool `yaml:"state_key_rotation_sweep"`
+
+	// R9 (HARDEN-01) — AppArmor profile auto-load. When true (the default set by
+	// DefaultConfig), the daemon loads the embedded moltbunker-container AppArmor
+	// profile into the kernel on startup (Linux only) so the AppArmor confinement
+	// gate fires on a fresh install instead of silently no-op'ing. Set to false to
+	// manage the profile out-of-band (e.g. via a packaged /etc/apparmor.d file).
+	AppArmorAutoLoad bool `yaml:"apparmor_auto_load"`
 }
 
 // RedundancyConfig contains redundancy settings
@@ -526,6 +649,21 @@ type StorageConfig struct {
 	MaxObjectSize int64  `yaml:"max_object_size"` // Max single object size in bytes (default: 5GB)
 	S3Port        int    `yaml:"s3_port"`         // S3-compatible API port (default: 9300)
 	EnableS3      bool   `yaml:"enable_s3"`       // Enable S3-compatible endpoint
+
+	// KEY-01 — at-rest object encryption. When true (and the provider X25519
+	// key is available), object blobs are encrypted with a per-object DEK sealed
+	// to the provider's own X25519 key (self-recipient model, matching R5 image
+	// encryption). Default false: blobs are stored as plaintext. Objects written
+	// before this was enabled remain readable (back-compat read path).
+	EncryptionEnabled bool `yaml:"encryption_enabled"`
+
+	// KEY-01 — in-memory ceiling for the (non-streaming) encrypted object path.
+	// When EncryptionEnabled is true, encrypted PutObject/GetObject buffer the
+	// whole object in memory to seal/open it, so an object larger than this is
+	// rejected to avoid OOM. Only consulted when encryption is enabled. Zero
+	// falls back to the engine default (256MB). A streaming/chunked AEAD that
+	// removes this ceiling is a follow-up.
+	EncryptedMaxInMemoryBytes int64 `yaml:"encrypted_max_in_memory_bytes"`
 }
 
 // DefaultStorageConfig returns the default storage configuration.
@@ -688,8 +826,9 @@ func DefaultConfig() *Config {
 			Namespace:        "moltbunker",
 			RuntimeName:      "auto",
 			Kata: KataConfig{
-				VMMemoryMB: 256,
-				VMCPUs:     1,
+				VMMemoryMB:  256,
+				VMCPUs:      1,
+				DefaultPIDs: 1024, // R17: bound Kata VM workloads to 1024 PIDs by default
 			},
 			Molt: MoltRuntimeConfig{
 				Enabled:         false, // Opt-in: provider must explicitly enable
@@ -728,8 +867,9 @@ func DefaultConfig() *Config {
 				"TLS_CHACHA20_POLY1305_SHA256",
 				"TLS_AES_128_GCM_SHA256",
 			},
-			CertPinning: true,
-			MutualTLS:   true,
+			CertPinning:      true,
+			MutualTLS:        true,
+			AppArmorAutoLoad: true, // R9: load the embedded AppArmor profile on startup (Linux)
 		},
 		Redundancy: RedundancyConfig{
 			ReplicaCount:        3,
@@ -776,9 +916,10 @@ func DefaultConfig() *Config {
 			cfg.DataDir = filepath.Join(dataDir, "storage")
 			return cfg
 		}(),
-		Proxy: DefaultProxyConfig(),
-		Agent: DefaultAgentConfig(),
-		Crawl: DefaultCrawlConfig(),
+		Proxy:   DefaultProxyConfig(),
+		Agent:   DefaultAgentConfig(),
+		Crawl:   DefaultCrawlConfig(),
+		Ingress: DefaultIngressConfig(),
 	}
 }
 
@@ -802,6 +943,10 @@ func Load(path string) (*Config, error) {
 
 	cfg.expandPaths()
 
+	// Resolve contract addresses from the canonical embedded manifest for any
+	// fields the operator left blank. Operator-supplied YAML values always win.
+	populateAddressesFromManifest(cfg)
+
 	// Parse staking tier min stakes
 	for _, tier := range cfg.Economics.StakingTiers {
 		if err := tier.ParseMinStake(); err != nil {
@@ -814,6 +959,63 @@ func Load(path string) (*Config, error) {
 	}
 
 	return cfg, nil
+}
+
+// populateAddressesFromManifest fills in empty contract-address fields on the
+// economics config from the canonical embedded manifest (deployments/addresses.json),
+// keyed by the configured chain_id. It is a fallback only: any address the
+// operator set explicitly in YAML is left untouched. This lets a testnet
+// operator configure just `chain_id: 84532` + `mock_payments: false` and get
+// the correct addresses automatically, while still allowing per-deploy
+// overrides. It is a no-op in mock mode (no real addresses are needed).
+func populateAddressesFromManifest(cfg *Config) {
+	if cfg == nil || cfg.Economics.MockPayments {
+		return
+	}
+	cs, ok := deployment.AddressesForChain(cfg.Economics.ChainID)
+	if !ok {
+		return // unknown chain; Validate() will surface any missing required fields
+	}
+	setIfEmpty(&cfg.Economics.TokenAddress, cs.Token)
+	setIfEmpty(&cfg.Economics.StakingAddress, cs.Staking)
+	setIfEmpty(&cfg.Economics.EscrowAddress, cs.Escrow)
+	setIfEmpty(&cfg.Economics.PricingAddress, cs.Pricing)
+	setIfEmpty(&cfg.Economics.GovernanceAddress, cs.Timelock)
+	setIfEmpty(&cfg.Economics.DelegationAddress, cs.Delegation)
+	setIfEmpty(&cfg.Economics.ReputationAddress, cs.Reputation)
+	setIfEmpty(&cfg.Economics.VerificationAddress, cs.Verification)
+	setIfEmpty(&cfg.Economics.SubdomainRegistryAddress, cs.Registry)
+	setIfEmpty(&cfg.Economics.SlashingAddress, cs.Slashing)
+	setIfEmpty(&cfg.Economics.RegistryAddress, cs.Registry)
+}
+
+// setIfEmpty assigns val to *dst only when *dst is currently empty and val is a
+// non-empty, non-zero address. The zero address is treated as "not deployed"
+// and is never copied from the manifest (e.g. a chain whose contract is not yet
+// live), so it does not satisfy the daemon's non-zero address validation.
+func setIfEmpty(dst *string, val string) {
+	if dst == nil || *dst != "" {
+		return
+	}
+	if val == "" || isZeroAddress(val) {
+		return
+	}
+	*dst = val
+}
+
+// isZeroAddress reports whether addr is the all-zero Ethereum address,
+// case-insensitively and tolerant of a missing/present 0x prefix.
+func isZeroAddress(addr string) bool {
+	hexPart := strings.TrimPrefix(strings.TrimPrefix(addr, "0x"), "0X")
+	if hexPart == "" {
+		return false
+	}
+	for _, c := range hexPart {
+		if c != '0' {
+			return false
+		}
+	}
+	return true
 }
 
 // Save saves configuration to file

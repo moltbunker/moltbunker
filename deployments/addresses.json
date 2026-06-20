@@ -1,0 +1,59 @@
+{
+  "_comment": "Canonical contract-address manifest for moltbunker. Keyed by EVM chainId (string). Contract addresses are PUBLIC on-chain facts, not secrets, and are committed to source. NEVER put private keys or mnemonics here. Mainnet cutover = edit the '8453' block with real addresses, then run `make gen-addresses` and commit. Source of truth for the daemon (Go embed), web, web-admin, and the Python SDK via tools/gen-addresses.",
+  "chains": {
+    "8453": {
+      "chainName": "Base Mainnet",
+      "rpcUrl": "https://mainnet.base.org",
+      "contracts": {
+        "token": "0x0000000000000000000000000000000000000000",
+        "staking": "0x0000000000000000000000000000000000000000",
+        "escrow": "0x0000000000000000000000000000000000000000",
+        "pricing": "0x0000000000000000000000000000000000000000",
+        "timelock": "0x0000000000000000000000000000000000000000",
+        "delegation": "0x0000000000000000000000000000000000000000",
+        "reputation": "0x0000000000000000000000000000000000000000",
+        "verification": "0x0000000000000000000000000000000000000000",
+        "registry": "0x0000000000000000000000000000000000000000",
+        "slashing": "0x0000000000000000000000000000000000000000"
+      },
+      "deployedAt": "",
+      "note": "pending mainnet deploy"
+    },
+    "84532": {
+      "chainName": "Base Sepolia",
+      "rpcUrl": "https://sepolia.base.org",
+      "contracts": {
+        "token": "0x4cc3F5C0d2Ecb4118e214980906eFe5c880a6ceA",
+        "staking": "0xDC76d972a827D2a19867EF9aBD335014d5Cf7D6a",
+        "escrow": "0xBAdaB53a9E98D904E3dfcDb728D510c69DAeE9B4",
+        "pricing": "0x5A61b05F289344202433ccDf44aFc611d9E3dA47",
+        "timelock": "0xcD8af28808749CD4B55a970f14DA250C8EAEd3C9",
+        "delegation": "0x071252B4f4bC80cccEccDe1A644229EE2dAf09F5",
+        "reputation": "0x55721fC66B30Fe26a0820CfDeffC0815135678Ed",
+        "verification": "0x9aA9Fc961da51dcFfF0232883631f7147CaBFBCD",
+        "registry": "0x3559A7D2E6F09eA74a295e654e0D6C22F921D4b5",
+        "slashing": "0xDC76d972a827D2a19867EF9aBD335014d5Cf7D6a"
+      },
+      "deployedAt": "2026-02-26T00:00:00Z",
+      "note": "BunkerRegistry v2.0.0; slashing is built into the staking contract"
+    },
+    "31337": {
+      "chainName": "Anvil Local",
+      "rpcUrl": "http://127.0.0.1:8545",
+      "contracts": {
+        "token": "0x5FbDB2315678afecb367f032d93F642f64180aa3",
+        "staking": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512",
+        "escrow": "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0",
+        "pricing": "0x0000000000000000000000000000000000000000",
+        "timelock": "0x0000000000000000000000000000000000000000",
+        "delegation": "0x0000000000000000000000000000000000000000",
+        "reputation": "0x0000000000000000000000000000000000000000",
+        "verification": "0x0000000000000000000000000000000000000000",
+        "registry": "0x0000000000000000000000000000000000000000",
+        "slashing": "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      },
+      "deployedAt": "",
+      "note": "deterministic Anvil addresses from the localnet deploy script"
+    }
+  }
+}

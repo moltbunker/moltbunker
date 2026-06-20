@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5" // #nosec G501 -- non-security use: S3-compatible ETag (content identifier), not auth/integrity
 	"encoding/hex"
@@ -31,12 +32,15 @@ type MeteringHook interface {
 
 // StorageEngine is the main orchestrator for object storage operations.
 // Phase 1: local blob storage with bbolt metadata.
-// Phase 2 adds encryption and IPFS distribution.
+// Phase 2 adds encryption (X25519 envelope, opt-in via keyStore) and IPFS
+// distribution.
 type StorageEngine struct {
-	dataDir  string
-	metadata *MetadataStore
-	config   EngineConfig
-	meter    MeteringHook // optional usage metering hook (nil = no metering)
+	dataDir   string
+	metadata  *MetadataStore
+	config    EngineConfig
+	meter     MeteringHook  // optional usage metering hook (nil = no metering)
+	keyStore  OwnerKeyStore // optional X25519 owner key store (nil = at-rest encryption disabled)
+	encryptor *OwnerKeyEncryptor
 }
 
 // SetMeteringHook installs an optional metering hook. Pass nil to disable.
@@ -45,18 +49,62 @@ func (e *StorageEngine) SetMeteringHook(h MeteringHook) {
 	e.meter = h
 }
 
+// WithOwnerKeyStore enables at-rest object encryption. When set, PutObject
+// encrypts the blob with a per-object DEK sealed to the owner's X25519 key and
+// GetObject transparently decrypts. Pass nil (or never call) to keep plaintext
+// blobs (the default, legacy behavior). Returns the engine for chaining.
+func (e *StorageEngine) WithOwnerKeyStore(ks OwnerKeyStore) *StorageEngine {
+	e.keyStore = ks
+	if ks != nil && e.encryptor == nil {
+		e.encryptor = NewOwnerKeyEncryptor()
+	}
+	return e
+}
+
 // EngineConfig configures the storage engine.
 type EngineConfig struct {
 	MaxBuckets    int   // Max buckets per wallet
 	MaxObjectSize int64 // Max single object size in bytes
+
+	// EncryptedMaxInMemoryBytes caps the size of an object that the at-rest
+	// encryption path will accept. The current envelope scheme is NOT streaming:
+	// PutObject reads the whole plaintext blob into memory to seal it, and
+	// GetObject/decryptBlob reads the whole ciphertext into memory to open it.
+	// With MaxObjectSize at 5GB, an unconstrained encrypted Put/Get would hold
+	// multiple GB resident (plaintext + ciphertext copies) — an OOM/DoS vector
+	// that the plaintext io.Copy path avoids. We therefore reject encrypted
+	// objects larger than this ceiling with a clear error.
+	//
+	// Zero falls back to defaultEncryptedMaxInMemoryBytes (256MB). It is only
+	// consulted when at-rest encryption is enabled (keyStore != nil); the
+	// plaintext path streams and is unaffected. A full chunked/framed streaming
+	// AEAD that removes this ceiling is tracked as a follow-up (see
+	// daemon-todo.md).
+	EncryptedMaxInMemoryBytes int64
 }
+
+// defaultEncryptedMaxInMemoryBytes is the default in-memory ceiling for the
+// (non-streaming) encrypted object path. 256MB is large enough for typical
+// config/state/object payloads while bounding per-request memory well below the
+// 5GB plaintext MaxObjectSize.
+const defaultEncryptedMaxInMemoryBytes = 256 * 1024 * 1024 // 256MB
 
 // DefaultEngineConfig returns sensible defaults.
 func DefaultEngineConfig() EngineConfig {
 	return EngineConfig{
-		MaxBuckets:    100,
-		MaxObjectSize: 5 * 1024 * 1024 * 1024, // 5GB
+		MaxBuckets:                100,
+		MaxObjectSize:             5 * 1024 * 1024 * 1024, // 5GB
+		EncryptedMaxInMemoryBytes: defaultEncryptedMaxInMemoryBytes,
 	}
+}
+
+// encryptedMaxInMemoryBytes returns the effective in-memory ceiling for the
+// encrypted path, applying the default when the config value is unset (<= 0).
+func (e *StorageEngine) encryptedMaxInMemoryBytes() int64 {
+	if e.config.EncryptedMaxInMemoryBytes > 0 {
+		return e.config.EncryptedMaxInMemoryBytes
+	}
+	return defaultEncryptedMaxInMemoryBytes
 }
 
 // NewStorageEngine creates a new storage engine.
@@ -239,13 +287,58 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 		return nil, fmt.Errorf("object too large: %d bytes exceeds max %d", n, e.config.MaxObjectSize)
 	}
 
+	etag := hex.EncodeToString(hasher.Sum(nil))
+
+	// At-rest encryption (opt-in via keyStore): seal the blob to the owner's
+	// X25519 key. ETag and Size are kept over the PLAINTEXT (S3 semantics); only
+	// the on-disk bytes are ciphertext. We read the freshly-written temp file
+	// back, encrypt, and overwrite it before the atomic rename.
+	var sealedDEKBytes []byte
+	if e.keyStore != nil && e.encryptor != nil {
+		// In-memory ceiling: the envelope scheme buffers the whole blob (read
+		// back + encrypt produces a second copy). Reject oversized objects rather
+		// than risk OOM. n is the plaintext size already on disk in tempPath.
+		if max := e.encryptedMaxInMemoryBytes(); n > max {
+			_ = os.Remove(tempPath)
+			return nil, fmt.Errorf("encrypted object too large: %d bytes exceeds in-memory encryption limit of %d bytes (at-rest encryption buffers the whole object; use a smaller object or disable storage encryption)", n, max)
+		}
+		ownerPub, keyErr := e.keyStore.PublicKeyForOwner(input.Owner)
+		if keyErr != nil {
+			_ = os.Remove(tempPath)
+			return nil, fmt.Errorf("resolve owner key: %w", keyErr)
+		}
+		// #nosec G304 -- tempPath is a CreateTemp file in the blob dir we just wrote.
+		plain, readErr := os.ReadFile(tempPath)
+		if readErr != nil {
+			_ = os.Remove(tempPath)
+			return nil, fmt.Errorf("read blob for encryption: %w", readErr)
+		}
+		res, encErr := e.encryptor.Encrypt(plain, ownerPub)
+		if encErr != nil {
+			_ = os.Remove(tempPath)
+			return nil, fmt.Errorf("encrypt blob: %w", encErr)
+		}
+		sealedDEKBytes, encErr = MarshalSealedDEK(res.SealedDEK)
+		if encErr != nil {
+			_ = os.Remove(tempPath)
+			return nil, fmt.Errorf("marshal sealed DEK: %w", encErr)
+		}
+		// #nosec G703 G304 -- tempPath is the os.CreateTemp file we created in
+		// filepath.Dir(blobPath); blobPath is validated by blobPath() (Clean +
+		// prefix check rejects traversal). We are overwriting our own temp file
+		// in place before the atomic rename, not following request input.
+		if writeErr := os.WriteFile(tempPath, res.Ciphertext, 0600); writeErr != nil {
+			_ = os.Remove(tempPath)
+			return nil, fmt.Errorf("write encrypted blob: %w", writeErr)
+		}
+	}
+
 	// Atomic rename
 	if err := os.Rename(tempPath, blobPath); err != nil {
 		_ = os.Remove(tempPath)
 		return nil, fmt.Errorf("rename blob: %w", err)
 	}
 
-	etag := hex.EncodeToString(hasher.Sum(nil))
 	now := time.Now().UTC()
 
 	contentType := input.ContentType
@@ -254,14 +347,15 @@ func (e *StorageEngine) PutObject(ctx context.Context, input *PutObjectInput) (*
 	}
 
 	obj := &ObjectInfo{
-		Bucket:      input.Bucket,
-		Key:         input.Key,
-		Size:        n,
-		ContentType: contentType,
-		ETag:        etag,
-		Owner:       input.Owner,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		Bucket:       input.Bucket,
+		Key:          input.Key,
+		Size:         n,
+		ContentType:  contentType,
+		ETag:         etag,
+		Owner:        input.Owner,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+		EncryptedDEK: sealedDEKBytes,
 	}
 
 	if err := e.metadata.PutObject(ctx, obj); err != nil {
@@ -315,11 +409,72 @@ func (e *StorageEngine) GetObject(ctx context.Context, bucket, key, owner string
 		return nil, fmt.Errorf("open blob: %w", err)
 	}
 
+	// At-rest decryption: if the object carries a sealed DEK, decrypt the blob
+	// in memory and return the plaintext. Both the new X25519-envelope scheme and
+	// the legacy AES-GCM-wrapped-DEK scheme are supported (back-compat read path).
+	if len(obj.EncryptedDEK) > 0 {
+		// In-memory ceiling: decryptBlob reads the entire ciphertext into memory.
+		// obj.Size is the plaintext size (S3 semantics); the ciphertext is at most
+		// that plus a small GCM/nonce overhead, so guarding on Size bounds resident
+		// memory. Reject rather than risk OOM on a large encrypted object.
+		if max := e.encryptedMaxInMemoryBytes(); obj.Size > max {
+			_ = f.Close()
+			return nil, fmt.Errorf("encrypted object too large to read: %d bytes exceeds in-memory decryption limit of %d bytes (at-rest decryption buffers the whole object)", obj.Size, max)
+		}
+		plain, decErr := e.decryptBlob(f, obj)
+		_ = f.Close()
+		if decErr != nil {
+			return nil, decErr
+		}
+		return &GetObjectOutput{
+			Body:        io.NopCloser(bytes.NewReader(plain)),
+			Info:        *obj,
+			ContentType: obj.ContentType,
+		}, nil
+	}
+
 	return &GetObjectOutput{
 		Body:        f,
 		Info:        *obj,
 		ContentType: obj.ContentType,
 	}, nil
+}
+
+// decryptBlob reads the (encrypted) blob from r and returns the plaintext. It
+// supports both the X25519-envelope scheme (new) and the legacy HKDF-derived
+// symmetric scheme, distinguished by whether EncryptedDEK is a JSON envelope.
+func (e *StorageEngine) decryptBlob(r io.Reader, obj *ObjectInfo) ([]byte, error) {
+	ciphertext, err := io.ReadAll(r)
+	if err != nil {
+		return nil, fmt.Errorf("read encrypted blob: %w", err)
+	}
+
+	// New scheme: JSON-encoded X25519 envelope sealed to the owner key.
+	if env, ok := looksLikeX25519Envelope(obj.EncryptedDEK); ok {
+		if e.keyStore == nil || e.encryptor == nil {
+			return nil, fmt.Errorf("object is encrypted but no owner key store is configured")
+		}
+		ownerPriv, keyErr := e.keyStore.PrivateKeyForOwner(obj.Owner)
+		if keyErr != nil {
+			return nil, fmt.Errorf("resolve owner private key: %w", keyErr)
+		}
+		plain, decErr := e.encryptor.Decrypt(ciphertext, env, ownerPriv)
+		if decErr != nil {
+			return nil, fmt.Errorf("decrypt object: %w", decErr)
+		}
+		return plain, nil
+	}
+
+	// Legacy scheme: DEK wrapped with the HKDF-derived symmetric owner key.
+	ownerKey, keyErr := legacyDeriveOwnerKey(obj.Owner)
+	if keyErr != nil {
+		return nil, fmt.Errorf("derive legacy owner key: %w", keyErr)
+	}
+	plain, decErr := NewObjectEncryptor().Decrypt(ciphertext, obj.EncryptedDEK, ownerKey)
+	if decErr != nil {
+		return nil, fmt.Errorf("decrypt legacy object: %w", decErr)
+	}
+	return plain, nil
 }
 
 // HeadObject returns object metadata without the body. The caller must own the bucket.

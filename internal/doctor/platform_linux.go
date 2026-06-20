@@ -13,6 +13,16 @@ func (d *Doctor) registerPlatformCheckers() {
 		NewFileDescriptorChecker(),
 		// Provider-only checks (filtered by RoleAware)
 		NewKataRuntimeChecker(),
+		// RUN-01: tooling for the expose-to-internet security gates. Each warns
+		// (not errors) if its binary is absent so an operator does not enable a
+		// gate that then silently no-ops.
+		NewTrivyChecker(),                 // R4 image scanning
+		NewNftChecker(),                   // R13/R14 nftables enforcement
+		NewImageSignatureToolingChecker(), // R3 image signature verification
+		// HARDEN-01: runtime isolation hardening checks.
+		NewAppArmorChecker(),    // R9 AppArmor profile loaded
+		NewUserNSChecker(),      // R12 user namespace support
+		NewKataPIDsChecker(nil), // R17 Kata VM PID limit (real config injected via SetKataConfig)
 	}
 }
 

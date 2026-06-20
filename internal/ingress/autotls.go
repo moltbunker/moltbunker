@@ -17,6 +17,12 @@ type AutoTLSConfig struct {
 	Manager  *autocert.Manager
 	domain   string
 	resolver *Resolver
+
+	// customDomains, when set, lets hostPolicy accept BYO custom hostnames that
+	// have proven DNS ownership (EDGE-02). Nil = the original behavior (only
+	// *.<domain> hosts are issued certs). Wired post-construction via
+	// SetCustomDomains so main.go can build the store after the manager.
+	customDomains *DomainOwnershipStore
 }
 
 // NewAutoTLSConfig creates an auto-TLS configuration with Let's Encrypt.
@@ -46,13 +52,32 @@ func (a *AutoTLSConfig) TLSConfig() *tls.Config {
 	return tlsCfg
 }
 
+// SetCustomDomains wires the verified-custom-domain store so hostPolicy will
+// also issue certs for BYO hostnames that proved ownership. Safe to call once
+// post-construction (EDGE-02). A nil store leaves the original policy intact.
+func (a *AutoTLSConfig) SetCustomDomains(store *DomainOwnershipStore) {
+	a.customDomains = store
+}
+
 // hostPolicy decides whether to issue a certificate for the given host.
 // It rejects bare domains, wrong domain suffixes, and subdomains that
-// don't resolve to any active service.
+// don't resolve to any active service. A verified BYO custom hostname
+// (EDGE-02) is accepted via a secondary lookup once the *.<domain> fast path
+// has been ruled out.
 func (a *AutoTLSConfig) hostPolicy(ctx context.Context, host string) error {
-	// Must be under our domain
+	// Must be under our domain — fast path, unchanged for *.<domain> hosts.
 	suffix := "." + a.domain
 	if !strings.HasSuffix(host, suffix) {
+		// Secondary path: a BYO custom hostname that proved DNS ownership.
+		// Only consulted when a custom-domain store is wired AND the host is
+		// NOT under our base domain, so existing behavior is preserved both for
+		// *.<domain> hosts and when the feature is disabled.
+		if a.customDomains != nil {
+			if _, ok := a.customDomains.LookupByHost(host); ok {
+				return nil
+			}
+			return fmt.Errorf("custom domain not verified: %s", host)
+		}
 		return fmt.Errorf("host %q is not under %s", host, a.domain)
 	}
 

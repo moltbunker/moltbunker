@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
@@ -26,18 +27,21 @@ import (
 	"github.com/moltbunker/moltbunker/internal/config"
 	"github.com/moltbunker/moltbunker/internal/crawl"
 	"github.com/moltbunker/moltbunker/internal/daemon"
+	"github.com/moltbunker/moltbunker/internal/edge"
 	"github.com/moltbunker/moltbunker/internal/identity"
 	"github.com/moltbunker/moltbunker/internal/ingress"
 	"github.com/moltbunker/moltbunker/internal/logging"
 	"github.com/moltbunker/moltbunker/internal/p2p"
 	"github.com/moltbunker/moltbunker/internal/payment"
 	"github.com/moltbunker/moltbunker/internal/proxy"
+	"github.com/moltbunker/moltbunker/internal/runtime"
 	"github.com/moltbunker/moltbunker/internal/snapshot"
 	"github.com/moltbunker/moltbunker/internal/state"
 	"github.com/moltbunker/moltbunker/internal/storage"
 	"github.com/moltbunker/moltbunker/internal/threat"
 	"github.com/moltbunker/moltbunker/internal/tunnel"
 	"github.com/moltbunker/moltbunker/internal/util"
+	"github.com/moltbunker/moltbunker/pkg/types"
 )
 
 // Build-time version information (set via -ldflags)
@@ -143,10 +147,43 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// R9 (HARDEN-01): load the embedded moltbunker-container AppArmor profile into
+	// the kernel so the runtime's AppArmor confinement gate fires on a fresh
+	// install instead of silently no-op'ing. Linux-only (the loader is a no-op on
+	// other platforms) and non-fatal: a failure (missing apparmor_parser, AppArmor
+	// not enabled) only logs a warning — the deploy still proceeds without AA
+	// confinement. Operators can also load it via `moltbunker doctor --fix`.
+	if cfg.Security.AppArmorAutoLoad && goruntime.GOOS == "linux" {
+		if aaErr := (&runtime.AppArmorLoader{}).EnsureProfile(ctx, runtime.AppArmorProfileName, ""); aaErr != nil {
+			logging.Warn("AppArmor profile auto-load failed; containers will run without AppArmor confinement until loaded",
+				logging.Err(aaErr), logging.Component("apparmor"))
+		} else {
+			logging.Info("AppArmor profile auto-loaded",
+				"profile", runtime.AppArmorProfileName, logging.Component("apparmor"))
+		}
+	}
+
 	// Run JSON → bbolt migration (no-op if already migrated or no JSON files)
 	if err := state.MigrateFromJSON(ctx, stateStore, cfg.Daemon.DataDir); err != nil {
 		logging.Warn("state migration failed, continuing",
 			logging.Err(err), logging.Component("daemon"))
+	}
+
+	// KEY-01: optional eager state-key rotation sweep. Re-encrypts every value
+	// with the current key and bumps the on-disk magic to MBENC2 (idempotent;
+	// retags legacy MBENC1 values). Off by default — lazy migration on next
+	// write is the norm.
+	if stateEncKey != nil && cfg.Security.StateKeyRotationSweep {
+		if m, rerr := stateStore.RotateKey(ctx, stateEncKey); rerr != nil {
+			logging.Warn("state key rotation sweep failed, continuing",
+				logging.Err(rerr), logging.Component("daemon"))
+		} else {
+			logging.Info("state key rotation sweep complete",
+				"buckets", m.Buckets,
+				"values_rotated", m.ValuesRotated,
+				"values_skipped", m.ValuesSkipped,
+				logging.Component("daemon"))
+		}
 	}
 
 	// Handle signals
@@ -428,6 +465,10 @@ func main() {
 	// Ingress nodes: start HTTP reverse proxy for subdomain routing
 	var ingressProxy *ingress.Proxy
 	var ingressHealthChecker *ingress.HealthChecker
+	// EDGE-02 operator surfaces, created in the ingress block and mounted on the
+	// HTTP API server below (declared here so both blocks can see them).
+	var customDomainAdmin *ingress.CustomDomainHandler
+	var takedownBlocklist *tunnel.Blocklist
 	if cfg.Node.Provider.IngressEnabled {
 		cm := apiServer.GetContainerManager()
 		if cm != nil && cm.GossipProtocol() != nil {
@@ -448,6 +489,31 @@ func main() {
 			tunnelClient := tunnel.NewClient(tunnelDialer)
 			resolver := ingress.NewResolver(gossipAdapter, gossipAdapter) // implements both GossipReader and SubdomainResolver
 			ingressProxy = ingress.NewProxy(resolver, tunnelClient, ingressDomain)
+
+			// EDGE-02: operator takedown kill-switch. Created here (not in the
+			// reverse-tunnel block) and wired into the ingress proxy itself so a
+			// takedown is enforced on EVERY request — the forward-tunnel serving
+			// path and verified custom hosts included — not just on reverse-tunnel
+			// registration/stream-open. The same instance is also handed to the
+			// reverse server below and exposed via the admin API.
+			takedownBlocklist = tunnel.NewBlocklist()
+			ingressProxy.SetBlocklist(takedownBlocklist)
+
+			// Wire the L7 edge middleware (WAF + per-tenant abuse limits + edge
+			// metrics) into the ingress request path. Default-safe: WAF in
+			// detection-only mode, generous rate limits, nothing blocked until
+			// an operator opts in via config.Ingress.WAF.Mode="blocking". EDGE-01.
+			if edgeMW, mwErr := ingress.NewIngressMiddlewareFromConfig(cfg.Ingress, nil); mwErr != nil {
+				logging.Warn("edge ingress middleware disabled (init failed)",
+					logging.Err(mwErr),
+					logging.Component("ingress"))
+			} else if edgeMW != nil {
+				ingressProxy.SetMiddleware(edgeMW)
+				logging.Info("edge ingress middleware enabled",
+					"waf_enabled", cfg.Ingress.WAF.Enabled,
+					"waf_mode", cfg.Ingress.WAF.Mode,
+					logging.Component("ingress"))
+			}
 
 			// Wire Cloudflare DNS sync if configured
 			if cfg.Node.Provider.CloudflareAPIToken != "" && cfg.Node.Provider.CloudflareZoneID != "" && cfg.Node.Provider.IngressIP != "" {
@@ -472,6 +538,34 @@ func main() {
 				}
 				email := cfg.Node.Provider.IngressACMEEmail
 				autoTLS := ingress.NewAutoTLSConfig(certDir, ingressDomain, email, resolver)
+
+				// EDGE-02: BYO custom-hostname ACME. When enabled, build the
+				// ownership store + DNS verifier, let hostPolicy issue LE certs
+				// for verified custom hosts, and route them via the proxy. The
+				// verification HMAC secret is generated in memory (not persisted)
+				// — a restart invalidates outstanding challenges, which is fine
+				// since customers simply re-trigger verification.
+				if cfg.Node.Provider.CustomDomain.Enabled {
+					ttl := time.Duration(cfg.Node.Provider.CustomDomain.OwnershipTTLHours) * time.Hour
+					cdStore := ingress.NewDomainOwnershipStore(ttl)
+					cdSecret := make([]byte, 32)
+					if _, randErr := rand.Read(cdSecret); randErr != nil {
+						logging.Error("custom-domain HMAC secret generation failed",
+							logging.Err(randErr), logging.Component("ingress"))
+					} else {
+						method := ingress.VerifyMethod(cfg.Node.Provider.CustomDomain.VerifyMethod)
+						verifier := ingress.NewDomainVerifier(method, ingressDomain, cdSecret, nil)
+						autoTLS.SetCustomDomains(cdStore)
+						ingressProxy.SetCustomDomains(cdStore)
+						customDomainAdmin = ingress.NewDomainVerifyHandler(
+							verifier, cdStore, cdSecret, ingressDomain,
+							cfg.Node.Provider.CustomDomain.MaxDomainsPerDeployment)
+						logging.Info("BYO custom-domain ACME enabled",
+							"verify_method", string(verifier.Method()),
+							logging.Component("ingress"))
+					}
+				}
+
 				ingressTLSCfg = autoTLS.TLSConfig()
 				logging.Info("ingress auto-TLS enabled (Let's Encrypt)",
 					"cert_dir", certDir,
@@ -558,6 +652,58 @@ func main() {
 						if cfg.Node.Provider.ReverseTunnelMaxConns > 0 {
 							revOpts = append(revOpts, tunnel.WithMaxConns(cfg.Node.Provider.ReverseTunnelMaxConns))
 						}
+
+						// EDGE-02: hand the same operator takedown kill-switch
+						// (created with the ingress proxy above) to the reverse
+						// tunnel server, so a block is enforced on the reverse
+						// registration/stream-open path in addition to the
+						// proxy-level forward-path enforcement.
+						if takedownBlocklist == nil {
+							takedownBlocklist = tunnel.NewBlocklist()
+						}
+						revOpts = append(revOpts, tunnel.WithBlocklist(takedownBlocklist))
+
+						// EDGE-02: edge-provider role gate. Pluggable: "config"
+						// uses a NodeID allowlist (works with no contract); "onchain"
+						// uses the BunkerEdgeRegistry via the payment service. The
+						// gate only fires for nodes that declare EdgeCapabilities,
+						// so container providers are unaffected.
+						if cfg.Node.Provider.EdgeRole.Enabled {
+							edgeCfg := edge.Config{
+								Mode:           edge.Mode(cfg.Node.Provider.EdgeRole.Mode),
+								AllowedNodeIDs: cfg.Node.Provider.EdgeRole.AllowedNodeIDs,
+								MinTier:        cfg.Node.Provider.EdgeRole.MinStakeTier,
+							}
+							var edgeReader edge.EdgeRegistryReader
+							if edgeCfg.Mode == edge.ModeOnChain && cfg.Node.Provider.EdgeRole.RegistryAddr != "" {
+								if bc := paymentSvc.BaseClient(); bc != nil {
+									if reader, rErr := payment.NewEdgeRegistryContract(bc, common.HexToAddress(cfg.Node.Provider.EdgeRole.RegistryAddr)); rErr != nil {
+										logging.Warn("edge registry contract unavailable; falling back to config allowlist",
+											logging.Err(rErr), logging.Component("edge"))
+									} else {
+										edgeReader = reader
+									}
+								}
+							}
+							edgeChecker := edge.NewEdgeTierChecker(edgeCfg, edgeReader)
+							edgeRegistry := edge.NewEdgeRegistry()
+							revOpts = append(revOpts,
+								tunnel.WithEdgeRegistry(edgeRegistry),
+								tunnel.WithEdgeTierChecker(func(nodeID, walletAddr string) (bool, error) {
+									checkCtx, checkCancel := context.WithTimeout(ctx, 5*time.Second)
+									defer checkCancel()
+									var nid types.NodeID
+									if b, decErr := hex.DecodeString(nodeID); decErr == nil && len(b) == len(nid) {
+										copy(nid[:], b)
+									}
+									return edgeChecker.IsEdgeAuthorized(checkCtx, nid, common.HexToAddress(walletAddr))
+								}),
+							)
+							logging.Info("edge-provider role gate enabled",
+								"mode", cfg.Node.Provider.EdgeRole.Mode,
+								logging.Component("edge"))
+						}
+
 						reverseServer := tunnel.NewReverseServer(revListener, revOpts...)
 						ingressProxy.SetReverseStreamOpener(reverseServer)
 						util.SafeGoWithName("reverse-tunnel-server", func() {
@@ -661,12 +807,23 @@ func main() {
 		logging.Warn("failed to start threat detector", logging.Err(err), logging.Component("daemon"))
 	}
 
-	// Initialize snapshot manager
+	// Initialize snapshot manager. KEY-01: the master encryption key is sourced
+	// via an explicit KeyProvider (file/keyring/env) — never a silent ephemeral
+	// key that would orphan snapshots on restart. When encryption is enabled and
+	// the provider cannot be built/read, startup fails closed.
 	snapshotCfg := snapshot.DefaultSnapshotConfig()
 	snapshotCfg.StoragePath = filepath.Join(cfg.Daemon.DataDir, "snapshots")
-	snapshotMgr, err := snapshot.NewManager(snapshotCfg)
+	var snapshotKeyProvider snapshot.KeyProvider
+	if snapshotCfg.EncryptionEnabled {
+		kp, kpErr := snapshot.NewKeyProviderFromConfig(snapshotCfg, cfg.Daemon.DataDir)
+		if kpErr != nil {
+			log.Fatalf("Failed to build snapshot key provider: %v", kpErr)
+		}
+		snapshotKeyProvider = kp
+	}
+	snapshotMgr, err := snapshot.NewManager(snapshotCfg, snapshotKeyProvider)
 	if err != nil {
-		logging.Warn("failed to initialize snapshot manager", logging.Err(err), logging.Component("daemon"))
+		log.Fatalf("Failed to initialize snapshot manager: %v", err)
 	}
 
 	// Initialize checkpoint system
@@ -722,6 +879,21 @@ func main() {
 		httpAPIServer.SetPolicyStore(api.NewPolicyStore(filepath.Join(cfg.Daemon.DataDir, "admin_policies.json")))
 		httpAPIServer.SetCatalogStore(api.NewCatalogStore(filepath.Join(cfg.Daemon.DataDir, "catalog.json")))
 
+		// EDGE-02: mount the operator surfaces behind admin auth. The
+		// custom-domain verify API persists ownership proofs; the takedown
+		// blocklist lets an operator block an abusive subdomain at ingress.
+		if customDomainAdmin != nil {
+			httpAPIServer.SetExtraAdminHandler("/v1/ingress/custom-domain/", customDomainAdmin)
+			logging.Info("custom-domain verification API mounted",
+				"path", "/v1/ingress/custom-domain/", logging.Component("ingress"))
+		}
+		if takedownBlocklist != nil {
+			httpAPIServer.SetExtraAdminHandler("/v1/ingress/blocklist",
+				tunnel.NewBlocklistAdminHandler(takedownBlocklist))
+			logging.Info("takedown blocklist API mounted",
+				"path", "/v1/ingress/blocklist", logging.Component("ingress"))
+		}
+
 		// ── P0 Services ──
 
 		// Object Storage
@@ -731,11 +903,41 @@ func main() {
 				storageDataDir = filepath.Join(cfg.Daemon.DataDir, "storage")
 			}
 			storageEngine, storageErr := storage.NewStorageEngine(storageDataDir, stateStore, storage.EngineConfig{
-				MaxBuckets:    cfg.Storage.MaxBuckets,
-				MaxObjectSize: cfg.Storage.MaxObjectSize,
+				MaxBuckets:                cfg.Storage.MaxBuckets,
+				MaxObjectSize:             cfg.Storage.MaxObjectSize,
+				EncryptedMaxInMemoryBytes: cfg.Storage.EncryptedMaxInMemoryBytes,
 			})
 			if storageErr != nil {
 				log.Fatalf("Failed to create storage engine: %v", storageErr)
+			}
+			// KEY-01: opt-in at-rest object encryption. Each object's DEK is
+			// sealed to the provider's own stable X25519 key (self-recipient
+			// model, same key file as exec/R5). LoadOrCreateProviderKey reads the
+			// same persisted DataDir/provider_x25519.key the ContainerManager uses,
+			// so the keys match.
+			if cfg.Storage.EncryptionEnabled {
+				pk, pkErr := daemon.LoadOrCreateProviderKey(cfg.Daemon.DataDir)
+				if pkErr != nil {
+					log.Fatalf("Failed to load provider key for storage encryption: %v", pkErr)
+				}
+				ks, ksErr := storage.NewProviderKeyStore(pk)
+				if ksErr != nil {
+					log.Fatalf("Failed to build storage owner key store: %v", ksErr)
+				}
+				storageEngine.WithOwnerKeyStore(ks)
+				// KEY-01 (operator caveat): objects are sealed to the provider's own
+				// X25519 key at DataDir/provider_x25519.key (self-recipient model,
+				// same limitation as R5 image encryption). There is currently NO key
+				// rotation and NO recovery path: if that key file is lost or
+				// regenerated, every previously-encrypted object becomes permanently
+				// undecryptable (a GetObject would fail at decrypt time, not at
+				// startup). Surface this loudly at startup so the key file is backed
+				// up alongside other daemon secrets.
+				logging.Warn("object storage at-rest encryption enabled — KEY LOSS IS DATA LOSS: "+
+					"objects are sealed to provider_x25519.key with no rotation/recovery path; "+
+					"back up DataDir/provider_x25519.key",
+					"key_file", filepath.Join(cfg.Daemon.DataDir, "provider_x25519.key"),
+					logging.Component("daemon"))
 			}
 			// Wire storage usage metering for billing (PaymentService satisfies
 			// storage.MeteringHook structurally).

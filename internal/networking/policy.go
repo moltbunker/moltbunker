@@ -24,8 +24,42 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 )
+
+// policyTable is the single inet table that holds all moltbunker policy chains.
+// Defined here (platform-agnostic) because ComputeEgressRules emits chain names
+// on every platform, including the non-Linux stub path.
+const policyTable = "moltbunker_policy"
+
+// intraHostCIDR is the private network every container veth lands on. Lateral
+// (intra-host) traffic is filtered against this range — a container may only
+// reach explicitly allowed peers inside it; everything else is dropped.
+const intraHostCIDR = "10.88.0.0/16"
+
+// sanitizeID maps a deploymentID into a valid unquoted nftables identifier.
+// deploymentIDs are "dep-<hex>" (generateDeploymentID), and the '-' is not a
+// reliably-accepted character in an unquoted nft chain identifier across nft
+// versions/kernels — an unquoted '-' can be rejected by `nft -f -`, which would
+// make Apply error and silently no-op lateral isolation (the caller only logs a
+// Warn). Replacing '-' with '_' keeps the name to [A-Za-z0-9_], which every nft
+// version accepts unquoted. The mapping is deterministic and collision-safe for
+// the hex-only suffix produced by generateDeploymentID.
+//
+// Defined here (not in the Linux-only file) so the chain names emitted by
+// ComputeEgressRules — which runs on every platform — are sanitized identically
+// to the names the Linux enforcer creates, flushes, and deletes. A mismatch
+// would create a chain under one name and add rules to another.
+func sanitizeID(deploymentID string) string {
+	return strings.ReplaceAll(deploymentID, "-", "_")
+}
+
+// inChain returns the per-deployment ingress chain name.
+func inChain(deploymentID string) string { return "mb_" + sanitizeID(deploymentID) + "_in" }
+
+// outChain returns the per-deployment egress chain name.
+func outChain(deploymentID string) string { return "mb_" + sanitizeID(deploymentID) + "_out" }
 
 // EgressMode controls outbound traffic from a container to addresses OUTSIDE
 // the 10.88.0.0/16 intra-host network — i.e., the public internet and the
@@ -302,7 +336,7 @@ func ComputeEgressRules(deploymentID, containerIP string, policy NetworkPolicy) 
 		return nil
 	}
 
-	chain := "mb_" + deploymentID + "_out"
+	chain := outChain(deploymentID)
 	var rules []string
 
 	// 1. Explicit deny CIDRs (highest precedence)
@@ -339,10 +373,24 @@ func ComputeEgressRules(deploymentID, containerIP string, policy NetworkPolicy) 
 }
 
 // DefaultRestrictiveEgressPolicy returns a baseline EgressDefaultDeny policy
-// with carve-outs for common safe destinations (loopback, DNS via Cloudflare
-// 1.1.1.1 and Google 8.8.8.8). Tenants who want full lockdown should start
-// here and remove allow entries; tenants who want broad access should NOT
-// start here.
+// with carve-outs for public DNS resolvers (Cloudflare 1.1.1.1 and Google
+// 8.8.8.8). Tenants who want full lockdown should start here and remove allow
+// entries; tenants who want broad access should NOT start here.
+//
+// Note on loopback: loopback (127.0.0.0/8) is intentionally NOT in EgressAllow.
+// It does not need one — loopback traffic never traverses the netfilter forward
+// hook that these egress rules attach to, so it is unaffected by the deny rules.
+//
+// Note on intra-host peers: EgressDeny includes 10.0.0.0/8, which subsumes the
+// intra-host 10.88.0.0/16 range. Because peer ACLs (AllowedPeers) are wired only
+// on the INGRESS chain, a container using this policy has its egress to allowed
+// peers dropped on the egress side. Note that ComputeEgressRules emits all deny
+// CIDRs BEFORE allow CIDRs (deny is highest precedence and a drop is terminal),
+// so simply appending 10.88.0.0/16 to EgressAllow is NOT sufficient — the
+// 10.0.0.0/8 deny still matches first. Operators relying on AllowedPeers for
+// bidirectional intra-host traffic must instead narrow the RFC1918 deny (e.g.
+// replace 10.0.0.0/8 with the specific subnets they want blocked, excluding
+// 10.88.0.0/16) so the broad deny no longer shadows intra-host egress.
 //
 // This is intentionally a starting-point, not a one-size-fits-all default —
 // the actual default in DefaultNetworkPolicy() remains EgressDefaultAllow

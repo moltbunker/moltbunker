@@ -1293,7 +1293,20 @@ func (s DisputeState) String() string {
 
 // ─── Governance Contract ABIs ────────────────────────────────────────────────
 
-// DelegationContractABI is the ABI for the BunkerDelegation contract
+// DelegationContractABI is the ABI for the BunkerDelegation contract.
+//
+// DEPRECATED (ABIGEN-01): this hand-typed ABI is being retired. The read paths
+// (getDelegation, getProviderConfig) now decode through the abigen-generated
+// binding in internal/payment/bindings (bunkerdelegation.go); the only remaining
+// consumer is DelegationContract's Transact methods (delegate, requestUndelegate,
+// setDelegationConfig, …), which ABIGEN-01 Phase 2 will move onto the generated
+// Transactor. At that point this const is deleted.
+//
+// Do NOT edit this string to "fix" a decode mismatch — the canonical ABI source
+// is contracts/out/BunkerDelegation.sol/BunkerDelegation.json. Regenerate with
+// `make gen-bindings`. (This hand-typed getProviderConfig tuple was, in fact,
+// wrong — five fields instead of the on-chain six, in the wrong order — which is
+// exactly why read decoding moved to the generated binding.)
 const DelegationContractABI = `[
 	{
 		"inputs": [

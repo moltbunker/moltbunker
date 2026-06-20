@@ -2,11 +2,19 @@
 
 package networking
 
-// R13 — non-Linux stub. nftables is Linux-only; on macOS/Colima we keep a
+// R13/R14 — non-Linux stub. nftables is Linux-only; on macOS/Colima we keep a
 // no-op enforcer that satisfies the interface so the rest of the daemon can
 // be developed cross-platform.
 
-import "sync"
+import (
+	"context"
+	"fmt"
+	"sync"
+)
+
+// NftExecFn mirrors the Linux signature so callers (and tests) can reference it
+// cross-platform. On non-Linux it is never invoked.
+type NftExecFn func(ctx context.Context, script string) error
 
 // NftPolicyEnforcer is the cross-platform stub for the Linux nftables
 // enforcer. On non-Linux platforms it just records intent.
@@ -20,6 +28,12 @@ type NftPolicyEnforcer struct {
 
 // NewNftPolicyEnforcer returns a no-op enforcer outside of Linux.
 func NewNftPolicyEnforcer(store *PolicyStore) *NftPolicyEnforcer {
+	return NewNftPolicyEnforcerWithExec(store, nil)
+}
+
+// NewNftPolicyEnforcerWithExec returns a no-op enforcer outside of Linux. The
+// execFn is accepted for API parity with the Linux build but is never called.
+func NewNftPolicyEnforcerWithExec(store *PolicyStore, _ NftExecFn) *NftPolicyEnforcer {
 	if store == nil {
 		store = NewPolicyStore()
 	}
@@ -31,7 +45,18 @@ func NewNftPolicyEnforcer(store *PolicyStore) *NftPolicyEnforcer {
 }
 
 // Apply records the policy in the store; no OS-level enforcement happens.
+//
+// The empty-deploymentID/empty-containerIP guards mirror the Linux Apply
+// (policy_linux.go) so the stub rejects the same malformed inputs on dev
+// machines — without this parity a caller bug would surface only in production
+// on Linux.
 func (e *NftPolicyEnforcer) Apply(deploymentID, containerIP string, policy NetworkPolicy) error {
+	if deploymentID == "" {
+		return fmt.Errorf("%w: empty deploymentID", ErrInvalidPolicy)
+	}
+	if containerIP == "" {
+		return fmt.Errorf("%w: empty containerIP", ErrInvalidPolicy)
+	}
 	if err := policy.Validate(deploymentID); err != nil {
 		return err
 	}

@@ -74,6 +74,43 @@ func WithWalletVerifier(fn WalletVerifyFunc) ReverseServerOption {
 	return func(s *ReverseServer) { s.verifyWallet = fn }
 }
 
+// EdgeAuthorizeFunc reports whether the node (identified by its NodeID hex and
+// recovered wallet address) is authorized to register as an edge provider. It
+// is the tunnel-package seam that internal/edge.EdgeTierChecker is adapted to
+// in main.go, keeping internal/tunnel free of an internal/edge import. A nil
+// func disables edge gating (the default). Returning (false, nil) rejects; a
+// non-nil error is treated as "not authorized" (fail-closed).
+type EdgeAuthorizeFunc func(nodeID string, walletAddr string) (bool, error)
+
+// WithEdgeTierChecker installs the edge-role gate. When set, handleProviderConn
+// rejects registrations from nodes that are not authorized edge providers. The
+// gate runs only when the provider declares EdgeCapabilities in its register
+// request, so non-edge container providers are unaffected. EDGE-02.
+func WithEdgeTierChecker(fn EdgeAuthorizeFunc) ReverseServerOption {
+	return func(s *ReverseServer) { s.edgeAuthorize = fn }
+}
+
+// WithBlocklist installs the operator takedown blocklist. When set, blocked
+// subdomains/hosts are refused at registration and on every stream open.
+// EDGE-02.
+func WithBlocklist(checker BlocklistChecker) ReverseServerOption {
+	return func(s *ReverseServer) { s.blocklist = checker }
+}
+
+// WithEdgeRegistry installs the in-memory edge registry the server populates
+// when an edge provider registers with EdgeCapabilities. The registry feeds the
+// edge selector/probe on the ingress side. EDGE-02.
+func WithEdgeRegistry(reg EdgeRegistrar) ReverseServerOption {
+	return func(s *ReverseServer) { s.edgeRegistry = reg }
+}
+
+// EdgeRegistrar is the minimal seam ReverseServer uses to announce a freshly
+// registered edge node, satisfied by edge.EdgeRegistry (adapted in main.go).
+// Declaring it here avoids an internal/edge import in internal/tunnel.
+type EdgeRegistrar interface {
+	RegisterEdge(nodeID types.NodeID, walletAddr, ingressAddr string, tunnelPort, maxStreams int)
+}
+
 // ReverseServer accepts outbound connections from providers,
 // establishes yamux sessions, and registers subdomains.
 type ReverseServer struct {
@@ -85,6 +122,11 @@ type ReverseServer struct {
 	maxConns     int
 	maxPerIP     int
 	verifyWallet WalletVerifyFunc
+
+	// EDGE-02 gates (all optional; nil = feature off).
+	edgeAuthorize EdgeAuthorizeFunc // edge-role gate (only when provider declares EdgeCapabilities)
+	edgeRegistry  EdgeRegistrar     // populated with edge node info on edge registration
+	blocklist     BlocklistChecker  // operator takedown kill-switch
 
 	// Connection tracking
 	connSemaphore chan struct{}
@@ -220,6 +262,14 @@ func (s *ReverseServer) Shutdown(ctx context.Context) error {
 // OpenStream opens a yamux stream to the provider for a given subdomain.
 // Called by the ingress proxy when routing an HTTP request.
 func (s *ReverseServer) OpenStream(subdomain string) (net.Conn, error) {
+	// EDGE-02: enforce operator takedown on every request, not just at
+	// registration, so a live session is severed the instant it is blocked.
+	if s.blocklist != nil {
+		if blocked, _ := s.blocklist.IsBlocked(subdomain); blocked {
+			return nil, fmt.Errorf("subdomain %q blocked by operator", subdomain)
+		}
+	}
+
 	sess, ok := s.registry.Lookup(subdomain)
 	if !ok {
 		return nil, fmt.Errorf("no reverse tunnel for subdomain %q", subdomain)
@@ -362,6 +412,7 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 
 	// Determine tier: verify wallet proof if provided, otherwise free tier
 	tier := "free"
+	walletVerified := false
 	if req.WalletProof != nil && s.verifyWallet != nil {
 		verified, verifyErr := s.verifyWallet(req.WalletProof, nodeID.String())
 		if verifyErr != nil {
@@ -372,10 +423,37 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 			// Fall through to free tier — don't reject, just don't upgrade
 		} else {
 			tier = verified
+			walletVerified = true
 			logging.Debug("reverse tunnel: wallet verified",
 				"node_id", nodeID.String()[:16],
 				"tier", tier,
 				logging.Component("reverse-tunnel"))
+		}
+	}
+
+	// EDGE-02: edge-role gate. Only runs when the provider declares
+	// EdgeCapabilities (an edge node), so container providers are unaffected.
+	// The wallet address is forwarded to the checker ONLY when the wallet proof
+	// actually verified — otherwise a node could claim any wallet's edge stake.
+	// With the config (NodeID-allowlist) checker the wallet is irrelevant; with
+	// the on-chain checker an unverified wallet yields an empty address, which
+	// the registry treats as not-authorized (fail-closed).
+	if req.EdgeCapabilities != nil && s.edgeAuthorize != nil {
+		walletAddr := ""
+		if walletVerified && req.WalletProof != nil {
+			walletAddr = req.WalletProof.Address
+		}
+		authorized, edgeErr := s.edgeAuthorize(nodeID.String(), walletAddr)
+		if edgeErr != nil || !authorized {
+			logging.Warn("reverse tunnel: edge role not authorized",
+				"node_id", nodeID.String()[:16],
+				logging.Component("reverse-tunnel"))
+			if writeErr := writeControlMsg(ctrlStream, MsgEdgeRoleRejected, []byte("edge role not authorized")); writeErr != nil {
+				logging.Debug("reverse tunnel: write edge-reject failed",
+					logging.Err(writeErr),
+					logging.Component("reverse-tunnel"))
+			}
+			return
 		}
 	}
 
@@ -445,6 +523,37 @@ func (s *ReverseServer) handleProviderConn(ctx context.Context, conn net.Conn) {
 				logging.Component("reverse-tunnel"))
 		}
 		return
+	}
+
+	// EDGE-02: operator takedown kill-switch. A blocked subdomain/host is
+	// refused registration so a taken-down deployment cannot re-establish a
+	// tunnel. (OpenStream also enforces this for any already-live session.)
+	if s.blocklist != nil {
+		if blocked, reason := s.blocklist.IsBlocked(subdomain); blocked {
+			logging.Warn("reverse tunnel: subdomain blocked by operator takedown",
+				"subdomain", subdomain,
+				"reason", reason,
+				logging.Component("reverse-tunnel"))
+			if writeErr := writeControlMsg(ctrlStream, MsgTunnelError, []byte("subdomain blocked by operator")); writeErr != nil {
+				logging.Debug("reverse tunnel: write block error failed",
+					logging.Err(writeErr),
+					logging.Component("reverse-tunnel"))
+			}
+			return
+		}
+	}
+
+	// EDGE-02: record the edge node so the ingress-side selector/probe can use
+	// it. Only edge providers (those declaring EdgeCapabilities) are recorded.
+	if req.EdgeCapabilities != nil && s.edgeRegistry != nil {
+		wallet := ""
+		if walletVerified && req.WalletProof != nil {
+			wallet = req.WalletProof.Address
+		}
+		s.edgeRegistry.RegisterEdge(nodeID, wallet,
+			req.EdgeCapabilities.IngressAddr,
+			req.EdgeCapabilities.TunnelPort,
+			req.EdgeCapabilities.MaxStreams)
 	}
 
 	// Create and register session

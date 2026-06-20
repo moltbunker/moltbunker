@@ -689,7 +689,21 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 	if len(req.EncryptedExecKey) > 0 {
 		mounts, keyPath, err := cm.prepareExecAgent(deploymentID, req.EncryptedExecKey, req.RequesterEphemeralPubKey)
 		if err != nil {
-			logging.Warn("failed to prepare exec-agent, continuing without E2E exec",
+			// SECURITY-RELEVANT DOWNGRADE: an exec envelope WAS supplied but
+			// could not be unwrapped (tampered/misconfigured envelope or wrong
+			// provider key). We fail open to the legacy plaintext-exec PTY and
+			// signal the downgrade via deployment.ExecAgentEnabled=false in the
+			// response, so a client that checks the flag can refuse. The
+			// requester sealed a key expecting E2E exec; this is more likely
+			// tampering/misconfig than an intentional plaintext request.
+			//
+			// TODO(RUN-01-execmetric, deferred LOW): emit a dedicated counter
+			// (e.g. exec_agent_prepare_failures_total) on this path so a fleet
+			// of silent downgrades is observable, not just log-visible. Tracked
+			// alongside the R5 "fail-open encrypt has only a Warn" gap in
+			// daemon-todo.md; deferred here because it requires threading the
+			// metrics registry into ContainerManager (out of scope for this PR).
+			logging.Warn("SECURITY: exec envelope supplied but unwrap failed; downgrading to plaintext exec (E2E exec disabled for this deployment)",
 				logging.ContainerID(deploymentID),
 				logging.Err(err))
 		} else {
@@ -768,7 +782,7 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 	// P1-10: Track deploy success
 	cm.deploysTotal.Add(1)
 
-	// Set up networking for exposed ports
+	// Set up networking for exposed ports.
 	if len(req.ExposePorts) > 0 && cm.networkManager != nil {
 		netPorts := convertExposedPorts(req.ExposePorts)
 		containerNet, err := cm.networkManager.SetupNetwork(deploymentID, netPorts)
@@ -778,11 +792,6 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 				logging.Err(err))
 		} else {
 			deployment.ExposedPorts = req.ExposePorts
-			// R13/R14: apply per-deployment network/egress policy once the
-			// container IP is known. nil/empty policy => allow-all (no-op).
-			// Real nft enforcement is a Linux-only stub; off-Linux this only
-			// records intent.
-			cm.applyNetworkPolicy(deploymentID, containerNet.ContainerIP(), req.NetworkPolicy)
 			// no-op: ingress domain currently hardcoded; future versions may
 			// derive it from cm.node.nodeInfo when config plumbing is added.
 			ingressDomain := "moltbunker.dev"
@@ -799,7 +808,53 @@ func (cm *ContainerManager) deployLocally(ctx context.Context, deploymentID stri
 		}
 	}
 
+	// R13/R14: apply the per-deployment network/egress policy for EVERY primary
+	// deploy, not just port-exposing ones. A no-port container still shares the
+	// 10.88.0.0/16 bridge and must get its lateral-isolation + egress rules.
+	// enforceDeployNetworkPolicy allocates a network (with no DNAT rules) when
+	// none was set up above so the policy has an IP to key on. A nil/empty policy
+	// is a no-op (allow-all), matching legacy behavior.
+	cm.enforceDeployNetworkPolicy(deploymentID, req.NetworkPolicy)
+
 	return nil
+}
+
+// enforceDeployNetworkPolicy applies the R13/R14 network policy for a deployment
+// running on this node. It resolves the container IP from any network created
+// for exposed ports; if none exists (no-port deploy or replica) it sets up a
+// port-less network purely to allocate an IP. When the policy spec is nil the
+// whole thing is skipped (applyNetworkPolicy treats nil as allow-all/no-op), so
+// no-port deploys without a policy incur no extra IP allocation.
+func (cm *ContainerManager) enforceDeployNetworkPolicy(deploymentID string, spec *NetworkPolicySpec) {
+	if spec == nil || cm.policyEnforcer == nil {
+		return
+	}
+	containerIP := cm.resolveContainerIP(deploymentID)
+	cm.applyNetworkPolicy(deploymentID, containerIP, spec)
+}
+
+// resolveContainerIP returns the intra-host IP for a deployment. It prefers an
+// already-allocated ContainerNetwork; failing that it provisions a port-less
+// network (no DNAT rules) so a policy can be keyed on the allocated IP. Returns
+// "" if no IP can be obtained — applyNetworkPolicy logs and skips in that case.
+func (cm *ContainerManager) resolveContainerIP(deploymentID string) string {
+	if cm.networkManager == nil {
+		return ""
+	}
+	if net, ok := cm.networkManager.GetNetwork(deploymentID); ok {
+		return net.ContainerIP()
+	}
+	// No network yet (no-port primary or replica): allocate one with no ports so
+	// the container gets an intra-host IP for policy enforcement. Released by
+	// TeardownNetwork on stop.
+	net, err := cm.networkManager.SetupNetwork(deploymentID, nil)
+	if err != nil {
+		logging.Warn("network setup for policy IP failed",
+			logging.ContainerID(deploymentID),
+			logging.Err(err))
+		return ""
+	}
+	return net.ContainerIP()
 }
 
 // prepareExecAgent unwraps the ECIES-sealed exec key with the daemon's stable
